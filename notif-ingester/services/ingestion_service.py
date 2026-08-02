@@ -204,11 +204,12 @@ class IngestionService:
         )
         top_score = similar_vectors[0][1] if similar_vectors else 0.0
 
-        # 3. Fetch accounts and runbook
+        # 3. Fetch accounts, runbook, and vendors
         accounts = await self._finance_api_service.get_accounts_async(user_id)
         runbook_content = await self._finance_api_service.get_runbook_content_async(user_id)
         if not runbook_content:
             runbook_content = self._ai_service.get_default_runbook_content()
+        vendors = await self._finance_api_service.get_vendors_async(user_id)
 
         # 4. Re-classify via LLM
         # Build a minimal hook-like object for classification
@@ -219,6 +220,7 @@ class IngestionService:
             user_id=user_id
         )
         ai_parsed = await self._ai_service.classify_async(hook_like, similar_vectors, accounts, runbook_content, vendors)
+
 
         # 4.5 Automatically map vendor from lookups
         lookups = self._build_lookups(ai_parsed, accounts)
