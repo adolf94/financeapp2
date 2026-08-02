@@ -1,6 +1,6 @@
 # Product Specification Document: Personal Finance App
 
-**Last Updated:** 2026-08-02 (Commit: 27aadd9)
+**Last Updated:** 2026-08-03 (Commit: 9ba5c2e)
 
 ## 1. Product Vision & Objective
 **Objective:** Create a mobile-first personal finance application that allows users to seamlessly track income, expenses, and account balances, functioning as a robust personal accounting tool. The focus is strictly on historical tracking of transactions rather than forward-looking budgeting.
@@ -59,8 +59,8 @@ Users need a structured way to mirror their real-world financial accounts within
 - **Per-day cells** show: daily total income (green chip), daily total expense (red chip), and net (blue/amber).
 - **Month summary bar** at the top of the grid shows the month-level totals for Income, Expenses, and Net.
 - **Income/Expense computation is account-type driven** (applies to all transaction types including Journal entries):
-  - An entry is counted as **Income** when its linked account has `AccountType = Income` and `amount < 0` (credit to income account).
-  - An entry is counted as **Expense** when its linked account has `AccountType = Expense` and `amount > 0` (debit to expense account).
+  - An entry is counted as **Income** when its linked account has `AccountType = Income`. The absolute amount is tallied to consistently handle double-entry sign variances, aligning with Dashboard analysis logic.
+  - An entry is counted as **Expense** when its linked account has `AccountType = Expense`. The absolute amount is tallied.
   - Net = Total Income − Total Expense.
 - Tapping a day with transactions opens a **Day Transaction Modal** (bottom sheet) showing:
   - Day totals summary (Income / Expense / Net chips).
@@ -127,12 +127,12 @@ Users need a structured way to mirror their real-world financial accounts within
   - `DayModal.tsx` (`components/`) — Bottom-sheet modal displaying day-level Income/Expense/Net summary chips and a scrollable transaction list for the selected date.
   - `CategoryDetails.tsx` (`pages/`) — Detail page displaying category group name, type, and transaction list grouped by date.
   - `PendingIngestions.tsx` (`pages/`) — Page rendering `PendingIngestionsList`. Accessible from the bottom navigation.
-  - `PendingIngestionsList.tsx` (`components/`) — Reviews AI-classified ingestions. Supports: quick-confirm, edit-and-confirm (opens `AddTransactionModal` pre-filled from AI data), reject, vendor inline patch, and suggested account creation with AI-generated descriptions.
+  - `PendingIngestionsList.tsx` (`components/`) — Reviews AI-classified ingestions. Supports: quick-confirm, edit-and-confirm (opens `AddTransactionModal` with a bold, compact review layout), reject, vendor inline patch, and suggested account creation with AI-generated descriptions.
   - `HistoricalHooksList.tsx` (`components/`) — Lists legacy notifications from the old CosmosDB. Supports per-item import (triggers the full classify pipeline) and ignore actions.
   - `EditAccountModal.tsx` (`components/`) — Modal for editing existing accounts (name, description, group, starting balance, credit card fields).
   - `TransactionCard.tsx` (`components/`) — Reusable component for rendering a single transaction row.
   - `PendingIngestionCard.tsx` (`components/`) — Reusable component for rendering a pending AI-classified ingestion item. Displays suggested vendor name, type badges (Individual/Business, skipping Internal), and tags. Disables the Quick Confirm icon button and shows a warning when the suggestion contains masks (wildcards, xxx, repeating x, or 4+ digits), requiring manual correction.
-  - `RunbookReviewModal.tsx` (`components/`) — Modal for interactively reviewing and chatting with AI to apply suggested `RUNBOOK.md` corrections.
+  - `RunbookReviewModal.tsx` (`components/`) — Modal for interactively reviewing and chatting with AI to apply suggested `RUNBOOK.md` corrections. Modularized into responsive sub-panels (`RunbookChatPanel`, `RunbookAccountUpdatesPanel`, `RunbookVendorUpdatesPanel`, `RunbookDocumentPanel`).
   - `DiffViewer.tsx` (`components/`) — Visualizer for displaying text differences in runbook updates.
 - **Key Hooks:**
   - `useIngestions.ts` — `useGetPendingIngestions`, `useConfirmIngestion`, `useRejectIngestion`, `useUpdateIngestionVendor`, `useGenerateAccountDescription`, `useReclassifyIngestion`. All use `ingesterClient`.
@@ -156,7 +156,7 @@ Users need a structured way to mirror their real-world financial accounts within
   - `EmbeddingService` — Calls Google Gemini `text-embedding-004` to produce a 768-dimension float vector from notification text.
   - `VectorService` — Performs cosine-similarity search (via `numpy`) across all stored `TransactionVector` documents for a user to retrieve top-k matches.
   - `AiService` — Two-stage Gemini calls: (1) `is_financial_transaction_async` — lightweight check to filter non-financial notifications; (2) `classify_async` — full structured JSON classification with notification + similar transactions + accounts + RUNBOOK.md context. Produces `AiParsedData` with enhanced fields: `vendor`, `amount`, `transaction_type`, `debit_account_id`, `credit_account_id`, `suggested_account_creation`, `notes`, `confidence`, `recipient_account_number/name`, `sender_account_number/name`, `application`, `why`, `user_why`, `is_financial`, `is_auto_confirmed`, `vendor_matched`.
-  - `FinanceApiService` — Directly queries CosmosDB containers (`Accounts`, `AccountGroups`, `Vendors`, `VendorLookups`) to resolve accounts and vendors. Creates confirmed transactions by writing directly to the `Transactions` container. Methods include `get_accounts_async`, `search_vendors_by_lookups_async`, `ensure_vendor_and_lookups_async`, `create_transaction_async`, `get_runbook_content_async`.
+  - `FinanceApiService` — Directly queries CosmosDB containers (`Accounts`, `AccountGroups`, `Vendors`, `VendorLookups`) to resolve accounts and vendors. Creates confirmed transactions by writing directly to the `Transactions` container. Methods include `get_accounts_async`, `search_vendors_by_lookups_async`, `ensure_vendor_and_lookups_async`, `create_transaction_async`, `get_runbook_content_async`, `update_vendor_tags_async`.
   - `IngestionService` — Orchestrates the full pipeline: financial-check → embed → vector-search → fetch-accounts+runbook → classify → vendor-match → auto-confirm-or-pending → save.
 - **HTTP Endpoints (`function_app.py`):**
   - `POST /phone_hook` — Receive raw notification, API key auth.
@@ -173,7 +173,7 @@ Users need a structured way to mirror their real-world financial accounts within
   - `POST /historical-hooks/{id}/ignore` — Mark old hook as `Ignored` in legacy DB, JWT auth.
   - `GET /runbook/corrections` — Fetch AI-suggested runbook mapping corrections, JWT auth.
   - `POST /runbook/review/start` — Start a runbook review session, JWT auth.
-  - `POST /runbook/review/chat` — Chat with AI to iteratively refine the proposed runbook changes, JWT auth.
+  - `POST /runbook/review/chat` — Chat with AI to iteratively refine the proposed runbook changes. The system prompt is configured to strictly enforce returning empty JSON arrays when no corrections are found. JWT auth.
   - `POST /runbook/review/approve` — Approve and save the reviewed runbook to Cosmos DB, JWT auth.
 - **Auto-Confirm Threshold:** Configurable via `AUTO_CONFIRM_THRESHOLD` env var (default `0.92`). When top cosine similarity score ≥ threshold and all account IDs are present, transactions are created automatically (`AutoConfirmed`).
 - **Key Models (Pydantic):**
