@@ -555,12 +555,12 @@ async def GenerateAccountDescriptionFunction(req: func.HttpRequest) -> func.Http
         context = body.get("context", "")
 
         ingestion_service = get_ingestion_service()
-        description = await ingestion_service.generate_account_description_async(
+        ai_result = await ingestion_service.generate_account_description_async(
             user_id, account_name, account_type, group_name, context
         )
 
         return func.HttpResponse(
-            json.dumps({"description": description}),
+            json.dumps(ai_result),
             status_code=200,
             mimetype="application/json",
         )
@@ -606,10 +606,48 @@ async def GetRunbookSessionFunction(req: func.HttpRequest) -> func.HttpResponse:
     try:
         session = await ingestion_service._finance_api_service.get_runbook_session_async(user_id)
         if not session:
-            return func.HttpResponse(json.dumps({"error": "No active session"}), status_code=404, mimetype="application/json")
+            return func.HttpResponse("null", status_code=200, mimetype="application/json")
         return func.HttpResponse(json.dumps(session, default=str), status_code=200, mimetype="application/json")
     except Exception as e:
         logging.error(f"Error fetching runbook session: {e}")
+        return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
+
+# ── Function 12.1: GetRunbookFunction ───────────────────────────────────────
+@app.route(route="runbook", methods=["GET"])
+async def GetRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
+    """Returns the current runbook content."""
+    user, err = _require_auth(req)
+    if err: return err
+    user_id = user.get("sub", "default")
+    
+    ingestion_service = get_ingestion_service()
+    try:
+        content = await ingestion_service._finance_api_service.get_runbook_content_async(user_id)
+        return func.HttpResponse(json.dumps({"content": content or ""}), status_code=200, mimetype="application/json")
+    except Exception as e:
+        logging.error(f"Error fetching runbook: {e}")
+        return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
+
+# ── Function 12.2: UpdateRunbookFunction ────────────────────────────────────
+@app.route(route="runbook", methods=["PUT"])
+async def UpdateRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
+    """Updates the runbook content."""
+    user, err = _require_auth(req)
+    if err: return err
+    user_id = user.get("sub", "default")
+    
+    try:
+        body = req.get_json()
+        content = body.get("content", "")
+    except ValueError:
+        return func.HttpResponse(json.dumps({"error": "Invalid JSON"}), status_code=400, mimetype="application/json")
+        
+    ingestion_service = get_ingestion_service()
+    try:
+        await ingestion_service._finance_api_service.save_runbook_content_async(user_id, content)
+        return func.HttpResponse(json.dumps({"success": True}), status_code=200, mimetype="application/json")
+    except Exception as e:
+        logging.error(f"Error saving runbook: {e}")
         return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
 
 # ── Function 13: StartRunbookReviewFunction ──────────────────────────────────
@@ -646,7 +684,7 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
             "id": "runbook-review-session",
             "UserId": user_id,
             "corrections": corrections,
-            "chat_history": [{"role": "ai", "text": ai_response.get("message", "")}],
+            "chat_history": [{"role": "ai", "text": ai_response.get("message", ""), "questions": ai_response.get("questions", [])}],
             "proposed_runbook": ai_response.get("proposed_runbook", ""),
             "account_description_updates": ai_response.get("account_description_updates", []),
             "created_at": now,
@@ -697,13 +735,15 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
         ai_response = await ingestion_service._ai_service.chat_runbook_review_async(
             chat_history=chat_history,
             user_message=user_message,
-            current_runbook=current_runbook,
+            proposed_runbook=session.get("proposed_runbook", ""),
+            proposed_account_updates=session.get("account_description_updates", []),
             corrections=session.get("corrections", []),
-            accounts=accounts
+            accounts=accounts,
+            current_runbook=current_runbook
         )
 
         # Append AI reply and update session
-        chat_history.append({"role": "ai", "text": ai_response.get("message", "")})
+        chat_history.append({"role": "ai", "text": ai_response.get("message", ""), "questions": ai_response.get("questions", [])})
         session["chat_history"] = chat_history
         session["proposed_runbook"] = ai_response.get("proposed_runbook", session.get("proposed_runbook", ""))
         session["account_description_updates"] = ai_response.get("account_description_updates", session.get("account_description_updates", []))
@@ -732,8 +772,14 @@ async def ApproveRunbookReviewFunction(req: func.HttpRequest) -> func.HttpRespon
         if not session:
             return func.HttpResponse(json.dumps({"error": "No active session to approve."}), status_code=404, mimetype="application/json")
 
+        try:
+            body = req.get_json() or {}
+        except ValueError:
+            body = {}
+            
         proposed_runbook = session.get("proposed_runbook", "")
-        account_updates = session.get("account_description_updates", [])
+        # If the frontend passes explicit account_updates in the body, use them instead of the session's
+        account_updates = body.get("account_updates", session.get("account_description_updates", []))
         corrections = session.get("corrections", [])
         correction_ids = [c.get("id") for c in corrections if c.get("id")]
 

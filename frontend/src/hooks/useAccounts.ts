@@ -12,6 +12,7 @@ export interface Account {
   id?: string
   name: string
   description?: string
+  tags?: string[]
   accountGroupId: string
   startingBalance: number
   currentBalance?: number
@@ -95,7 +96,7 @@ export function useGenerateAccountDescription() {
   return useMutation({
     mutationFn: async (data: { name: string, type: string, groupName: string, context?: string }) => {
       // Goes directly to Python ingester (JWT Bearer, no .NET proxy)
-      const response = await ingesterClient.post<{description: string}>('/accounts/generate-description', {
+      const response = await ingesterClient.post<{description: string, tags: string[]}>('/accounts/generate-description', {
         account_name: data.name,
         account_type: data.type,
         group_name: data.groupName,

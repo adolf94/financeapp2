@@ -5,6 +5,8 @@ export interface Vendor {
   id?: string
   userId?: string
   name: string
+  type?: 'Individual' | 'Business' | 'Internal'
+  tags?: string[]
 }
 
 export function useGetVendors() {
@@ -20,8 +22,8 @@ export function useGetVendors() {
 export function useCreateVendor() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (name: string) => {
-      const response = await apiClient.post('/vendors', { name })
+    mutationFn: async (vendor: Partial<Vendor>) => {
+      const response = await apiClient.post('/vendors', vendor)
       return response.data as Vendor
     },
     onSuccess: () => {

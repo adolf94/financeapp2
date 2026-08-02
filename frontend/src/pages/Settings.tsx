@@ -24,7 +24,7 @@ import {
 import { useGetRunbookCorrections, useGetRunbookSession } from '@/hooks/useRunbookReview'
 import { RunbookReviewModal } from '@/components/RunbookReviewModal'
 import { useQuery } from '@tanstack/react-query'
-import apiClient from '@/lib/apiClient'
+import ingesterClient from '@/lib/ingesterClient'
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<'categories' | 'vendors' | 'notifications' | 'historicalLogs' | 'runbook'>('categories')
@@ -322,7 +322,7 @@ function VendorsSettings() {
   const handleCreateVendor = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newVendorName.trim()) return
-    createVendor.mutate(newVendorName.trim(), { onSuccess: () => setNewVendorName('') })
+    createVendor.mutate({ name: newVendorName.trim() }, { onSuccess: () => setNewVendorName('') })
   }
 
   return (
@@ -500,7 +500,7 @@ function RunbookReviewSettings() {
   const { data: runbookRes } = useQuery({
     queryKey: ['runbook_content'],
     queryFn: async () => {
-      const res = await apiClient.get('/runbook')
+      const res = await ingesterClient.get('/runbook')
       return res.data
     }
   })

@@ -6,6 +6,7 @@ from typing import List, Optional
 class ChatMessage(BaseModel):
     role: str  # "user" | "ai"
     text: str
+    questions: Optional[List[str]] = Field(default_factory=list)
 
 class RunbookReviewSession(BaseModel):
     id: str = "runbook-review-session"

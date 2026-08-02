@@ -8,11 +8,13 @@ import ingesterClient from '@/lib/ingesterClient'
 export type AccountDescriptionUpdate = {
   account_id: string
   new_description: string
+  new_tags?: string[]
 }
 
 export type ChatMessage = {
   role: 'user' | 'ai'
   text: string
+  questions?: string[]
 }
 
 /** Shape of the persisted session document returned by the Python backend. */
@@ -100,8 +102,8 @@ export function useChatRunbookReview() {
 export function useApproveRunbookReview() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async () => {
-      const { data } = await ingesterClient.post('/runbook/review/approve')
+    mutationFn: async (params?: { account_updates: AccountDescriptionUpdate[] }) => {
+      const { data } = await ingesterClient.post('/runbook/review/approve', params || {})
       return data
     },
     onSuccess: () => {

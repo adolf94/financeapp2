@@ -14,7 +14,7 @@ interface PendingIngestionCardProps {
   onEditConfirm: (ingestion: PendingIngestion) => void
   onUpdateVendor: (ingestionId: string, vendor: string) => Promise<void>
   onCreateSuggestedAccount: (data: any, ingestionId: string) => Promise<void>
-  onGenerateDesc: (data: { accountName: string, accountType: string, groupName: string, context?: string }, onSuccess: (data: {description: string}) => void) => void
+  onGenerateDesc: (data: { accountName: string, accountType: string, groupName: string, context?: string }, onSuccess: (data: {description: string, tags?: string[]}) => void) => void
   isGeneratingDesc: boolean
 }
 
@@ -32,7 +32,7 @@ export default function PendingIngestionCard({
   isGeneratingDesc
 }: PendingIngestionCardProps) {
   const [editingVendor, setEditingVendor] = useState<string | null>(null)
-  const [editingSuggestion, setEditingSuggestion] = useState<{ idx: number, data: { name: string, account_group: string, type: string, description: string } } | null>(null)
+  const [editingSuggestion, setEditingSuggestion] = useState<{ idx: number, data: { name: string, account_group: string, type: string, description: string, tagsInput: string } } | null>(null)
 
   const confidence = ingestion.ai_parsed.confidence ?? 0.0
   const similarity = ingestion.similarity_score ?? 0.0
@@ -155,32 +155,40 @@ export default function PendingIngestionCard({
                               <option key={t} value={t}>{t}</option>
                             ))}
                           </select>
-                          <div className="flex gap-1 items-center">
+                          <div className="flex flex-col gap-1 w-full">
+                            <div className="flex gap-1 items-center w-full">
+                              <input 
+                                value={editingSuggestion.data.description || ''}
+                                onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, description: e.target.value}})}
+                                className="flex-1 text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                                placeholder="Description (optional)"
+                              />
+                              <button 
+                                onClick={() => {
+                                  onGenerateDesc({ 
+                                    accountName: editingSuggestion.data.name, 
+                                    accountType: editingSuggestion.data.type, 
+                                    groupName: editingSuggestion.data.account_group, 
+                                    context: ingestion.raw_msg 
+                                  }, (data) => {
+                                    if (editingSuggestion) {
+                                      setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, description: data.description, tagsInput: data.tags ? data.tags.join(', ') : ''}})
+                                    }
+                                  })
+                                }}
+                                disabled={isGeneratingDesc || !editingSuggestion.data.name || !editingSuggestion.data.account_group}
+                                className="p-1 text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 rounded transition-colors disabled:opacity-50"
+                                title="Generate Description with AI"
+                              >
+                                <Sparkles className={`w-3.5 h-3.5 ${isGeneratingDesc ? 'animate-pulse' : ''}`} />
+                              </button>
+                            </div>
                             <input 
-                              value={editingSuggestion.data.description || ''}
-                              onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, description: e.target.value}})}
-                              className="flex-1 text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
-                              placeholder="Description (optional)"
+                              value={editingSuggestion.data.tagsInput || ''}
+                              onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, tagsInput: e.target.value}})}
+                              className="w-full text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                              placeholder="Tags (comma separated)"
                             />
-                            <button 
-                              onClick={() => {
-                                onGenerateDesc({ 
-                                  accountName: editingSuggestion.data.name, 
-                                  accountType: editingSuggestion.data.type, 
-                                  groupName: editingSuggestion.data.account_group, 
-                                  context: ingestion.raw_msg 
-                                }, (data) => {
-                                  if (editingSuggestion) {
-                                    setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, description: data.description}})
-                                  }
-                                })
-                              }}
-                              disabled={isGeneratingDesc || !editingSuggestion.data.name || !editingSuggestion.data.account_group}
-                              className="p-1 text-blue-500 hover:text-blue-600 dark:hover:text-blue-400 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 rounded transition-colors disabled:opacity-50"
-                              title="Generate Description with AI"
-                            >
-                              <Sparkles className={`w-3.5 h-3.5 ${isGeneratingDesc ? 'animate-pulse' : ''}`} />
-                            </button>
                           </div>
                         </div>
                     ) : (
@@ -219,7 +227,7 @@ export default function PendingIngestionCard({
                           <PlusCircle className="w-3 h-3" /> Create
                         </button>
                         <button
-                          onClick={() => setEditingSuggestion({ idx, data: { name: suggestion.name, account_group: suggestion.account_group, type: suggestion.type, description: (suggestion as any).description || '' } })}
+                          onClick={() => setEditingSuggestion({ idx, data: { name: suggestion.name, account_group: suggestion.account_group, type: suggestion.type, description: (suggestion as any).description || '', tagsInput: (suggestion as any).tags ? (suggestion as any).tags.join(', ') : '' } })}
                           disabled={isProcessing}
                           className="bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
                         >

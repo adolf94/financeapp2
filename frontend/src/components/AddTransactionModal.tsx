@@ -4,7 +4,7 @@ import { useGetAccounts, useGetAccountGroups, useCreateAccountGroup, useCreateAc
 import { useGetVendors, useCreateVendor } from '@/hooks/useVendors'
 import { useCreateTransaction, useUpdateTransaction, Transaction, LedgerEntry } from '@/hooks/useTransactions'
 import { useCreateRecurringTransaction } from '@/hooks/useRecurringTransactions'
-import { PendingIngestion, useGetIngestionById, useConfirmIngestion, useReclassifyIngestion, useUpdateIngestionVendor } from '@/hooks/useIngestions'
+import { PendingIngestion, useGetIngestionById, useConfirmIngestion, useReclassifyIngestion, useUpdateIngestionVendor, useLearnIngestion } from '@/hooks/useIngestions'
 import { useQueryClient } from '@tanstack/react-query'
 import { uuidv7 } from 'uuidv7'
 import dayjs from 'dayjs'
@@ -51,12 +51,13 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
   const confirmIngestionMutation = useConfirmIngestion()
   const reclassifyMutation = useReclassifyIngestion()
   const updateIngestionVendorMutation = useUpdateIngestionVendor()
+  const learnIngestionMutation = useLearnIngestion()
 
   const queryClient = useQueryClient()
 
   const targetIngestionId = ingestionId || initialData?.ingestionId
   const { data: fetchedIngestion } = useGetIngestionById(targetIngestionId)
-  
+
   const ingestion = ingestionProp || fetchedIngestion
 
   const [pendingNewAccount, setPendingNewAccount] = useState<{
@@ -65,6 +66,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
     type: string;
     splitId: string;
     description: string;
+    tagsInput: string;
   } | null>(null)
 
   const getIngestionAppName = (ing: PendingIngestion) => {
@@ -74,16 +76,11 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
     const keys = Object.keys(payload)
 
     const pkgKey = keys.find(k => k.toLowerCase() === 'notif_pkg' || k.toLowerCase() === 'notifpkg' || k.toLowerCase() === 'package');
-    const senderKey = keys.find(k => k.toLowerCase() === 'sms_sender' || k.toLowerCase() === 'smssender' || k.toLowerCase() === 'sender' || k.toLowerCase() === 'from');
+    const senderKey = keys.find(k => k.toLowerCase() === 'sms_rcv_sender' || k.toLowerCase() === 'smssender' || k.toLowerCase() === 'sender' || k.toLowerCase() === 'from');
 
     const pkg = (pkgKey ? payload[pkgKey] : null) || (senderKey ? payload[senderKey] : null) || '';
     if (!pkg || typeof pkg !== 'string') return 'Notification'
 
-    const pkgLower = pkg.toLowerCase()
-    if (pkgLower.includes('gcash')) return 'GCash'
-    if (pkgLower.includes('indivara')) return 'BPI / indivara (Vybe)'
-    if (pkgLower.includes('bpi')) return 'BPI'
-    if (pkgLower.includes('maya')) return 'Maya'
     return pkg
   }
 
@@ -122,9 +119,10 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
   const [maxOccurrences, setMaxOccurrences] = useState('')
 
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
-  const [editingSuggestion, setEditingSuggestion] = useState<{ idx: number, data: { name: string, account_group: string, type: string, description: string } } | null>(null)
+  const [editingSuggestion, setEditingSuggestion] = useState<{ idx: number, data: { name: string, account_group: string, type: string, description: string, tagsInput: string } } | null>(null)
+  const [createdSuggestions, setCreatedSuggestions] = useState<Set<number>>(new Set())
 
-  const handleCreateSuggestedAccount = async (data: { type: string, account_group: string, name: string, description?: string }) => {
+  const handleCreateSuggestedAccount = async (data: { type: string, account_group: string, name: string, description?: string, tagsInput?: string }, idx?: number) => {
     setIsCreatingAccount(true)
     try {
       let targetGroupId = accountGroups.find(g => g.name === data.account_group && g.accountType === data.type)?.id
@@ -137,10 +135,14 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
       await createAccountMutation.mutateAsync({
         name: data.name,
         description: data.description,
+        tags: data.tagsInput ? data.tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [],
         accountGroupId: targetGroupId as string,
         startingBalance: 0,
         accountType: data.type as any,
       })
+      if (idx !== undefined) {
+        setCreatedSuggestions(prev => new Set(prev).add(idx))
+      }
       setEditingSuggestion(null)
     } catch (err) {
       console.error('Failed to create suggested account', err)
@@ -153,15 +155,15 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
     if (!pendingNewAccount) return;
     const group = accountGroups.find(g => g.id === pendingNewAccount.categoryId);
     const groupName = group?.name || '';
-    
+
     try {
-      const { description } = await generateDescriptionMutation.mutateAsync({
+      const { description, tags } = await generateDescriptionMutation.mutateAsync({
         name: pendingNewAccount.name,
         type: pendingNewAccount.type,
         groupName: groupName,
         context: pendingNewAccount.description
       });
-      setPendingNewAccount({ ...pendingNewAccount, description });
+      setPendingNewAccount({ ...pendingNewAccount, description, tagsInput: tags ? tags.join(', ') : '' });
     } catch (e) {
       console.error(e);
       alert("Failed to generate description.");
@@ -171,7 +173,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
   const handleGenerateSuggestionDescription = async () => {
     if (!editingSuggestion || !editingSuggestion.data.name || !ingestion) return;
     try {
-      const { description } = await generateDescriptionMutation.mutateAsync({
+      const { description, tags } = await generateDescriptionMutation.mutateAsync({
         name: editingSuggestion.data.name,
         type: editingSuggestion.data.type || '',
         groupName: editingSuggestion.data.account_group,
@@ -179,7 +181,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
       });
       setEditingSuggestion({
         ...editingSuggestion,
-        data: { ...editingSuggestion.data, description }
+        data: { ...editingSuggestion.data, description, tagsInput: tags ? tags.join(', ') : '' }
       });
     } catch (e) {
       console.error(e);
@@ -192,6 +194,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
     createAccountMutation.mutate({
       name: pendingNewAccount.name,
       description: pendingNewAccount.description,
+      tags: pendingNewAccount.tagsInput ? pendingNewAccount.tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [],
       accountGroupId: pendingNewAccount.categoryId,
       accountType: pendingNewAccount.type as any,
       startingBalance: 0
@@ -237,6 +240,11 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
       prevIngestionRef.current = ingestion
     }
   }, [ingestion])
+
+  useEffect(() => {
+    setCreatedSuggestions(new Set())
+    setEditingSuggestion(null)
+  }, [ingestion?.id])
 
   const prevInitialDataStr = useRef<string | null>(null)
   const isOpenPrev = useRef<boolean>(false)
@@ -426,7 +434,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
     const finalVendor = vendor
 
     if (finalVendor && !dbVendors.some((v) => v.name.toLowerCase() === finalVendor.toLowerCase())) {
-      createVendorMutation.mutate(finalVendor)
+      createVendorMutation.mutate({ name: finalVendor })
     }
 
     const entries: LedgerEntry[] = []
@@ -479,7 +487,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
       // Do NOT return here. We want execution to continue and create the immediate transaction!
     }
 
-      if (ingestionId) {
+    if (ingestionId) {
       confirmIngestionMutation.mutate({
         id: ingestionId,
         userConfirmed: {
@@ -516,6 +524,31 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
 
     mutation.mutate(transaction, {
       onSuccess: () => {
+        if (initialData && ingestionId === undefined && ingestion) {
+          const updatedUserConfirmed = {
+            ...(ingestion.user_confirmed || {}),
+            vendor: type === 'Transfer' ? null : (finalVendor || null),
+            amount: parsedTotal,
+            transaction_type: type,
+            debit_account_id: type === 'Transfer' ? toAccountId : (splits[0]?.subCategoryId || null),
+            credit_account_id: sourceAccountId,
+            notes: note || null,
+            user_why: userWhy || null,
+            date: dayjs(date).toISOString()
+          }
+
+          // Only learn if the userWhy or core details changed (rudimentary check by stringifying)
+          const currentStringified = JSON.stringify(ingestion.user_confirmed || {})
+          const updatedStringified = JSON.stringify(updatedUserConfirmed)
+
+          if (currentStringified !== updatedStringified) {
+            learnIngestionMutation.mutate({
+              id: ingestion.id,
+              userConfirmed: updatedUserConfirmed
+            })
+          }
+        }
+
         onSave?.(dayjs(date).toISOString())
         if (submitTypeRef.current === 'more') {
           setTotalAmount('')
@@ -533,7 +566,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
         }
       },
     })
-  }, [mode, date, journalLines, totalAmount, sourceAccountId, type, toAccountId, splits, vendor, dbVendors, note, userWhy, initialData, ingestionId, createTxMutation, updateTxMutation, createVendorMutation, resetForm, onClose, onSave, isRecurring, frequency, maxOccurrences, createRecurringTxMutation, confirmIngestionMutation])
+  }, [mode, date, journalLines, totalAmount, sourceAccountId, type, toAccountId, splits, vendor, dbVendors, note, userWhy, initialData, ingestionId, createTxMutation, updateTxMutation, createVendorMutation, resetForm, onClose, onSave, isRecurring, frequency, maxOccurrences, createRecurringTxMutation, confirmIngestionMutation, learnIngestionMutation, ingestion])
 
   if (!isOpen) return null
 
@@ -742,7 +775,8 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                                     categoryId: split.categoryId,
                                     type,
                                     splitId: split.id,
-                                    description: ''
+                                    description: '',
+                                    tagsInput: ''
                                   })
                                 }}
                                 placeholder="Select Sub-Category..."
@@ -867,7 +901,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                     if (ingestion) updateIngestionVendorMutation.mutate({ id: ingestion.id, vendor: val })
                   }}
                   onCreate={(val) => {
-                    createVendorMutation.mutate(val, {
+                    createVendorMutation.mutate({ name: val }, {
                       onSuccess: () => {
                         setVendor(val)
                         if (ingestion) updateIngestionVendorMutation.mutate({ id: ingestion.id, vendor: val })
@@ -1032,7 +1066,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                     )}
                   </div>
 
-                  {ingestion.ai_parsed.vendor && !ingestion.ai_parsed.vendor_matched && !dbVendors.some(v => v.name.toLowerCase() === ingestion.ai_parsed.vendor?.toLowerCase()) && (
+                  {ingestion.ai_parsed.vendor && ingestionId && !ingestion.ai_parsed.vendor_matched && !dbVendors.some(v => v.name.toLowerCase() === ingestion.ai_parsed.vendor?.toLowerCase()) && (
                     <div className="flex flex-col gap-1.5 p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 rounded-xl mt-2">
                       <div className="flex justify-between items-start">
                         <div className="flex flex-col gap-0.5 flex-1 pr-2">
@@ -1046,7 +1080,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                         <div className="flex flex-col gap-1 shrink-0">
                           <button
                             onClick={() => {
-                              createVendorMutation.mutate(ingestion.ai_parsed.vendor!, {
+                              createVendorMutation.mutate({ name: ingestion.ai_parsed.vendor! }, {
                                 onSuccess: () => {
                                   setVendor(ingestion.ai_parsed.vendor!)
                                   updateIngestionVendorMutation.mutate({ id: ingestion.id, vendor: ingestion.ai_parsed.vendor! })
@@ -1063,14 +1097,17 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                     </div>
                   )}
 
-                  {ingestion.ai_parsed.suggested_account_creation && ingestion.ai_parsed.suggested_account_creation.length > 0 && (
+                  {ingestion.ai_parsed.suggested_account_creation && ingestionId && ingestion.ai_parsed.suggested_account_creation.length > 0 && (
                     <div className="flex flex-col gap-2 mt-2">
                       {ingestion.ai_parsed.suggested_account_creation.map((suggestion, idx) => {
                         const isEditing = editingSuggestion?.idx === idx
+                        const targetGroup = accountGroups.find(g => g.name.toLowerCase() === suggestion.account_group.toLowerCase())
+                        const isCreated = createdSuggestions.has(idx) || (targetGroup && accounts.some(a => a.name.toLowerCase() === suggestion.name.toLowerCase() && a.accountGroupId === targetGroup.id))
+
                         return (
                           <div key={idx} className="flex flex-col gap-1.5 p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 rounded-xl">
                             <div className="flex justify-between items-start">
-                              <div className="flex flex-col gap-0.5 flex-1 prf-2">
+                              <div className="flex flex-col gap-0.5 flex-1 pr-2">
                                 <span className="text-blue-500 uppercase font-semibold text-[9px] flex items-center gap-1">
                                   <Sparkles className="w-2.5 h-2.5" /> Suggested Account Creation
                                 </span>
@@ -1097,7 +1134,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                                     </div>
                                     <select
                                       value={editingSuggestion.data.type}
-                                      onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, type: e.target.value}})}
+                                      onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, type: e.target.value } })}
                                       className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                                     >
                                       {['Cash', 'Bank', 'CreditCard', 'Investment', 'Asset', 'Liability', 'Equity', 'Income', 'Expense', 'Adjustment'].map(t => (
@@ -1123,11 +1160,17 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                                         className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white w-full"
                                         placeholder="Description (optional)"
                                       />
+                                      <input
+                                        value={editingSuggestion.data.tagsInput || ''}
+                                        onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, tagsInput: e.target.value } })}
+                                        className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white w-full mt-1"
+                                        placeholder="Tags (comma separated)"
+                                      />
                                     </div>
                                   </div>
                                 ) : (
                                   <span className="text-slate-700 dark:text-slate-300 font-medium text-[11px]">
-                                    {suggestion.account_group} - {suggestion.name}
+                                    <span className="text-[9px] uppercase font-bold text-slate-400 dark:text-slate-500">{suggestion.type}</span> &bull; {suggestion.account_group} - {suggestion.name}
                                   </span>
                                 )}
                               </div>
@@ -1136,7 +1179,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                                   <>
                                     <button
                                       type="button"
-                                      onClick={() => handleCreateSuggestedAccount(editingSuggestion.data)}
+                                      onClick={() => handleCreateSuggestedAccount(editingSuggestion.data, idx)}
                                       disabled={isCreatingAccount || !editingSuggestion.data.name || !editingSuggestion.data.account_group}
                                       className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
                                     >
@@ -1150,11 +1193,15 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                                       <X className="w-3 h-3" /> Cancel
                                     </button>
                                   </>
+                                ) : isCreated ? (
+                                  <div className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 border border-green-200 dark:border-green-800/50">
+                                    <Check className="w-3 h-3" /> Created
+                                  </div>
                                 ) : (
                                   <>
                                     <button
                                       type="button"
-                                      onClick={() => handleCreateSuggestedAccount(suggestion as any)}
+                                      onClick={() => handleCreateSuggestedAccount(suggestion as any, idx)}
                                       disabled={isCreatingAccount}
                                       className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
                                     >
@@ -1162,7 +1209,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => setEditingSuggestion({ idx, data: { name: suggestion.name, account_group: suggestion.account_group, type: suggestion.type, description: (suggestion as any).description || '' } })}
+                                      onClick={() => setEditingSuggestion({ idx, data: { name: suggestion.name, account_group: suggestion.account_group, type: suggestion.type, description: (suggestion as any).description || '', tagsInput: (suggestion as any).tags ? (suggestion as any).tags.join(', ') : '' } })}
                                       disabled={isCreatingAccount}
                                       className="bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
                                     >
@@ -1202,7 +1249,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setPendingNewAccount(null)} />
           <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm p-5 flex flex-col gap-4 border border-slate-200 dark:border-slate-800 animate-slide-up">
             <h3 className="text-lg font-bold text-slate-900 dark:text-slate-50">New Account Details</h3>
-            
+
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Account Name</label>
@@ -1232,6 +1279,17 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                   placeholder="e.g. For daily expenses"
                   value={pendingNewAccount.description}
                   onChange={(e) => setPendingNewAccount({ ...pendingNewAccount, description: e.target.value })}
+                  className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tags (comma separated)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. food, grab"
+                  value={pendingNewAccount.tagsInput}
+                  onChange={(e) => setPendingNewAccount({ ...pendingNewAccount, tagsInput: e.target.value })}
                   className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full"
                 />
               </div>

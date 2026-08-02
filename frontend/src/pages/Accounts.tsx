@@ -32,7 +32,9 @@ export default function Accounts() {
     accountType: 'Bank',
     creditCardCycleStartDay: null,
     creditCardPaymentDueDay: null,
+    tags: [],
   })
+  const [tagsInput, setTagsInput] = useState('')
   const [deleteCandidate, setDeleteCandidate] = useState<{ id: string, name: string } | null>(null)
 
   const handleCreateGroup = (e: React.FormEvent) => {
@@ -49,13 +51,16 @@ export default function Accounts() {
     const context = newAccount.description || ""
     
     try {
-      const { description } = await generateDescriptionMutation.mutateAsync({
+      const { description, tags } = await generateDescriptionMutation.mutateAsync({
         name: newAccount.name,
         type: newAccount.accountType as string,
         groupName: groupName,
         context: context
       })
-      setNewAccount({ ...newAccount, description })
+      setNewAccount({ ...newAccount, description, tags })
+      if (tags && tags.length > 0) {
+        setTagsInput(tags.join(', '))
+      }
     } catch (e) {
       console.error(e)
       alert("Failed to generate description.")
@@ -65,7 +70,11 @@ export default function Accounts() {
   const handleCreateAccount = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newAccount.name.trim() || !newAccount.accountGroupId) return
-    createAccountMutation.mutate(newAccount, {
+    const finalAccount = { 
+        ...newAccount, 
+        tags: tagsInput.split(',').map(t => t.trim()).filter(Boolean) 
+    }
+    createAccountMutation.mutate(finalAccount, {
       onSuccess: () => {
         setShowAddAccount(false)
         setNewAccount({
@@ -76,7 +85,9 @@ export default function Accounts() {
           accountType: 'Bank',
           creditCardCycleStartDay: null,
           creditCardPaymentDueDay: null,
+          tags: [],
         })
+        setTagsInput('')
       },
     })
   }
@@ -187,6 +198,17 @@ export default function Accounts() {
                 />
               </div>
 
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-slate-400">Tags (comma separated)</span>
+                <input
+                  type="text"
+                  placeholder="e.g. food, grab, daily"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                  className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
+                />
+              </div>
+
               <select
                 value={newAccount.accountGroupId}
                 onChange={(e) => {
@@ -284,6 +306,15 @@ export default function Accounts() {
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate max-w-[200px]">
                                 {acc.description}
                               </p>
+                            )}
+                            {acc.tags && acc.tags.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {acc.tags.map((tag, i) => (
+                                  <span key={i} className="px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-medium leading-none">
+                                    {tag}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                           </div>
                         </div>

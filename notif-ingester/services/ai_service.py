@@ -28,16 +28,17 @@ Your task:
 2. Formulate a proposal. Is this a missing explicit rule for the RUNBOOK? Or is an account description ambiguous and needs updating?
 3. Provide a friendly conversational message explaining your proposed changes. Ask for clarification if the user's reason is ambiguous.
 4. Output the COMPLETE updated RUNBOOK.md text.
-5. If any account descriptions should be updated to help AI classify better, provide a list of updates.
+5. If any account descriptions or tags should be updated to help AI classify better, provide a list of updates.
 
 Return ONLY valid JSON matching this schema:
 {{
   "message": "Your conversational explanation to the user",
+  "questions": ["Any specific questions or clarifications formatted as an array of strings, or empty array"],
   "proposed_runbook": "The full markdown text of the updated runbook",
   "account_description_updates": [
     {{
       "account_id": "string",
-      "new_description": "string"
+      "new_tags": ["string"]
     }}
   ]
 }}
@@ -56,8 +57,15 @@ Accounts context:
 {accounts}
 ---
 
-Original corrections that triggered this review:
-{corrections}
+Proposed RUNBOOK.md (from previous turn):
+---
+{proposed_runbook}
+---
+
+Proposed Account Description Updates (from previous turn):
+---
+{proposed_account_updates}
+---
 
 Chat History:
 {chat_history}
@@ -65,16 +73,18 @@ Chat History:
 User's latest message: {user_message}
 
 Your task:
-Respond to the user's latest message, adjust the proposed runbook or account descriptions based on their feedback, and return the structured JSON.
+7. CRITICAL: Do NOT alter the `account_description_updates` from their previous state UNLESS the user explicitly comments on them or requests a change in their latest message.
 
 Return ONLY valid JSON matching this schema:
 {{
   "message": "Your conversational response",
+  "questions": ["Any specific questions or clarifications formatted as an array of strings, or empty array"],
   "proposed_runbook": "The full markdown text of the updated runbook",
   "account_description_updates": [
     {{
       "account_id": "string",
-      "new_description": "string"
+      "new_description": "string",
+      "new_tags": ["string"]
     }}
   ]
 }}
@@ -107,7 +117,7 @@ Return ONLY valid JSON matching this schema:
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
   "debit_account_id": string (account id from the list above),
   "credit_account_id": string (account id from the list above),
-  "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "description": "string", "reason": "string (Explain the financial purpose of this account AND why you chose this specific name and group. NEVER mention that it is because an account is missing or not found. Focus purely on what financial activity this account tracks and why it is named this way, e.g., 'To track dining expenses under the Food group'.)"}}] (empty array if no accounts need to be created, or if not financial),
+  "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "description": "string", "tags": ["string (3-5 concise tags representing what this account tracks, e.g. 'grab', 'uber', 'taxi')"], "reason": "string (Explain the financial purpose of this account AND why you chose this specific name and group. NEVER mention that it is because an account is missing or not found. Focus purely on what financial activity this account tracks and why it is named this way, e.g., 'To track dining expenses under the Food group'.)"}}] (empty array if no accounts need to be created, or if not financial),
   "notes": string,
   "summary": string (A concise, human-readable summary or description of this transaction based on the context. Do NOT use the raw notification text, null if not financial),
   "confidence": number (0.0-1.0),
@@ -124,6 +134,7 @@ Rules:
 - For transaction_type: "Expense" means money leaving the user's personal accounts (e.g. purchases, payments to external parties for services/goods). "Income" means money entering the user's personal accounts (e.g. salary, deposits from external parties). "Transfer" means money moving between Asset, Liability, Bank, or Investment accounts. This includes moving money between the user's own accounts (e.g. Bank to Bank, Bank to EWallet/Asset, paying a Credit Card) AND receiving/sending money that affects a Liability/Receivable (e.g. receiving a loan payment from someone else).
 - For Expense: debit = expense account, credit = source bank/cash account
 - For Income: debit = bank account, credit = income account
+- For Transfer: debit = receiving asset/bank account, credit = sending asset/bank account
 - Entries must balance (debit amount positive, credit amount negative)
 - Vendor Matching: You are provided with a list of "Existing Vendors". Prefer an exact match from this list if the business/person matches. If not found in the list, you may guess or extract a new vendor name.
 - Account IDs: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`.
@@ -180,29 +191,30 @@ class AiService:
             
             # Determine header/label names dynamically based on the account type value
             if 'expense' in type_name_lower:
-                header = "Expense\nid | Category | Name | Description"
+                header = "Expense\nid | Category | Name | Tags"
             elif 'income' in type_name_lower:
-                header = "Income\nid | Category | Name | Description"
+                header = "Income\nid | Category | Name | Tags"
             elif 'creditcard' in type_name_lower or 'credit card' in type_name_lower:
-                header = "Credit Card\nid | Group | Name | Description"
+                header = "Credit Card\nid | Group | Name | Tags"
             elif 'asset' in type_name_lower:
-                header = "Asset\nid | Group | Name | Description"
+                header = "Asset\nid | Group | Name | Tags"
             else:
-                header = f"{type_name}\nid | Group | Name | Description"
+                header = f"{type_name}\nid | Group | Name | Tags"
                 
             lines = []
             for acc in acc_list:
                 acc_id = acc.get('id') or ''
                 name = acc.get('name') or ''
-                desc = acc.get('description') or ''
+                tags = acc.get('tags') or []
+                tags_str = ", ".join(tags)
                 group_info = acc.get('accountGroupName') or acc.get('accountGroupId') or "N/A"
-                lines.append(f"{acc_id} | {group_info} | {name} | {desc}")
+                lines.append(f"{acc_id} | {group_info} | {name} | {tags_str}")
                 
             sections.append(f"{header}\n" + "\n".join(lines))
             
         return "\n\n".join(sections)
 
-    async def generate_account_description_async(self, account_name: str, account_type: str, group_name: str, accounts: list[dict], context: str = "", ai_debug: bool = False) -> str:
+    async def generate_account_description_async(self, account_name: str, account_type: str, group_name: str, accounts: list[dict], context: str = "", ai_debug: bool = False) -> dict:
         """
         Generates a unique and unambiguous description for a new or existing account.
         """
@@ -220,8 +232,12 @@ Account Group: {group_name}{context_section}
 Here are the existing accounts in the system:
 {formatted_accounts}
 
-Please write a 1-2 sentence description for this account that clearly distinguishes it from the existing accounts. If there are similar accounts, explain exactly what THIS account should be used for vs the others.
-Return ONLY the description text, nothing else. Don't include redundant text such as the name and type and group. 
+Please write a 1-2 sentence description for this account that clearly distinguishes it from the existing accounts. Also provide 3-5 concise tags (e.g. 'grab', 'uber', 'taxi') that represent what this account is for.
+Return ONLY valid JSON matching this schema:
+{{
+  "description": "string",
+  "tags": ["string"]
+}}
 """
         try:
             from google.genai import types
@@ -244,11 +260,11 @@ Return ONLY the description text, nothing else. Don't include redundant text suc
                     f.write("\n\n=== RESPONSE ===\n")
                     f.write(response.text)
 
-            return response.text.strip()
+            return json.loads(response.text)
         except Exception as e:
             import logging
             logging.error(f"Error generating description: {e}")
-            return f"{account_name} ({account_type} - {group_name})"
+            return {"description": f"{account_name} ({account_type} - {group_name})", "tags": []}
 
     def get_default_runbook_content(self) -> str:
         # Load the runbook from the root of the project
@@ -260,20 +276,7 @@ Return ONLY the description text, nothing else. Don't include redundant text suc
             return "No runbook rules available."
 
     async def is_financial_transaction_async(self, hook: PhoneHookMessage) -> bool:
-        pkg = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_sender") or ""
-        app_name = pkg
-        if pkg:
-            pkg_lower = pkg.lower()
-            if "gcash" in pkg_lower:
-                app_name = "GCash"
-            elif "indivara" in pkg_lower:
-                app_name = "BPI / indivara (Vybe)"
-            elif "bpi" in pkg_lower:
-                app_name = "BPI"
-            elif "maya" in pkg_lower:
-                app_name = "Maya"
-            else:
-                app_name = pkg.split('.')[-1] if '.' in pkg else pkg
+        app_name = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_rcv_sender") or hook.raw_payload.get("sms_sender") or ""
 
         prompt = IS_FINANCIAL_PROMPT.format(
             raw_msg=hook.raw_msg,
@@ -308,20 +311,7 @@ Return ONLY the description text, nothing else. Don't include redundant text suc
         vendors_text = "\n".join([f"- {v}" for v in vendors]) if vendors else "No existing vendors yet."
 
         # Resolve a clean app name from the hook data
-        pkg = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_sender") or ""
-        app_name = pkg
-        if pkg:
-            pkg_lower = pkg.lower()
-            if "gcash" in pkg_lower:
-                app_name = "GCash"
-            elif "indivara" in pkg_lower:
-                app_name = "BPI / indivara (Vybe)"
-            elif "bpi" in pkg_lower:
-                app_name = "BPI"
-            elif "maya" in pkg_lower:
-                app_name = "Maya"
-            else:
-                app_name = pkg.split('.')[-1] if '.' in pkg else pkg
+        app_name = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_rcv_sender") or hook.raw_payload.get("sms_sender") or ""
 
         prompt = CLASSIFICATION_PROMPT.format(
             runbook_content=runbook_content,
@@ -403,9 +393,11 @@ Return ONLY the description text, nothing else. Don't include redundant text suc
         self,
         chat_history: list[dict],
         user_message: str,
-        current_runbook: str,
+        proposed_runbook: str,
+        proposed_account_updates: list[dict],
         corrections: list[dict],
-        accounts: list[dict]
+        accounts: list[dict],
+        current_runbook: str
     ) -> dict:
         # Strip out bulky fields like raw_payload and top_matches
         clean_corrections = []
@@ -419,9 +411,12 @@ Return ONLY the description text, nothing else. Don't include redundant text suc
         corrections_text = json.dumps(clean_corrections, indent=2)
         accounts_text = self._format_accounts(accounts)
         history_text = json.dumps(chat_history, indent=2)
+        proposed_updates_text = json.dumps(proposed_account_updates, indent=2)
 
         prompt = RUNBOOK_CHAT_PROMPT.format(
             current_runbook=current_runbook,
+            proposed_runbook=proposed_runbook,
+            proposed_account_updates=proposed_updates_text,
             accounts=accounts_text,
             corrections=corrections_text,
             chat_history=history_text,

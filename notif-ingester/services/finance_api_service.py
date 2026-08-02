@@ -49,6 +49,7 @@ class FinanceApiService:
                 "id": item.get("id"),
                 "name": item.get("Name", item.get("name")),
                 "description": item.get("Description", item.get("description")),
+                "tags": item.get("Tags", []),
                 "accountType": item.get("AccountType", item.get("accountType")),
                 "accountGroupId": g_id,
                 "accountGroupName": group_map.get(g_id) if g_id else None
@@ -393,13 +394,16 @@ class FinanceApiService:
         for update in updates:
             account_id = update.get("account_id")
             new_description = update.get("new_description")
-            if not account_id or not new_description:
+            if not account_id:
                 continue
                 
             try:
                 item = await container.read_item(item=account_id, partition_key=user_id)
-                item["Description"] = new_description
-                item["description"] = new_description # Ensure both cases just in case
+                if new_description is not None:
+                    item["Description"] = new_description
+                    item["description"] = new_description # Ensure both cases just in case
+                if "new_tags" in update:
+                    item["Tags"] = update.get("new_tags", [])
                 await container.upsert_item(item)
             except Exception as e:
                 import logging
