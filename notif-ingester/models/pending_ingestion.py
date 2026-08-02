@@ -2,11 +2,18 @@
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from uuid_extensions import uuid7
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
+
+class SuggestedVendor(BaseModel):
+    name: Optional[str] = None
+    tags: Optional[List[str]] = None
+    type: Optional[Literal["Individual", "Business", "Internal"]] = None
+    is_created: Optional[bool] = False
 
 class AiParsedData(BaseModel):
     is_financial: Optional[bool] = True
     vendor: Optional[str] = None
+    vendor_type: Optional[str] = None
     amount: Optional[float] = None
     transaction_type: Optional[str] = None
     debit_account_id: Optional[str] = None
@@ -26,6 +33,7 @@ class AiParsedData(BaseModel):
     is_auto_confirmed: Optional[bool] = False
     ingestion_id: Optional[str] = None
     date: Optional[datetime] = None
+    suggested_vendor: Optional[SuggestedVendor] = None
 
 class SuggestedAccountCreation(BaseModel):
     type: Optional[str] = None

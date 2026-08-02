@@ -14,13 +14,25 @@ namespace FinanceApp.Services
 
         public async Task<IEnumerable<Vendor>> GetVendorsAsync(string userId)
         {
-            return await _repository.GetVendorsAsync(userId);
+            var vendors = await _repository.GetVendorsAsync(userId);
+            foreach (var v in vendors)
+            {
+                if (v.Tags == null)
+                {
+                    v.Tags = new List<string>();
+                }
+            }
+            return vendors;
+        }
+
+        public async Task<Vendor?> GetVendorByNameAsync(string userId, string name)
+        {
+            return await _repository.GetVendorByNameAsync(userId, name);
         }
 
         public async Task<Vendor> CreateVendorAsync(string userId, string name)
         {
-            var vendors = await _repository.GetVendorsAsync(userId);
-            var existing = vendors.FirstOrDefault(v => v.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+            var existing = await GetVendorByNameAsync(userId, name);
             if (existing != null)
             {
                 return existing;
@@ -29,7 +41,8 @@ namespace FinanceApp.Services
             var vendor = new Vendor
             {
                 UserId = userId,
-                Name = name.Trim()
+                Name = name.Trim(),
+                Tags = new List<string>()
             };
             await _repository.AddVendorAsync(vendor);
             return vendor;

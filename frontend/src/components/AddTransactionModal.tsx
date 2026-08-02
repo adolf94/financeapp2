@@ -10,8 +10,19 @@ import { uuidv7 } from 'uuidv7'
 import dayjs from 'dayjs'
 import Combobox from './ui/Combobox'
 import CalculatorInput from './ui/CalculatorInput'
+import TagInput from './ui/TagInput'
 
 const generateId = () => uuidv7()
+
+function hasMasks(name?: string | null): boolean {
+  if (!name) return false
+  const lower = name.toLowerCase()
+  if (name.includes('*')) return true
+  if (lower.includes('xxx')) return true
+  if (/x{2,}/.test(lower)) return true
+  if (/\d{4,}/.test(name)) return true
+  return false
+}
 
 interface SplitLine {
   id: string
@@ -66,7 +77,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
     type: string;
     splitId: string;
     description: string;
-    tagsInput: string;
+    tags: string[];
   } | null>(null)
 
   const getIngestionAppName = (ing: PendingIngestion) => {
@@ -119,10 +130,12 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
   const [maxOccurrences, setMaxOccurrences] = useState('')
 
   const [isCreatingAccount, setIsCreatingAccount] = useState(false)
-  const [editingSuggestion, setEditingSuggestion] = useState<{ idx: number, data: { name: string, account_group: string, type: string, description: string, tagsInput: string } } | null>(null)
+  const [editingSuggestion, setEditingSuggestion] = useState<{ idx: number, data: { name: string, account_group: string, type: string, description: string, tags: string[] } } | null>(null)
   const [createdSuggestions, setCreatedSuggestions] = useState<Set<number>>(new Set())
+  const [suggestedVendorType, setSuggestedVendorType] = useState<'Individual' | 'Business'>('Business')
+  const [suggestedVendorTags, setSuggestedVendorTags] = useState('')
 
-  const handleCreateSuggestedAccount = async (data: { type: string, account_group: string, name: string, description?: string, tagsInput?: string }, idx?: number) => {
+  const handleCreateSuggestedAccount = async (data: { type: string, account_group: string, name: string, description?: string, tags?: string[] }, idx?: number) => {
     setIsCreatingAccount(true)
     try {
       let targetGroupId = accountGroups.find(g => g.name === data.account_group && g.accountType === data.type)?.id
@@ -132,14 +145,28 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
         targetGroupId = newGroup.id
       }
 
-      await createAccountMutation.mutateAsync({
+      const newAccount = await createAccountMutation.mutateAsync({
         name: data.name,
         description: data.description,
-        tags: data.tagsInput ? data.tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [],
+        tags: data.tags || [],
         accountGroupId: targetGroupId as string,
         startingBalance: 0,
         accountType: data.type as any,
       })
+
+      if (newAccount && newAccount.id) {
+        if (data.type === 'Expense' || data.type === 'Income') {
+          setSplits([{
+            id: splits[0]?.id || generateId(),
+            categoryId: targetGroupId || '',
+            subCategoryId: newAccount.id,
+            amount: splits[0]?.amount || ''
+          }])
+        } else {
+          setSourceAccountId(newAccount.id)
+        }
+      }
+
       if (idx !== undefined) {
         setCreatedSuggestions(prev => new Set(prev).add(idx))
       }
@@ -163,26 +190,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
         groupName: groupName,
         context: pendingNewAccount.description
       });
-      setPendingNewAccount({ ...pendingNewAccount, description, tagsInput: tags ? tags.join(', ') : '' });
-    } catch (e) {
-      console.error(e);
-      alert("Failed to generate description.");
-    }
-  };
-
-  const handleGenerateSuggestionDescription = async () => {
-    if (!editingSuggestion || !editingSuggestion.data.name || !ingestion) return;
-    try {
-      const { description, tags } = await generateDescriptionMutation.mutateAsync({
-        name: editingSuggestion.data.name,
-        type: editingSuggestion.data.type || '',
-        groupName: editingSuggestion.data.account_group,
-        context: ingestion.raw_msg
-      });
-      setEditingSuggestion({
-        ...editingSuggestion,
-        data: { ...editingSuggestion.data, description, tagsInput: tags ? tags.join(', ') : '' }
-      });
+      setPendingNewAccount({ ...pendingNewAccount, description, tags: tags || [] });
     } catch (e) {
       console.error(e);
       alert("Failed to generate description.");
@@ -194,7 +202,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
     createAccountMutation.mutate({
       name: pendingNewAccount.name,
       description: pendingNewAccount.description,
-      tags: pendingNewAccount.tagsInput ? pendingNewAccount.tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [],
+      tags: pendingNewAccount.tags || [],
       accountGroupId: pendingNewAccount.categoryId,
       accountType: pendingNewAccount.type as any,
       startingBalance: 0
@@ -245,6 +253,32 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
     setCreatedSuggestions(new Set())
     setEditingSuggestion(null)
   }, [ingestion?.id])
+
+  useEffect(() => {
+    if (ingestion?.ai_parsed?.suggested_vendor) {
+      const type = ingestion.ai_parsed.suggested_vendor.type;
+      if (type === 'Individual' || type === 'Business') {
+        setSuggestedVendorType(type);
+      } else {
+        setSuggestedVendorType('Business');
+      }
+      const tags = ingestion.ai_parsed.suggested_vendor.tags || [];
+      setSuggestedVendorTags(tags.join(', '));
+    } else {
+      setSuggestedVendorType('Business');
+      setSuggestedVendorTags('');
+    }
+  }, [ingestion?.id, ingestion?.ai_parsed?.suggested_vendor])
+
+  useEffect(() => {
+    if (isOpen && ingestion?.ai_parsed?.vendor) {
+      const vendorName = ingestion.ai_parsed.vendor;
+      const isCreated = ingestion.ai_parsed.vendor_matched || ingestion.ai_parsed.suggested_vendor?.is_created;
+      if (isCreated && !dbVendors.some(v => v.name.toLowerCase() === vendorName.toLowerCase())) {
+        queryClient.invalidateQueries({ queryKey: ['vendors'] });
+      }
+    }
+  }, [isOpen, ingestion?.ai_parsed?.vendor, ingestion?.ai_parsed?.vendor_matched, ingestion?.ai_parsed?.suggested_vendor?.is_created, dbVendors, queryClient])
 
   const prevInitialDataStr = useRef<string | null>(null)
   const isOpenPrev = useRef<boolean>(false)
@@ -433,6 +467,11 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
 
     const finalVendor = vendor
 
+    if (finalVendor && hasMasks(finalVendor)) {
+      alert("Vendor name contains mask characters (*, xxx, or related). Please select or create a clean vendor name.");
+      return;
+    }
+
     if (finalVendor && !dbVendors.some((v) => v.name.toLowerCase() === finalVendor.toLowerCase())) {
       createVendorMutation.mutate({ name: finalVendor })
     }
@@ -494,8 +533,8 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
           vendor: finalVendor || null,
           amount: parsedTotal,
           transaction_type: type,
-          debit_account_id: type === 'Transfer' ? toAccountId : splits[0].subCategoryId,
-          credit_account_id: sourceAccountId,
+          debit_account_id: type === 'Transfer' ? toAccountId : (type === 'Income' ? sourceAccountId : splits[0].subCategoryId),
+          credit_account_id: type === 'Transfer' ? sourceAccountId : (type === 'Income' ? splits[0].subCategoryId : sourceAccountId),
           notes: note || null,
           user_why: userWhy || null,
           date: dayjs(date).toISOString()
@@ -530,8 +569,8 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
             vendor: type === 'Transfer' ? null : (finalVendor || null),
             amount: parsedTotal,
             transaction_type: type,
-            debit_account_id: type === 'Transfer' ? toAccountId : (splits[0]?.subCategoryId || null),
-            credit_account_id: sourceAccountId,
+            debit_account_id: type === 'Transfer' ? toAccountId : (type === 'Income' ? sourceAccountId : (splits[0]?.subCategoryId || null)),
+            credit_account_id: type === 'Transfer' ? sourceAccountId : (type === 'Income' ? (splits[0]?.subCategoryId || null) : sourceAccountId),
             notes: note || null,
             user_why: userWhy || null,
             date: dayjs(date).toISOString()
@@ -592,7 +631,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
               title="Refresh accounts"
               className="p-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4" strokeWidth={1.5} />
             </button>
             {ingestion && (
               <button
@@ -603,14 +642,14 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                 className={`p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 ${reclassifyMutation.isPending ? 'animate-spin' : ''
                   }`}
               >
-                <RotateCcw className="w-4 h-4" />
+                <RotateCcw className="w-4 h-4" strokeWidth={1.5} />
               </button>
             )}
             <button
               onClick={onClose}
               className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5" strokeWidth={1.5} />
             </button>
           </div>
         </div>
@@ -680,8 +719,9 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
 
                   {/* Source Account (Payment Account) */}
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{type === 'Income' ? 'Deposit To' : 'Pay From'}</label>
+                    <label htmlFor="source-account-select" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{type === 'Income' ? 'Deposit To' : 'Pay From'}</label>
                     <select
+                      id="source-account-select"
                       value={sourceAccountId}
                       onChange={(e) => setSourceAccountId(e.target.value)}
                       required
@@ -693,7 +733,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                         const groupAccounts = paymentAccounts.filter(a => a.accountGroupId === groupId)
                         if (!group || groupAccounts.length === 0) return null
                         return (
-                          <optgroup key={group.id} label={group.name}>
+                           <optgroup key={group.id} label={group.name}>
                             {groupAccounts.map(a => (
                               <option key={a.id} value={a.id}>{a.name}</option>
                             ))}
@@ -706,8 +746,9 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                   {/* Destination Account (Only for Transfer) */}
                   {type === 'Transfer' && (
                     <div className="flex flex-col gap-1">
-                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Transfer To</label>
+                      <label htmlFor="destination-account-select" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Transfer To</label>
                       <select
+                        id="destination-account-select"
                         value={toAccountId}
                         onChange={(e) => setToAccountId(e.target.value)}
                         required
@@ -776,7 +817,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                                     type,
                                     splitId: split.id,
                                     description: '',
-                                    tagsInput: ''
+                                    tags: []
                                   })
                                 }}
                                 placeholder="Select Sub-Category..."
@@ -859,9 +900,9 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                           <button
                             type="button"
                             onClick={() => removeJournalLine(line.id)}
-                            className="p-2 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                            className="p-1 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                           </button>
                         )}
                       </div>
@@ -873,7 +914,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                     onClick={addJournalLine}
                     className="mt-1 w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg flex items-center justify-center gap-2 text-sm font-semibold transition-colors cursor-pointer border border-dashed border-slate-300 dark:border-slate-600"
                   >
-                    <Plus className="w-4 h-4" /> Add Line
+                    <Plus className="w-4 h-4" strokeWidth={1.5} /> Add Line
                   </button>
 
                   <div className="flex justify-between items-center text-sm font-medium mt-2 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
@@ -901,7 +942,8 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                     if (ingestion) updateIngestionVendorMutation.mutate({ id: ingestion.id, vendor: val })
                   }}
                   onCreate={(val) => {
-                    createVendorMutation.mutate({ name: val }, {
+                    const tags = suggestedVendorTags ? suggestedVendorTags.split(',').map(t => t.trim()).filter(Boolean) : []
+                    createVendorMutation.mutate({ name: val, type: suggestedVendorType, tags }, {
                       onSuccess: () => {
                         setVendor(val)
                         if (ingestion) updateIngestionVendorMutation.mutate({ id: ingestion.id, vendor: val })
@@ -913,8 +955,9 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</label>
+                  <label htmlFor="transaction-date-input" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</label>
                   <input
+                    id="transaction-date-input"
                     type="datetime-local"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
@@ -923,8 +966,9 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Note</label>
+                  <label htmlFor="transaction-note-textarea" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Note</label>
                   <textarea
+                    id="transaction-note-textarea"
                     placeholder="Note (optional)"
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
@@ -936,8 +980,9 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
 
               {ingestion && (
                 <div className="flex flex-col gap-1 mt-2">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Correction Reason / Notes (Why)</label>
+                  <label htmlFor="correction-reason-textarea" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Correction Reason / Notes (Why)</label>
                   <textarea
+                    id="correction-reason-textarea"
                     placeholder="Describe adjustments or rules to be set against the AI reasoning..."
                     value={userWhy}
                     onChange={(e) => setUserWhy(e.target.value)}
@@ -1021,44 +1066,45 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
 
           {/* Sidebar Review Column */}
           {ingestion && (
-            <div className="md:col-span-5 flex flex-col gap-4 md:sticky md:top-0 bg-slate-50/50 dark:bg-slate-900/30 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
-              <div className="flex justify-between items-center w-full font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[10px]">
+            <div className="md:col-span-5 flex flex-col gap-3 md:sticky md:top-0 bg-slate-100 dark:bg-slate-800/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <div className="flex justify-between items-center w-full font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">
                 <span>Notification Review</span>
                 <button
                   type="button"
                   onClick={() => setIsReviewOpen(!isReviewOpen)}
-                  className="text-blue-600 hover:text-blue-700 font-semibold cursor-pointer normal-case"
+                  className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-bold cursor-pointer normal-case text-[11px]"
+                  aria-expanded={isReviewOpen}
                 >
                   {isReviewOpen ? 'Collapse' : 'Expand'}
                 </button>
               </div>
 
               {isReviewOpen && (
-                <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-top-1">
-                  <div className="p-3 bg-blue-50/50 dark:bg-blue-950/10 border border-blue-100/50 dark:border-blue-900/30 rounded-xl">
-                    <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">Raw Msg</span>
-                    <p className="text-slate-700 dark:text-slate-350 italic mt-0.5 font-medium text-[11px]">"{ingestion.raw_msg}"</p>
+                <div className="flex flex-col gap-2.5 animate-in fade-in slide-in-from-top-1">
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800/60 rounded-xl">
+                    <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Raw Msg</span>
+                    <p className="text-slate-800 dark:text-slate-200 italic mt-0.5 font-semibold text-xs leading-snug">"{ingestion.raw_msg}"</p>
                   </div>
 
                   {/* Sender / Recipient / App metadata if present */}
-                  <div className="grid grid-cols-2 gap-3 p-3 bg-slate-100/50 dark:bg-slate-950/20 rounded-xl text-xs border border-slate-200/40 dark:border-slate-800/40">
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                     <div>
-                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-550 uppercase">Source App</span>
-                      <p className="text-slate-700 dark:text-slate-300 font-medium text-[11px] truncate">{getIngestionAppName(ingestion)}</p>
+                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Source App</span>
+                      <p className="text-slate-800 dark:text-slate-200 font-bold text-xs mt-0.5 truncate">{getIngestionAppName(ingestion)}</p>
                     </div>
                     {(ingestion.ai_parsed.sender_account_name || ingestion.ai_parsed.sender_account_number) && (
                       <div>
-                        <span className="text-[9px] font-bold text-slate-400 dark:text-slate-550 uppercase">Sender Acc</span>
-                        <p className="text-slate-700 dark:text-slate-300 font-medium text-[11px] truncate">
+                        <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Sender Acc</span>
+                        <p className="text-slate-800 dark:text-slate-200 font-bold text-xs mt-0.5 truncate">
                           {ingestion.ai_parsed.sender_account_name || 'N/A'}
                           {ingestion.ai_parsed.sender_account_number ? ` (${ingestion.ai_parsed.sender_account_number})` : ''}
                         </p>
                       </div>
                     )}
                     {(ingestion.ai_parsed.recipient_account_name || ingestion.ai_parsed.recipient_account_number) && (
-                      <div className="col-span-2 border-t border-slate-200/40 dark:border-slate-800/40 pt-2">
-                        <span className="text-[9px] font-bold text-slate-400 dark:text-slate-550 uppercase">Recipient Acc</span>
-                        <p className="text-slate-700 dark:text-slate-300 font-medium text-[11px] truncate">
+                      <div className="col-span-2 border-t border-slate-100 dark:border-slate-800 pt-2">
+                        <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Recipient Acc</span>
+                        <p className="text-slate-800 dark:text-slate-200 font-bold text-xs mt-0.5 truncate">
                           {ingestion.ai_parsed.recipient_account_name || 'N/A'}
                           {ingestion.ai_parsed.recipient_account_number ? ` (${ingestion.ai_parsed.recipient_account_number})` : ''}
                         </p>
@@ -1067,160 +1113,213 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                   </div>
 
                   {ingestion.ai_parsed.vendor && ingestionId && !ingestion.ai_parsed.vendor_matched && !dbVendors.some(v => v.name.toLowerCase() === ingestion.ai_parsed.vendor?.toLowerCase()) && (
-                    <div className="flex flex-col gap-1.5 p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 rounded-xl mt-2">
-                      <div className="flex justify-between items-start">
-                        <div className="flex flex-col gap-0.5 flex-1 pr-2">
-                          <span className="text-blue-500 uppercase font-semibold text-[9px] flex items-center gap-1">
-                            <Sparkles className="w-2.5 h-2.5" /> Suggested Vendor Creation
+                    <div key={`${ingestion.id}-suggested-vendor`} className="flex flex-col gap-2.5 p-3 bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800/60 rounded-xl">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-blue-600 dark:text-blue-400 uppercase tracking-wider font-bold text-[9px] flex items-center gap-1">
+                          <Sparkles className="w-3.5 h-3.5" strokeWidth={2} /> Suggested Vendor
+                        </span>
+                        <span className="text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 flex-wrap">
+                          {ingestion.ai_parsed.vendor}
+                          {ingestion.ai_parsed.suggested_vendor?.type === 'Individual' && (
+                            <span className="text-[10px] text-slate-500 font-bold" title="Individual">(I)</span>
+                          )}
+                          {ingestion.ai_parsed.suggested_vendor?.type === 'Business' && (
+                            <span className="text-[10px] text-slate-500 font-bold" title="Business">(B)</span>
+                          )}
+                        </span>
+                        {ingestion.ai_parsed.suggested_vendor?.tags && ingestion.ai_parsed.suggested_vendor.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {ingestion.ai_parsed.suggested_vendor.tags.map(tag => (
+                              <span key={tag} className="px-1.5 py-0.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md text-[10px] font-bold shadow-sm border border-slate-200 dark:border-slate-700">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2 mt-0.5">
+                        {hasMasks(ingestion.ai_parsed.vendor) ? (
+                          <span className="text-[10px] text-amber-500 font-medium">
+                            Name contains masks (please edit via form Vendor dropdown to add a clean vendor name)
                           </span>
-                          <span className="text-slate-700 dark:text-slate-300 font-medium text-[11px]">
-                            {ingestion.ai_parsed.vendor}
-                          </span>
-                        </div>
-                        <div className="flex flex-col gap-1 shrink-0">
-                          <button
-                            onClick={() => {
-                              createVendorMutation.mutate({ name: ingestion.ai_parsed.vendor! }, {
-                                onSuccess: () => {
-                                  setVendor(ingestion.ai_parsed.vendor!)
-                                  updateIngestionVendorMutation.mutate({ id: ingestion.id, vendor: ingestion.ai_parsed.vendor! })
-                                }
-                              })
-                            }}
-                            disabled={createVendorMutation.isPending}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
-                          >
-                            <Plus className="w-3 h-3" /> Create
-                          </button>
-                        </div>
+                        ) : (
+                          <>
+                            <div className="flex gap-2 items-center">
+                              <select
+                                value={suggestedVendorType}
+                                onChange={e => setSuggestedVendorType(e.target.value as any)}
+                                className="text-[10px] px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                                aria-label="Suggested Vendor Type"
+                              >
+                                <option value="Business">Business</option>
+                                <option value="Individual">Individual</option>
+                              </select>
+                              <input
+                                value={suggestedVendorTags}
+                                onChange={e => setSuggestedVendorTags(e.target.value)}
+                                className="flex-1 text-[10px] px-1.5 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                                placeholder="Tags (comma separated)"
+                                aria-label="Suggested Vendor Tags"
+                              />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                  const tags = suggestedVendorTags ? suggestedVendorTags.split(',').map(t => t.trim()).filter(Boolean) : []
+                                  createVendorMutation.mutate({ name: ingestion.ai_parsed.vendor!, type: suggestedVendorType, tags }, {
+                                    onSuccess: () => {
+                                      setVendor(ingestion.ai_parsed.vendor!)
+                                      updateIngestionVendorMutation.mutate({ id: ingestion.id, vendor: ingestion.ai_parsed.vendor! })
+                                    }
+                                  })
+                                }}
+                                disabled={createVendorMutation.isPending}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors shadow-sm disabled:opacity-50 w-full"
+                              >
+                                <Plus className="w-3.5 h-3.5" strokeWidth={2} /> Create Vendor
+                              </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   )}
 
                   {ingestion.ai_parsed.suggested_account_creation && ingestionId && ingestion.ai_parsed.suggested_account_creation.length > 0 && (
-                    <div className="flex flex-col gap-2 mt-2">
+                    <div className="flex flex-col gap-2 mt-1">
                       {ingestion.ai_parsed.suggested_account_creation.map((suggestion, idx) => {
                         const isEditing = editingSuggestion?.idx === idx
                         const targetGroup = accountGroups.find(g => g.name.toLowerCase() === suggestion.account_group.toLowerCase())
                         const isCreated = createdSuggestions.has(idx) || (targetGroup && accounts.some(a => a.name.toLowerCase() === suggestion.name.toLowerCase() && a.accountGroupId === targetGroup.id))
+                        const existingAccount = accounts.find(a => 
+                          a.name.toLowerCase() === suggestion.name.toLowerCase() && 
+                          targetGroup && a.accountGroupId === targetGroup.id
+                        )
+                        const isSelected = existingAccount && (
+                          (suggestion.type === 'Expense' || suggestion.type === 'Income')
+                            ? splits.some(s => s.subCategoryId === existingAccount.id)
+                            : (sourceAccountId === existingAccount.id || toAccountId === existingAccount.id)
+                        )
 
                         return (
-                          <div key={idx} className="flex flex-col gap-1.5 p-3 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100/50 dark:border-blue-900/30 rounded-xl">
-                            <div className="flex justify-between items-start">
-                              <div className="flex flex-col gap-0.5 flex-1 pr-2">
-                                <span className="text-blue-500 uppercase font-semibold text-[9px] flex items-center gap-1">
-                                  <Sparkles className="w-2.5 h-2.5" /> Suggested Account Creation
-                                </span>
-                                {isEditing ? (
-                                  <div className="flex flex-col gap-1.5 mt-1">
+                          <div key={`${ingestion.id}-suggested-acc-${idx}`} className="flex flex-col gap-2 p-3 bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800/60 rounded-xl shadow-sm">
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-blue-600 dark:text-blue-400 uppercase tracking-wider font-bold text-[9px] flex items-center gap-1">
+                                <Sparkles className="w-3.5 h-3.5" strokeWidth={2} /> Suggested Account
+                              </span>
+                              {isEditing ? (
+                                <div className="flex flex-col gap-1.5 mt-0.5">
+                                  <input
+                                    value={editingSuggestion.data.name}
+                                    onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, name: e.target.value } })}
+                                    className="text-xs px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-medium"
+                                    placeholder="Account Name"
+                                    aria-label="Account Name"
+                                  />
+                                  <div className="relative">
                                     <input
-                                      value={editingSuggestion.data.name}
-                                      onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, name: e.target.value } })}
-                                      className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
-                                      placeholder="Account Name"
+                                      value={editingSuggestion.data.account_group}
+                                      onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, account_group: e.target.value } })}
+                                      className={`w-full text-xs px-2 py-1 rounded border bg-white dark:bg-slate-950 text-slate-900 dark:text-white pr-8 ${accountGroups.some(g => g.name.toLowerCase() === editingSuggestion.data.account_group.toLowerCase()) ? 'border-green-400 dark:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-500' : 'border-blue-200 dark:border-blue-800'}`}
+                                      placeholder="Account Group"
+                                      aria-label="Account Group"
                                     />
-                                    <div className="relative">
-                                      <input
-                                        value={editingSuggestion.data.account_group}
-                                        onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, account_group: e.target.value } })}
-                                        className={`w-full text-xs px-2 py-1 rounded border bg-white dark:bg-slate-950 text-slate-900 dark:text-white pr-8 ${accountGroups.some(g => g.name.toLowerCase() === editingSuggestion.data.account_group.toLowerCase()) ? 'border-green-400 dark:border-green-600 focus:outline-none focus:ring-1 focus:ring-green-500' : 'border-blue-200 dark:border-blue-800'}`}
-                                        placeholder="Account Group"
-                                      />
-                                      {accountGroups.some(g => g.name.toLowerCase() === editingSuggestion.data.account_group.toLowerCase()) && (
-                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-green-600 dark:text-green-400 font-bold" title="Group exists">
-                                          <Check className="w-3 h-3" />
-                                        </div>
-                                      )}
-                                    </div>
-                                    <select
-                                      value={editingSuggestion.data.type}
-                                      onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, type: e.target.value } })}
-                                      className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
-                                    >
-                                      {['Cash', 'Bank', 'CreditCard', 'Investment', 'Asset', 'Liability', 'Equity', 'Income', 'Expense', 'Adjustment'].map(t => (
-                                        <option key={t} value={t}>{t}</option>
-                                      ))}
-                                    </select>
-                                    <div className="flex flex-col gap-1 w-full">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-[10px] text-slate-500 font-semibold uppercase">Description</span>
-                                        <button
-                                          type="button"
-                                          onClick={handleGenerateSuggestionDescription}
-                                          disabled={generateDescriptionMutation.isPending || !editingSuggestion.data.name}
-                                          className="text-[9px] flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50"
-                                        >
-                                          <Sparkles className="w-3 h-3" />
-                                          {generateDescriptionMutation.isPending ? 'Generating...' : 'AI Generate'}
-                                        </button>
+                                    {accountGroups.some(g => g.name.toLowerCase() === editingSuggestion.data.account_group.toLowerCase()) && (
+                                      <div className="absolute right-2 top-1/2 -translate-y-1/2 text-green-600 dark:text-green-400 font-bold" title="Group exists">
+                                        <Check className="w-3.5 h-3.5" strokeWidth={1.5} />
                                       </div>
-                                      <input
-                                        value={editingSuggestion.data.description || ''}
-                                        onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, description: e.target.value } })}
-                                        className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white w-full"
-                                        placeholder="Description (optional)"
-                                      />
-                                      <input
-                                        value={editingSuggestion.data.tagsInput || ''}
-                                        onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, tagsInput: e.target.value } })}
-                                        className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white w-full mt-1"
-                                        placeholder="Tags (comma separated)"
-                                      />
-                                    </div>
+                                    )}
+                                  </div>
+                                  <select
+                                    value={editingSuggestion.data.type}
+                                    onChange={e => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, type: e.target.value } })}
+                                    className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
+                                    aria-label="Account Type"
+                                  >
+                                    {['Cash', 'Bank', 'CreditCard', 'Investment', 'Asset', 'Liability', 'Equity', 'Income', 'Expense', 'Adjustment'].map(t => (
+                                      <option key={t} value={t}>{t}</option>
+                                    ))}
+                                  </select>
+                                    <TagInput
+                                      tags={editingSuggestion.data.tags || []}
+                                      onChange={(newTags) => setEditingSuggestion({ ...editingSuggestion, data: { ...editingSuggestion.data, tags: newTags } })}
+                                      placeholder="Type tag and press Enter"
+                                    />
                                   </div>
                                 ) : (
-                                  <span className="text-slate-700 dark:text-slate-300 font-medium text-[11px]">
-                                    <span className="text-[9px] uppercase font-bold text-slate-400 dark:text-slate-500">{suggestion.type}</span> &bull; {suggestion.account_group} - {suggestion.name}
+                                  <span className="text-slate-800 dark:text-slate-200 font-bold text-xs">
+                                    <span className="text-[9px] uppercase font-bold text-slate-500 dark:text-slate-400 tracking-wider">{suggestion.type}</span> &bull; {suggestion.account_group} - {suggestion.name}
                                   </span>
                                 )}
                               </div>
-                              <div className="flex flex-col gap-1 shrink-0">
+                              <div className="flex gap-2 mt-1">
                                 {isEditing ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCreateSuggestedAccount(editingSuggestion.data, idx)}
-                                      disabled={isCreatingAccount || !editingSuggestion.data.name || !editingSuggestion.data.account_group}
-                                      className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
-                                    >
-                                      <Check className="w-3 h-3" /> Save
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingSuggestion(null)}
-                                      className="bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors"
-                                    >
-                                      <X className="w-3 h-3" /> Cancel
-                                    </button>
-                                  </>
-                                ) : isCreated ? (
-                                  <div className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 border border-green-200 dark:border-green-800/50">
-                                    <Check className="w-3 h-3" /> Created
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCreateSuggestedAccount(editingSuggestion.data, idx)}
+                                    disabled={isCreatingAccount || !editingSuggestion.data.name || !editingSuggestion.data.account_group}
+                                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 shadow-sm"
+                                  >
+                                    <Check className="w-3.5 h-3.5" strokeWidth={2} /> Save
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingSuggestion(null)}
+                                    className="flex-1 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                                  >
+                                    <X className="w-3.5 h-3.5" strokeWidth={2} /> Cancel
+                                  </button>
+                                </>
+                              ) : isCreated ? (
+                                isSelected ? (
+                                  <div className="w-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 px-2 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 border border-green-300 dark:border-green-800/60">
+                                    <Check className="w-3.5 h-3.5" strokeWidth={2} /> Selected
                                   </div>
                                 ) : (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCreateSuggestedAccount(suggestion as any, idx)}
-                                      disabled={isCreatingAccount}
-                                      className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
-                                    >
-                                      <Plus className="w-3 h-3" /> Create
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingSuggestion({ idx, data: { name: suggestion.name, account_group: suggestion.account_group, type: suggestion.type, description: (suggestion as any).description || '', tagsInput: (suggestion as any).tags ? (suggestion as any).tags.join(', ') : '' } })}
-                                      disabled={isCreatingAccount}
-                                      className="bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-1 rounded text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
-                                    >
-                                      <Edit className="w-3 h-3" /> Edit
-                                    </button>
-                                  </>
-                                )}
-                              </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (existingAccount) {
+                                        if (suggestion.type === 'Expense' || suggestion.type === 'Income') {
+                                          setSplits([{
+                                            id: splits[0]?.id || generateId(),
+                                            categoryId: existingAccount.accountGroupId,
+                                            subCategoryId: existingAccount.id || '',
+                                            amount: splits[0]?.amount || ''
+                                          }])
+                                        } else {
+                                          setSourceAccountId(existingAccount.id || '')
+                                        }
+                                      }
+                                    }}
+                                    className="w-full bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 px-2 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 border border-blue-200 dark:border-blue-800/60 cursor-pointer shadow-sm transition-colors"
+                                  >
+                                    Use Account
+                                  </button>
+                                )
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCreateSuggestedAccount(suggestion as any, idx)}
+                                    disabled={isCreatingAccount}
+                                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-2 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 shadow-sm"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" strokeWidth={2} /> Create
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingSuggestion({ idx, data: { name: suggestion.name, account_group: suggestion.account_group, type: suggestion.type, description: (suggestion as any).description || '', tags: (suggestion as any).tags || [] } })}
+                                    disabled={isCreatingAccount}
+                                    className="flex-1 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 px-2 py-1.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-colors disabled:opacity-50 shadow-sm"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" strokeWidth={2} /> Edit
+                                  </button>
+                                </>
+                              )}
                             </div>
                             {!isEditing && (
-                              <span className="text-slate-500 dark:text-slate-400 text-[10px] leading-tight mt-1">
+                              <span className="text-slate-600 dark:text-slate-400 text-[10px] mt-0.5 leading-snug">
                                 {suggestion.reason}
                               </span>
                             )}
@@ -1231,9 +1330,9 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                   )}
 
                   {ingestion.ai_parsed.why && (
-                    <div className="p-3 bg-indigo-50/30 dark:bg-indigo-950/10 border border-indigo-100/40 dark:border-indigo-900/20 rounded-xl">
-                      <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-wider">AI Reasoning</span>
-                      <p className="text-slate-650 dark:text-slate-400 mt-1 leading-relaxed text-[11px]">{ingestion.ai_parsed.why}</p>
+                    <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50 rounded-xl mt-1">
+                      <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">AI Reasoning</span>
+                      <p className="text-slate-800 dark:text-slate-200 mt-0.5 leading-snug text-xs font-medium">{ingestion.ai_parsed.why}</p>
                     </div>
                   )}
                 </div>
@@ -1284,13 +1383,22 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
               </div>
 
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tags (comma separated)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. food, grab"
-                  value={pendingNewAccount.tagsInput}
-                  onChange={(e) => setPendingNewAccount({ ...pendingNewAccount, tagsInput: e.target.value })}
-                  className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full"
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tags</label>
+                  <button
+                    type="button"
+                    onClick={handleGeneratePendingAccountDescription}
+                    disabled={generateDescriptionMutation.isPending || !pendingNewAccount.name}
+                    className="text-[10px] flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" strokeWidth={1.5} />
+                    {generateDescriptionMutation.isPending ? 'Generating...' : 'AI Generate'}
+                  </button>
+                </div>
+                <TagInput
+                  tags={pendingNewAccount.tags || []}
+                  onChange={(newTags) => setPendingNewAccount({ ...pendingNewAccount, tags: newTags })}
+                  placeholder="Type tag and press Enter"
                 />
               </div>
             </div>

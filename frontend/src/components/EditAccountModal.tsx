@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Account, useUpdateAccount, useGetAccountGroups, useGenerateAccountDescription } from '@/hooks/useAccounts'
 import { X, Sparkles } from 'lucide-react'
+import TagInput from '@/components/ui/TagInput'
 
 interface EditAccountModalProps {
   isOpen: boolean
@@ -21,13 +22,13 @@ export default function EditAccountModal({ isOpen, onClose, account }: EditAccou
     const context = formData.description || ""
     
     try {
-      const { description } = await generateDescriptionMutation.mutateAsync({
+      const res = await generateDescriptionMutation.mutateAsync({
         name: formData.name,
         type: formData.accountType,
         groupName: groupName,
         context: context
       })
-      setFormData({ ...formData, description })
+      setFormData({ ...formData, description: res.description, tags: res.tags })
     } catch (e) {
       console.error(e)
       alert("Failed to generate description.")
@@ -93,6 +94,26 @@ export default function EditAccountModal({ isOpen, onClose, account }: EditAccou
               value={formData.description || ''}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tags</label>
+              <button
+                type="button"
+                onClick={handleGenerateDescription}
+                disabled={generateDescriptionMutation.isPending || !formData.name || !formData.accountGroupId}
+                className="text-[10px] flex items-center gap-1 font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50"
+              >
+                <Sparkles className="w-3 h-3" />
+                {generateDescriptionMutation.isPending ? 'Generating...' : 'AI Generate'}
+              </button>
+            </div>
+            <TagInput
+              tags={formData.tags || []}
+              onChange={(newTags) => setFormData({ ...formData, tags: newTags })}
+              placeholder="Type tag and press Enter"
             />
           </div>
 

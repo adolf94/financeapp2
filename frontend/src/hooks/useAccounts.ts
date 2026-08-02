@@ -96,13 +96,21 @@ export function useGenerateAccountDescription() {
   return useMutation({
     mutationFn: async (data: { name: string, type: string, groupName: string, context?: string }) => {
       // Goes directly to Python ingester (JWT Bearer, no .NET proxy)
-      const response = await ingesterClient.post<{description: string, tags: string[]}>('/accounts/generate-description', {
+      const response = await ingesterClient.post<any>('/accounts/generate-description', {
         account_name: data.name,
         account_type: data.type,
         group_name: data.groupName,
         context: data.context
       })
-      return response.data
+      let resData = response.data
+      if (typeof resData === 'string') {
+        try {
+          resData = JSON.parse(resData)
+        } catch (e) {
+          console.error('Failed to parse generate-description response:', e)
+        }
+      }
+      return resData as { description: string; tags: string[] }
     }
   })
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useGetPendingIngestions, useConfirmIngestion, useRejectIngestion, useUpdateIngestionVendor, useGenerateAccountDescription, PendingIngestion } from '@/hooks/useIngestions'
+import { useGetPendingIngestions, useConfirmIngestion, useRejectIngestion, useUpdateIngestionVendor, PendingIngestion } from '@/hooks/useIngestions'
 import { BellDot, Sparkles } from 'lucide-react'
 import { useGetAccounts, useCreateAccount, useGetAccountGroups, useCreateAccountGroup } from '@/hooks/useAccounts'
 import PendingIngestionCard from '@/components/PendingIngestionCard'
@@ -18,7 +18,6 @@ export default function PendingIngestionsList({ onEditConfirm }: PendingIngestio
   const updateVendorMutation = useUpdateIngestionVendor()
   const createAccountMutation = useCreateAccount()
   const createGroupMutation = useCreateAccountGroup()
-  const generateDescMutation = useGenerateAccountDescription()
 
   const [processingIds, setProcessingIds] = useState<string[]>([])
 
@@ -126,12 +125,6 @@ export default function PendingIngestionsList({ onEditConfirm }: PendingIngestio
               onEditConfirm={onEditConfirm}
               onUpdateVendor={handleUpdateVendor}
               onCreateSuggestedAccount={handleCreateSuggestedAccount}
-              onGenerateDesc={(data, onSuccess) => {
-                generateDescMutation.mutate(data, {
-                  onSuccess: (res) => onSuccess(res)
-                })
-              }}
-              isGeneratingDesc={generateDescMutation.isPending}
             />
           )
         })}

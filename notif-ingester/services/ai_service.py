@@ -8,7 +8,7 @@ from models.transaction_vector import TransactionVector
 from typing import List, Tuple
 
 RUNBOOK_REVIEW_PROMPT = """
-You are a personal finance assistant. Your job is to review a batch of manual transaction corrections and propose updates to the user's transaction classification rules runbook (RUNBOOK.md) and/or account descriptions.
+You are a personal finance assistant. Your job is to review the user's transaction classification rules runbook (RUNBOOK.md) and propose updates to it, as well as account descriptions and vendor tags.
 
 Here is the current content of RUNBOOK.md:
 ---
@@ -20,15 +20,20 @@ Here are the existing accounts in the system:
 {accounts}
 ---
 
-The user has manually corrected one or more AI classifications in the New Transaction window. Here are the corrections:
-{corrections}
+Here are the existing vendors in the system:
+---
+{vendors}
+---
+
+{corrections_section}
 
 Your task:
-1. Analyze why the initial AI classification was wrong based on the user's final corrected accounts, vendors, and the "why" reason they provided.
-2. Formulate a proposal. Is this a missing explicit rule for the RUNBOOK? Or is an account description ambiguous and needs updating?
-3. Provide a friendly conversational message explaining your proposed changes. Ask for clarification if the user's reason is ambiguous.
-4. Output the COMPLETE updated RUNBOOK.md text.
-5. If any account descriptions or tags should be updated to help AI classify better, provide a list of updates.
+1. Analyze the context (and any corrections, if provided).
+2. Formulate a proposal. If there are corrections, determine if there is a missing explicit rule, ambiguous account description, or missing vendor tags. CRITICAL: If there are NO corrections (ad-hoc chat), DO NOT propose any updates yet; just greet the user and ask what they want to change. You MUST return empty arrays for all updates if there are no corrections.
+3. Provide a friendly conversational message explaining your proposed changes (or your greeting). Ask for clarification if needed.
+4. Output the COMPLETE updated RUNBOOK.md text (if no changes are needed, output the exact current RUNBOOK.md text).
+5. If any account descriptions or tags should be updated, provide a list of updates. (Leave empty if no changes).
+6. If any vendor tags should be updated, provide a list of updates. (Leave empty if no changes).
 
 Return ONLY valid JSON matching this schema:
 {{
@@ -38,6 +43,13 @@ Return ONLY valid JSON matching this schema:
   "account_description_updates": [
     {{
       "account_id": "string",
+      "new_description": "string",
+      "new_tags": ["string"]
+    }}
+  ],
+  "vendor_updates": [
+    {{
+      "vendor_id": "string",
       "new_tags": ["string"]
     }}
   ]
@@ -45,7 +57,7 @@ Return ONLY valid JSON matching this schema:
 """
 
 RUNBOOK_CHAT_PROMPT = """
-You are a personal finance assistant. You are in an active conversation with the user to refine proposed updates to their RUNBOOK.md and account descriptions.
+You are a personal finance assistant. You are in an active conversation with the user to refine proposed updates to their RUNBOOK.md, account descriptions, and vendor tags.
 
 Current RUNBOOK.md:
 ---
@@ -55,6 +67,11 @@ Current RUNBOOK.md:
 Accounts context:
 ---
 {accounts}
+---
+
+Vendors context:
+---
+{vendors}
 ---
 
 Proposed RUNBOOK.md (from previous turn):
@@ -67,13 +84,20 @@ Proposed Account Description Updates (from previous turn):
 {proposed_account_updates}
 ---
 
+Proposed Vendor Updates (from previous turn):
+---
+{proposed_vendor_updates}
+---
+
+{corrections_section}
+
 Chat History:
 {chat_history}
 
 User's latest message: {user_message}
 
 Your task:
-7. CRITICAL: Do NOT alter the `account_description_updates` from their previous state UNLESS the user explicitly comments on them or requests a change in their latest message.
+7. CRITICAL: Do NOT alter the `account_description_updates` or `vendor_updates` from their previous state UNLESS the user explicitly comments on them or requests a change in their latest message.
 
 Return ONLY valid JSON matching this schema:
 {{
@@ -84,6 +108,12 @@ Return ONLY valid JSON matching this schema:
     {{
       "account_id": "string",
       "new_description": "string",
+      "new_tags": ["string"]
+    }}
+  ],
+  "vendor_updates": [
+    {{
+      "vendor_id": "string",
       "new_tags": ["string"]
     }}
   ]
@@ -113,11 +143,17 @@ Return ONLY valid JSON matching this schema:
 {{
   "is_financial": boolean (true if this notification represents an actual financial transaction such as a charge, fee, cash withdrawal, transfer, debit, deposit, bill payment, etc. false if it is a general/non-financial notification, marketing promo, security alert, password reset, login notification, OTP code, etc.),
   "vendor": string,
+  "vendor_type": "Individual"|"Business"|"Internal" (Individual means a person/friend/relative, Business means a merchant/store/app/company, Internal means a transfer/adjustment/movement between the user's own accounts/assets or the user's own name),
+  "suggested_vendor": {{
+    "name": "string (suggested name of the vendor, e.g. Starbucks, McDonald's)",
+    "tags": ["string (2-4 concise lowercase tags describing what the vendor *does*, e.g. 'coffee', 'cafe', 'food'. Do NOT include the vendor name, country, bank name, or vendor type as tags. Tags must be unique to this vendor's activity and not redundant with each other.)"],
+    "type": "Individual"|"Business"|"Internal"
+  }} (or null if there is a match in the Existing Vendors list),
   "amount": number (positive),
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
   "debit_account_id": string (account id from the list above),
   "credit_account_id": string (account id from the list above),
-  "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "description": "string", "tags": ["string (3-5 concise tags representing what this account tracks, e.g. 'grab', 'uber', 'taxi')"], "reason": "string (Explain the financial purpose of this account AND why you chose this specific name and group. NEVER mention that it is because an account is missing or not found. Focus purely on what financial activity this account tracks and why it is named this way, e.g., 'To track dining expenses under the Food group'.)"}}] (empty array if no accounts need to be created, or if not financial),
+  "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "description": "string", "tags": ["string (2-4 concise lowercase tags that are *unique transaction-routing keywords* for this account, e.g. 'grab', 'uber', 'taxi'. Rules: (1) Do NOT repeat the account name, account type, group name, bank name, country, or currency as tags. (2) Do NOT use tags already covered by the vendor's tags — account tags should complement, not duplicate vendor tags. (3) Tags must be specific enough to distinguish this account from similar ones.)"], "reason": "string (Explain the financial purpose of this account AND why you chose this specific name and group. NEVER mention that it is because an account is missing or not found. Focus purely on what financial activity this account tracks and why it is named this way, e.g., 'To track dining expenses under the Food group'.)"}}] (empty array if no accounts need to be created, or if not financial),
   "notes": string,
   "summary": string (A concise, human-readable summary or description of this transaction based on the context. Do NOT use the raw notification text, null if not financial),
   "confidence": number (0.0-1.0),
@@ -137,6 +173,7 @@ Rules:
 - For Transfer: debit = receiving asset/bank account, credit = sending asset/bank account
 - Entries must balance (debit amount positive, credit amount negative)
 - Vendor Matching: You are provided with a list of "Existing Vendors". Prefer an exact match from this list if the business/person matches. If not found in the list, you may guess or extract a new vendor name.
+- Suggested Vendor: If the transaction vendor matches one of the "Existing Vendors" (either by exact name or lookup string), set `suggested_vendor` to null. If there is NO match in the existing vendors, you MUST provide a `suggested_vendor` object with proposed name, tags, and type. The type must strictly be one of "Individual", "Business", or "Internal".
 - Account IDs: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`.
 - Suggested Account Creation: Focus ONLY on the functional, financial purpose of the account AND explain why you chose this specific name and group (e.g., "To categorize online shopping expenses..."). NEVER say "because it doesn't exist" or "no account was found".
 - Explanation field ('why'): Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names.
@@ -214,6 +251,22 @@ class AiService:
             
         return "\n\n".join(sections)
 
+    def _format_vendors(self, vendors: list) -> str:
+        if not vendors:
+            return "No existing vendors yet."
+        vendors_lines = []
+        for v in vendors:
+            if isinstance(v, dict):
+                v_id = v.get("id") or ""
+                name = v.get("name") or ""
+                tags = ", ".join(v.get("tags") or [])
+                tags_str = f" [Tags: {tags}]" if tags else ""
+                v_type = v.get("type") or "Business"
+                vendors_lines.append(f"{v_id} | {name} (Type: {v_type}){tags_str}")
+            else:
+                vendors_lines.append(f"- {v}")
+        return "\n".join(vendors_lines)
+
     async def generate_account_description_async(self, account_name: str, account_type: str, group_name: str, accounts: list[dict], context: str = "", ai_debug: bool = False) -> dict:
         """
         Generates a unique and unambiguous description for a new or existing account.
@@ -247,6 +300,7 @@ Return ONLY valid JSON matching this schema:
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.2,
+                    response_mime_type="application/json",
                 )
             )
             
@@ -303,12 +357,13 @@ Return ONLY valid JSON matching this schema:
         similar_vectors: List[Tuple[TransactionVector, float]],
         accounts: list[dict],
         runbook_content: str,
-        vendors: list[str] = None
+        vendors: list[dict] | list[str] = None
     ) -> AiParsedData:
         
         context = self._build_context(similar_vectors)
         accounts_text = self._format_accounts(accounts)
-        vendors_text = "\n".join([f"- {v}" for v in vendors]) if vendors else "No existing vendors yet."
+        
+        vendors_text = self._format_vendors(vendors)
 
         # Resolve a clean app name from the hook data
         app_name = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_rcv_sender") or hook.raw_payload.get("sms_sender") or ""
@@ -323,10 +378,15 @@ Return ONLY valid JSON matching this schema:
             vendors=vendors_text
         )
 
+        system_instruction = f"You are a personal finance assistant. Classify the notification as a financial transaction."
+
         response = self.client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt,
-            config={"response_mime_type": "application/json"}
+            config={
+                "response_mime_type": "application/json",
+                "system_instruction": system_instruction
+            }
         )
 
         if os.environ.get("PROMPT_DEBUG", "").lower() == "true":
@@ -351,24 +411,31 @@ Return ONLY valid JSON matching this schema:
         self,
         corrections: list[dict],
         accounts: list[dict],
+        vendors: list[dict],
         current_runbook: str
     ) -> dict:
-        # Strip out bulky fields like raw_payload and top_matches
-        clean_corrections = []
-        for c in corrections:
-            clean_corrections.append({
-                "raw_msg": c.get("raw_msg"),
-                "ai_parsed_classification": c.get("ai_parsed"),
-                "user_corrected_classification": c.get("user_confirmed"),
-            })
-            
-        corrections_text = json.dumps(clean_corrections, indent=2)
+        
+        if corrections:
+            clean_corrections = []
+            for c in corrections:
+                clean_corrections.append({
+                    "raw_msg": c.get("raw_msg"),
+                    "ai_parsed_classification": c.get("ai_parsed"),
+                    "user_corrected_classification": c.get("user_confirmed"),
+                })
+            corrections_text = json.dumps(clean_corrections, indent=2)
+            corrections_section = f"The user has manually corrected one or more AI classifications. Here are the corrections:\n{corrections_text}"
+        else:
+            corrections_section = "CRITICAL INSTRUCTION: This is an ad-hoc runbook chat. No recent corrections were provided. The user wants to manually update the runbook or some tags directly. DO NOT propose any changes to the runbook, account descriptions, or vendor tags yet. Just greet the user and ask how you can help."
+
         accounts_text = self._format_accounts(accounts)
+        vendors_text = self._format_vendors(vendors)
 
         prompt = RUNBOOK_REVIEW_PROMPT.format(
             current_runbook=current_runbook,
             accounts=accounts_text,
-            corrections=corrections_text
+            vendors=vendors_text,
+            corrections_section=corrections_section
         )
 
         response = self.client.models.generate_content(
@@ -395,30 +462,40 @@ Return ONLY valid JSON matching this schema:
         user_message: str,
         proposed_runbook: str,
         proposed_account_updates: list[dict],
+        proposed_vendor_updates: list[dict],
         corrections: list[dict],
         accounts: list[dict],
+        vendors: list[dict],
         current_runbook: str
     ) -> dict:
-        # Strip out bulky fields like raw_payload and top_matches
-        clean_corrections = []
-        for c in corrections:
-            clean_corrections.append({
-                "raw_msg": c.get("raw_msg"),
-                "ai_parsed_classification": c.get("ai_parsed"),
-                "user_corrected_classification": c.get("user_confirmed"),
-            })
+        
+        if corrections:
+            clean_corrections = []
+            for c in corrections:
+                clean_corrections.append({
+                    "raw_msg": c.get("raw_msg"),
+                    "ai_parsed_classification": c.get("ai_parsed"),
+                    "user_corrected_classification": c.get("user_confirmed"),
+                })
+            corrections_text = json.dumps(clean_corrections, indent=2)
+            corrections_section = f"The user has manually corrected one or more AI classifications. Here are the corrections:\n{corrections_text}"
+        else:
+            corrections_section = "This is an ad-hoc runbook chat. No recent corrections were provided."
             
-        corrections_text = json.dumps(clean_corrections, indent=2)
         accounts_text = self._format_accounts(accounts)
+        vendors_text = self._format_vendors(vendors)
         history_text = json.dumps(chat_history, indent=2)
-        proposed_updates_text = json.dumps(proposed_account_updates, indent=2)
+        proposed_account_updates_text = json.dumps(proposed_account_updates, indent=2)
+        proposed_vendor_updates_text = json.dumps(proposed_vendor_updates, indent=2)
 
         prompt = RUNBOOK_CHAT_PROMPT.format(
             current_runbook=current_runbook,
             proposed_runbook=proposed_runbook,
-            proposed_account_updates=proposed_updates_text,
+            proposed_account_updates=proposed_account_updates_text,
+            proposed_vendor_updates=proposed_vendor_updates_text,
             accounts=accounts_text,
-            corrections=corrections_text,
+            vendors=vendors_text,
+            corrections_section=corrections_section,
             chat_history=history_text,
             user_message=user_message
         )

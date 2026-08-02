@@ -18,7 +18,7 @@ namespace FinanceApp.Models
         public string UserId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         [JsonConverter(typeof(JsonStringEnumConverter))]
-        public VendorType Type { get; set; } = VendorType.Business;
+        public VendorType? Type { get; set; }
         public List<string> Tags { get; set; } = new();
     }
 }

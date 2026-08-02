@@ -14,18 +14,32 @@ namespace FinanceApp.Services
 
         public async Task<IEnumerable<Account>> GetAccountsAsync(string userId)
         {
-            return await _repository.GetAccountsAsync(userId);
+            var accounts = await _repository.GetAccountsAsync(userId);
+            foreach (var acc in accounts)
+            {
+                if (acc.Tags == null)
+                {
+                    acc.Tags = new List<string>();
+                }
+            }
+            return accounts;
         }
 
         public async Task<Account?> GetAccountByIdAsync(string userId, string id)
         {
-            return await _repository.GetAccountByIdAsync(userId, id);
+            var account = await _repository.GetAccountByIdAsync(userId, id);
+            if (account != null && account.Tags == null)
+            {
+                account.Tags = new List<string>();
+            }
+            return account;
         }
 
         public async Task<Account> CreateAccountAsync(string userId, Account account)
         {
             account.UserId = userId;
             account.CurrentBalance = account.StartingBalance; // Init current balance to starting balance
+            account.Tags ??= new List<string>();
             await _repository.AddAccountAsync(account);
             return account;
         }
@@ -47,6 +61,7 @@ namespace FinanceApp.Services
             existingAccount.AccountType = account.AccountType;
             existingAccount.CreditCardCycleStartDay = account.CreditCardCycleStartDay;
             existingAccount.CreditCardPaymentDueDay = account.CreditCardPaymentDueDay;
+            existingAccount.Tags = account.Tags ?? new List<string>();
 
             await _repository.UpdateAccountAsync(existingAccount);
             return existingAccount;

@@ -317,32 +317,62 @@ function VendorsSettings() {
   const deleteVendor = useDeleteVendor()
 
   const [newVendorName, setNewVendorName] = useState('')
+  const [newVendorType, setNewVendorType] = useState<'Individual' | 'Business'>('Business')
+  const [newVendorTags, setNewVendorTags] = useState('')
   const [deleteCandidate, setDeleteCandidate] = useState<{ id: string, name: string } | null>(null)
 
   const handleCreateVendor = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newVendorName.trim()) return
-    createVendor.mutate({ name: newVendorName.trim() }, { onSuccess: () => setNewVendorName('') })
+    const tags = newVendorTags ? newVendorTags.split(',').map(t => t.trim()).filter(Boolean) : []
+    createVendor.mutate(
+      { name: newVendorName.trim(), type: newVendorType, tags },
+      { onSuccess: () => {
+          setNewVendorName('')
+          setNewVendorTags('')
+          setNewVendorType('Business')
+        }
+      }
+    )
   }
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl mx-auto w-full pb-8">
       <section className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Add Vendor</h2>
-        <form onSubmit={handleCreateVendor} className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Vendor Name"
-            value={newVendorName}
-            onChange={(e) => setNewVendorName(e.target.value)}
-            className="flex-1 min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
-          />
-          <button
-            type="submit"
-            className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 flex items-center justify-center transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
+        <form onSubmit={handleCreateVendor} className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Vendor Name"
+              value={newVendorName}
+              onChange={(e) => setNewVendorName(e.target.value)}
+              className="flex-1 min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
+            />
+            <select
+              value={newVendorType}
+              onChange={(e) => setNewVendorType(e.target.value as any)}
+              className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
+            >
+              <option value="Business">Business</option>
+              <option value="Individual">Individual</option>
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Tags (comma separated)"
+              value={newVendorTags}
+              onChange={(e) => setNewVendorTags(e.target.value)}
+              className="flex-1 min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
+            />
+            <button
+              type="submit"
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-4 flex items-center justify-center transition-colors shrink-0"
+            >
+              <Plus className="w-5 h-5" />
+            </button>
+          </div>
         </form>
       </section>
 
@@ -350,7 +380,10 @@ function VendorsSettings() {
         <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
           {vendors.map((vendor) => (
             <div key={vendor.id} className="flex justify-between items-center p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 group">
-              <span className="font-medium text-slate-900 dark:text-slate-50">{vendor.name}</span>
+              <div className="flex flex-col">
+                <span className="font-medium text-slate-900 dark:text-slate-50">{vendor.name}</span>
+                <span className="text-xs text-slate-500">{vendor.type} {vendor.tags?.length ? `• ${vendor.tags.join(', ')}` : ''}</span>
+              </div>
               <button
                 onClick={() => setDeleteCandidate({ id: vendor.id!, name: vendor.name })}
                 className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
@@ -523,16 +556,17 @@ function RunbookReviewSettings() {
               Review and apply AI-suggested updates to your Runbook based on recent corrections.
             </p>
           </div>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            disabled={corrections.length === 0 && !hasActiveSession}
-            className="relative flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 shadow-sm"
-          >
-            {hasActiveSession && (
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" title="Active session" />
-            )}
-            {hasActiveSession ? 'Resume Session' : 'Review Changes'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="relative flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+            >
+              {hasActiveSession && (
+                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" title="Active session" />
+              )}
+              {hasActiveSession ? 'Resume Session' : corrections.length > 0 ? 'Review Changes' : 'Start Ad-hoc Chat'}
+            </button>
+          </div>
         </div>
 
         {corrections.length === 0 ? (

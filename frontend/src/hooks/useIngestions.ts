@@ -31,6 +31,12 @@ export interface AiParsedData {
   user_why?: string | null
   vendor_matched?: boolean | null
   is_auto_confirmed?: boolean | null
+  suggested_vendor?: {
+    name: string
+    tags: string[]
+    type: 'Individual' | 'Business' | 'Internal'
+    is_created?: boolean | null
+  } | null
 }
 
 export interface PendingIngestion {
@@ -97,6 +103,7 @@ export function useConfirmIngestion() {
       queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
       queryClient.invalidateQueries({ queryKey: ['transactions'] })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['vendors'] })
     }
   })
 }

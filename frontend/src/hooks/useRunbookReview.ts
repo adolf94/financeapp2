@@ -11,6 +11,11 @@ export type AccountDescriptionUpdate = {
   new_tags?: string[]
 }
 
+export type VendorUpdate = {
+  vendor_id: string
+  new_tags?: string[]
+}
+
 export type ChatMessage = {
   role: 'user' | 'ai'
   text: string
@@ -25,6 +30,7 @@ export type RunbookReviewSession = {
   chat_history: ChatMessage[]
   proposed_runbook: string
   account_description_updates: AccountDescriptionUpdate[]
+  vendor_updates: VendorUpdate[]
   created_at: string
   updated_at: string
   partition_key: string
@@ -102,7 +108,7 @@ export function useChatRunbookReview() {
 export function useApproveRunbookReview() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (params?: { account_updates: AccountDescriptionUpdate[] }) => {
+    mutationFn: async (params?: { account_updates: AccountDescriptionUpdate[], vendor_updates: VendorUpdate[] }) => {
       const { data } = await ingesterClient.post('/runbook/review/approve', params || {})
       return data
     },

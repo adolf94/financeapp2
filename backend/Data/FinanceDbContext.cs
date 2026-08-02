@@ -68,6 +68,9 @@ namespace FinanceApp.Data
                 .ToContainer("Vendors")
                 .HasPartitionKey(x => x.UserId)
                 .HasNoDiscriminator();
+            modelBuilder.Entity<Vendor>()
+                .Property(x => x.Type)
+                .HasConversion<string>();
 
             modelBuilder.Entity<VendorLookup>()
                 .ToContainer("VendorLookups")

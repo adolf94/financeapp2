@@ -21,6 +21,20 @@ namespace FinanceApp.Repositories
                 .ToListAsync();
         }
 
+        public async Task<Vendor?> GetVendorByNameAsync(string userId, string name)
+        {
+            var lowerName = name.Trim().ToLower();
+            var vendor = await _context.Vendors
+                .WithPartitionKey(userId)
+                .FirstOrDefaultAsync(v => v.Name.ToLower() == lowerName);
+
+            if (vendor != null && vendor.Tags == null)
+            {
+                vendor.Tags = new List<string>();
+            }
+            return vendor;
+        }
+
         public async Task AddVendorAsync(Vendor vendor)
         {
             await _context.Vendors.AddAsync(vendor);
@@ -35,6 +49,16 @@ namespace FinanceApp.Repositories
 
             if (vendor != null)
             {
+                var lookups = await _context.VendorLookups
+                    .WithPartitionKey(userId)
+                    .Where(vl => vl.VendorId == id)
+                    .ToListAsync();
+
+                if (lookups.Any())
+                {
+                    _context.VendorLookups.RemoveRange(lookups);
+                }
+
                 _context.Vendors.Remove(vendor);
                 await _context.SaveChangesAsync();
             }

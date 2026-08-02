@@ -1,6 +1,6 @@
 # Product Specification Document: Personal Finance App
 
-**Last Updated:** 2026-08-02 (Commit: 0db4a2d)
+**Last Updated:** 2026-08-02 (Commit: 27aadd9)
 
 ## 1. Product Vision & Objective
 **Objective:** Create a mobile-first personal finance application that allows users to seamlessly track income, expenses, and account balances, functioning as a robust personal accounting tool. The focus is strictly on historical tracking of transactions rather than forward-looking budgeting.
@@ -41,7 +41,7 @@ Users need a structured way to mirror their real-world financial accounts within
 - **Automated Data Capture via Notification Ingester:** A dedicated Python Azure Functions microservice (`notif-ingester/`) handles incoming phone notifications and auto-creates pending transactions:
   1. **Receive:** A mobile notification payload is `POST`ed to `/phone_hook` (API key protected) and saved to the `PhoneHookMessages` CosmosDB container with `status = "received"`.
   2. **Classify:** A Cosmos DB Change Feed trigger fires. The pipeline first runs a lightweight Gemini check (`is_financial_transaction_async`) to skip non-financial notifications (`status = "NonFinancial"`, TTL = 7 days). For financial ones, it embeds the raw text via Gemini `text-embedding-004`, retrieves top-5 similar past transactions via cosine similarity, fetches accounts and the RUNBOOK.md, then calls Gemini for structured classification into an `AiParsedData` result.
-  3. **Vendor Matching:** After classification, the ingester checks `VendorLookups` for a match using `recipient_account_name`, `recipient_account_number`, `sender_account_name`, `sender_account_number`, `vendor`, and `application` as lookup keys, ranked by cumulative `Hits`. If no lookup match, a new vendor is auto-created if the AI confidence is ≥ threshold.
+  3. **Vendor Matching:** The AI has a guess for the vendor, but can be overridden by vendor lookup. If there is a match via vendor lookup, prepopulate the new transaction Vendor. Else, if there is a match from the current vendor list via AI classification, prepopulate using this value. If there is no matching, the AI provides a suggestion (showing the Vendor, (I/B) type, and tags). If the suggestion has masks (containing asterisks `*` or `xxx` or related), quick create is disabled, requiring the user to edit it or select/add via the Vendor dropdown. If there are no masks, quick create is enabled, but custom edit is still available. After saving a newly created vendor, the dropdown is automatically populated.
   4. **Auto-Confirm:** If the top similarity score ≥ `AUTO_CONFIRM_THRESHOLD` (default `0.92`) and all account IDs are resolved, the transaction is created immediately via the Finance API (`status = "AutoConfirmed"`) and the vector embedding is learned.
   5. **Pending Review:** Otherwise the ingestion remains `status = "Pending"` for user review.
   6. **User Actions:** The user can review via `GET /ingestions`, quick-confirm via `POST /ingestions/{id}/confirm-status`, edit & confirm via the `AddTransactionModal` (pre-filled from AI data), reject via `POST /ingestions/{id}/reject`, or reclassify via `POST /ingestions/{id}/reclassify`. Vendor can be patched inline via `PATCH /ingestions/{id}/vendor`.
@@ -131,7 +131,7 @@ Users need a structured way to mirror their real-world financial accounts within
   - `HistoricalHooksList.tsx` (`components/`) — Lists legacy notifications from the old CosmosDB. Supports per-item import (triggers the full classify pipeline) and ignore actions.
   - `EditAccountModal.tsx` (`components/`) — Modal for editing existing accounts (name, description, group, starting balance, credit card fields).
   - `TransactionCard.tsx` (`components/`) — Reusable component for rendering a single transaction row.
-  - `PendingIngestionCard.tsx` (`components/`) — Reusable component for rendering a pending AI-classified ingestion item.
+  - `PendingIngestionCard.tsx` (`components/`) — Reusable component for rendering a pending AI-classified ingestion item. Displays suggested vendor name, type badges (Individual/Business, skipping Internal), and tags. Disables the Quick Confirm icon button and shows a warning when the suggestion contains masks (wildcards, xxx, repeating x, or 4+ digits), requiring manual correction.
   - `RunbookReviewModal.tsx` (`components/`) — Modal for interactively reviewing and chatting with AI to apply suggested `RUNBOOK.md` corrections.
   - `DiffViewer.tsx` (`components/`) — Visualizer for displaying text differences in runbook updates.
 - **Key Hooks:**

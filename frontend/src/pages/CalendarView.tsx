@@ -49,12 +49,10 @@ export default function CalendarView({ transactions, accounts, currentMonth }: C
         const account = accountMap.get(entry.accountId)
         if (!account) continue
 
-        if (account.accountType === 'Income' && entry.amount < 0) {
-          // Credit to an Income account = income flowing in
+        if (account.accountType === 'Income') {
           summary.income += Math.abs(entry.amount)
-        } else if (account.accountType === 'Expense' && entry.amount > 0) {
-          // Debit to an Expense account = expense going out
-          summary.expense += entry.amount
+        } else if (account.accountType === 'Expense') {
+          summary.expense += Math.abs(entry.amount)
         }
       }
 

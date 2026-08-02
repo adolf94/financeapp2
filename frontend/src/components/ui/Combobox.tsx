@@ -78,6 +78,10 @@ export default function Combobox({
             inputRef.current?.focus()
           }
         }}
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-controls="combobox-options-list"
       >
         <div className="flex-1 flex items-center min-w-0">
           <input
@@ -91,6 +95,8 @@ export default function Combobox({
               if (!isOpen) setIsOpen(true)
             }}
             disabled={disabled}
+            aria-autocomplete="list"
+            aria-controls="combobox-options-list"
           />
         </div>
         <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0 ml-2" />

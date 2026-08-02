@@ -69,6 +69,24 @@ namespace FinanceApp.Models
 
         [JsonPropertyName("date")]
         public DateTime? Date { get; set; }
+
+        [JsonPropertyName("suggested_vendor")]
+        public SuggestedVendor? SuggestedVendor { get; set; }
+    }
+
+    public class SuggestedVendor
+    {
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [JsonPropertyName("tags")]
+        public List<string>? Tags { get; set; }
+
+        [JsonPropertyName("type")]
+        public string? Type { get; set; }
+
+        [JsonPropertyName("is_created")]
+        public bool? IsCreated { get; set; }
     }
 
     public class SuggestedAccountCreation

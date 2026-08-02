@@ -16,13 +16,25 @@ def up(db):
     with open(runbook_path, "r", encoding="utf-8") as f:
         content = f.read()
         
-    container = db.get_container_client("Settings")
+    settings_container = db.get_container_client("Settings")
+    accounts_container = db.get_container_client("Accounts")
     
-    doc = {
-        "id": "runbook",
-        "UserId": "default",
-        "content": content
-    }
-    
-    container.upsert_item(doc)
-    print("Successfully seeded RUNBOOK.md to Settings container for 'default' user.")
+    try:
+        query = "SELECT DISTINCT c.UserId FROM c"
+        user_ids = [item["UserId"] for item in accounts_container.query_items(query=query, enable_cross_partition_query=True) if "UserId" in item]
+    except Exception as e:
+        print(f"Warning: Failed to query UserIds from Accounts: {e}")
+        user_ids = []
+        
+    if not user_ids:
+        print("No users found in Accounts container. Defaulting to 'default'.")
+        user_ids = ["default"]
+        
+    for user_id in user_ids:
+        doc = {
+            "id": "runbook",
+            "UserId": user_id,
+            "content": content
+        }
+        settings_container.upsert_item(doc)
+        print(f"Successfully seeded RUNBOOK.md to Settings container for user '{user_id}'.")

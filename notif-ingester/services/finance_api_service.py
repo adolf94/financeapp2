@@ -120,24 +120,29 @@ class FinanceApiService:
             
         return accounts
 
-    async def get_vendors_async(self, user_id: str) -> list[str]:
+    async def get_vendors_async(self, user_id: str) -> list[dict]:
         if not self.client:
             return []
             
         db = self.client.get_database_client(self.db_name)
         try:
             vendor_container = db.get_container_client("Vendors")
-            query = "SELECT c.Name FROM c"
+            query = "SELECT * FROM c"
             items = vendor_container.query_items(
                 query=query,
                 partition_key=user_id
             )
             vendors = []
             async for item in items:
-                name = item.get("Name")
-                if name:
-                    vendors.append(name)
-            return sorted(list(set(vendors)))
+                vendors.append({
+                    "id": item.get("id"),
+                    "name": item.get("Name", item.get("name")),
+                    "type": item.get("Type", item.get("type", "Business")),
+                    "tags": item.get("Tags", item.get("tags", []))
+                })
+            # Sort by name
+            vendors.sort(key=lambda x: (x.get("name") or "").lower())
+            return vendors
         except Exception as e:
             import logging
             logging.warning(f"Error fetching vendors: {e}")
@@ -205,7 +210,7 @@ class FinanceApiService:
             logging.warning(f"Error searching vendors by lookups: {e}")
         return None
 
-    async def ensure_vendor_and_lookups_async(self, user_id: str, vendor_name: str, lookups: list[str]) -> str | None:
+    async def ensure_vendor_and_lookups_async(self, user_id: str, vendor_name: str, lookups: list[str], vendor_type: str = None) -> str | None:
         if not self.client or not vendor_name:
             return None
             
@@ -232,8 +237,11 @@ class FinanceApiService:
             doc = {
                 "id": vendor_id,
                 "UserId": user_id,
-                "Name": vendor_name
+                "Name": vendor_name,
+                "Tags": []
             }
+            if vendor_type:
+                doc["Type"] = vendor_type
             await vendor_container.create_item(doc)
             
         if lookups:
@@ -357,7 +365,7 @@ class FinanceApiService:
         if parsed.application: lookups.append(parsed.application)
         
         if parsed.vendor:
-            await self.ensure_vendor_and_lookups_async(ingestion.user_id, parsed.vendor, lookups)
+            await self.ensure_vendor_and_lookups_async(ingestion.user_id, parsed.vendor, lookups, parsed.vendor_type)
             
         return tx_doc
 
@@ -408,6 +416,28 @@ class FinanceApiService:
             except Exception as e:
                 import logging
                 logging.error(f"Failed to update account {account_id} description: {e}")
+
+    async def update_vendor_tags_async(self, user_id: str, updates: list[dict]) -> None:
+        if not self.client or not updates:
+            return
+            
+        db = self.client.get_database_client(self.db_name)
+        container = db.get_container_client("Vendors")
+        
+        for update in updates:
+            vendor_id = update.get("vendor_id")
+            new_tags = update.get("new_tags")
+            if not vendor_id or new_tags is None:
+                continue
+                
+            try:
+                item = await container.read_item(item=vendor_id, partition_key=user_id)
+                item["Tags"] = new_tags
+                item["tags"] = new_tags
+                await container.upsert_item(item)
+            except Exception as e:
+                import logging
+                logging.error(f"Failed to update vendor {vendor_id} tags: {e}")
 
     async def get_runbook_session_async(self, user_id: str) -> dict | None:
         """Fetch an active runbook review session from the Settings container."""

@@ -315,6 +315,7 @@ async def PatchIngestionVendorFunction(req: func.HttpRequest) -> func.HttpRespon
             
         ingestion.ai_parsed.vendor = new_vendor
         ingestion.ai_parsed.vendor_matched = True
+        ingestion.ai_parsed.suggested_vendor = None
         
         await ingestion_service.ingestion_repo.update_async(ingestion)
         
@@ -669,6 +670,7 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
     try:
         from datetime import datetime, timezone
         accounts = await ingestion_service._finance_api_service.get_accounts_async(user_id)
+        vendors = await ingestion_service._finance_api_service.get_vendors_async(user_id)
         current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id)
         if not current_runbook:
             current_runbook = ingestion_service._ai_service.get_default_runbook_content()
@@ -676,6 +678,7 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
         ai_response = await ingestion_service._ai_service.start_runbook_review_async(
             corrections=corrections,
             accounts=accounts,
+            vendors=vendors,
             current_runbook=current_runbook
         )
 
@@ -687,6 +690,7 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
             "chat_history": [{"role": "ai", "text": ai_response.get("message", ""), "questions": ai_response.get("questions", [])}],
             "proposed_runbook": ai_response.get("proposed_runbook", ""),
             "account_description_updates": ai_response.get("account_description_updates", []),
+            "vendor_updates": ai_response.get("vendor_updates", []),
             "created_at": now,
             "updated_at": now,
             "partition_key": user_id
@@ -728,6 +732,7 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
 
         # Fetch supporting data
         accounts = await ingestion_service._finance_api_service.get_accounts_async(user_id)
+        vendors = await ingestion_service._finance_api_service.get_vendors_async(user_id)
         current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id)
         if not current_runbook:
             current_runbook = ingestion_service._ai_service.get_default_runbook_content()
@@ -737,8 +742,10 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
             user_message=user_message,
             proposed_runbook=session.get("proposed_runbook", ""),
             proposed_account_updates=session.get("account_description_updates", []),
+            proposed_vendor_updates=session.get("vendor_updates", []),
             corrections=session.get("corrections", []),
             accounts=accounts,
+            vendors=vendors,
             current_runbook=current_runbook
         )
 
@@ -747,6 +754,7 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
         session["chat_history"] = chat_history
         session["proposed_runbook"] = ai_response.get("proposed_runbook", session.get("proposed_runbook", ""))
         session["account_description_updates"] = ai_response.get("account_description_updates", session.get("account_description_updates", []))
+        session["vendor_updates"] = ai_response.get("vendor_updates", session.get("vendor_updates", []))
         session["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         await ingestion_service._finance_api_service.save_runbook_session_async(user_id, session)
@@ -780,6 +788,7 @@ async def ApproveRunbookReviewFunction(req: func.HttpRequest) -> func.HttpRespon
         proposed_runbook = session.get("proposed_runbook", "")
         # If the frontend passes explicit account_updates in the body, use them instead of the session's
         account_updates = body.get("account_updates", session.get("account_description_updates", []))
+        vendor_updates = body.get("vendor_updates", session.get("vendor_updates", []))
         corrections = session.get("corrections", [])
         correction_ids = [c.get("id") for c in corrections if c.get("id")]
 
@@ -789,6 +798,10 @@ async def ApproveRunbookReviewFunction(req: func.HttpRequest) -> func.HttpRespon
         # Update account descriptions
         if account_updates:
             await ingestion_service._finance_api_service.update_account_descriptions_async(user_id, account_updates)
+            
+        # Update vendor tags
+        if vendor_updates:
+            await ingestion_service._finance_api_service.update_vendor_tags_async(user_id, vendor_updates)
             
         # Mark corrections as runbook_synced
         for c_id in correction_ids:
