@@ -112,9 +112,7 @@ export default function PendingIngestionsList({ onEditConfirm }: PendingIngestio
 
       <div className="flex flex-col gap-3">
         {ingestions.map((ingestion) => {
-          const confidence = ingestion.ai_parsed.confidence ?? 0.0
-          const similarity = ingestion.similarity_score ?? 0.0
-          const isHighConfidence = confidence >= 0.85 || similarity >= 0.90
+
 
           return (
             <PendingIngestionCard

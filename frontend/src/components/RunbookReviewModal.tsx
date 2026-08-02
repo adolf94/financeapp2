@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Send, Check, Trash2 } from 'lucide-react'
 import { PendingIngestion } from '@/hooks/useIngestions'
 import {

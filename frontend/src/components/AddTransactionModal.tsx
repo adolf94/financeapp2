@@ -4,7 +4,7 @@ import { useGetAccounts, useGetAccountGroups, useCreateAccountGroup, useCreateAc
 import { useGetVendors, useCreateVendor } from '@/hooks/useVendors'
 import { useCreateTransaction, useUpdateTransaction, Transaction, LedgerEntry } from '@/hooks/useTransactions'
 import { useCreateRecurringTransaction } from '@/hooks/useRecurringTransactions'
-import { useConfirmIngestion, useReclassifyIngestion, useUpdateIngestionVendor, PendingIngestion, useGetIngestionById, useLearnIngestion } from '@/hooks/useIngestions'
+import { PendingIngestion, useGetIngestionById, useConfirmIngestion, useReclassifyIngestion, useUpdateIngestionVendor } from '@/hooks/useIngestions'
 import { useQueryClient } from '@tanstack/react-query'
 import { uuidv7 } from 'uuidv7'
 import dayjs from 'dayjs'
@@ -51,7 +51,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
   const confirmIngestionMutation = useConfirmIngestion()
   const reclassifyMutation = useReclassifyIngestion()
   const updateIngestionVendorMutation = useUpdateIngestionVendor()
-  const learnIngestionMutation = useLearnIngestion()
+
   const queryClient = useQueryClient()
 
   const targetIngestionId = ingestionId || initialData?.ingestionId
@@ -90,7 +90,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
   const [mode, setMode] = useState<'Simple' | 'Advanced'>('Simple')
   const [isReviewOpen, setIsReviewOpen] = useState(true)
   const submitTypeRef = useRef<'close' | 'more'>('close')
-  const [type, setType] = useState<'Income' | 'Expense' | 'Transfer'>('Expense')
+  const [type, setType] = useState<'Income' | 'Expense' | 'Transfer' | 'Journal'>('Expense')
 
   const [totalAmount, setTotalAmount] = useState('')
   const [sourceAccountId, setSourceAccountId] = useState('') // The payment account

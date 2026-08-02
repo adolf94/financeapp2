@@ -7,8 +7,11 @@ export interface AiParsedData {
   vendor?: string | null
   amount?: number | null
   transaction_type?: string | null
+  category?: string | null
   debit_account_id?: string | null
   credit_account_id?: string | null
+  date?: string | null
+  ingestion_id?: string | null
   suggested_account_creation?: Array<{
     type: string
     account_group: string

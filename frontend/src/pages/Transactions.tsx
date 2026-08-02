@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useGetTransactions, useDeleteTransaction, Transaction } from '@/hooks/useTransactions'
 import { useGetAccounts } from '@/hooks/useAccounts'
-import { ArrowDownRight, ArrowUpRight, ArrowRightLeft, Trash2, BookOpen, ChevronLeft, ChevronRight, Pencil, List, CalendarDays, RotateCw, Bot, Smartphone } from 'lucide-react'
+import { ChevronLeft, ChevronRight, List, CalendarDays, RotateCw } from 'lucide-react'
 import dayjs from 'dayjs'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import CalendarView from '@/pages/CalendarView'
