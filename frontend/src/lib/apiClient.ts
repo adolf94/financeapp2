@@ -49,14 +49,25 @@ apiClient.interceptors.request.use(async (config) => {
   return config
 })
 
+import toast from 'react-hot-toast'
+
 // Global error response interceptor
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
       // Token expired or unauthorized — redirect to login
+      toast.error('Unauthorized - Please log in again')
       localStorage.removeItem('access_token')
       window.location.href = '/login'
+    } else if (error.response?.status >= 500) {
+      const msg = error.response?.data?.error || error.response?.data || 'Internal Server Error'
+      toast.error(typeof msg === 'string' ? msg : 'Internal Server Error')
+    } else if (error.response?.status >= 400) {
+      const msg = error.response?.data?.error || error.response?.data || 'Bad Request'
+      toast.error(typeof msg === 'string' ? msg : 'Bad Request')
+    } else {
+      toast.error('Network error or unknown issue')
     }
     return Promise.reject(error)
   }
