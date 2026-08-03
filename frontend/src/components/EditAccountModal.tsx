@@ -53,6 +53,12 @@ export default function EditAccountModal({ isOpen, onClose, account }: EditAccou
 
   if (!isOpen || !formData) return null
 
+  const isCategory = formData.accountType === 'Expense' || formData.accountType === 'Income'
+  const availableGroups = groups.filter(g => 
+    isCategory ? (g.accountType === 'Expense' || g.accountType === 'Income') 
+               : (g.accountType !== 'Expense' && g.accountType !== 'Income')
+  )
+
   return (
     <>
       <div className="fixed inset-0 bg-black/40 z-50 transition-opacity duration-300" onClick={onClose} />
@@ -133,9 +139,9 @@ export default function EditAccountModal({ isOpen, onClose, account }: EditAccou
               required
               className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
             >
-              {Array.from(new Set(groups.filter(g => g.accountType !== 'Expense' && g.accountType !== 'Income').map(g => g.accountType))).sort().map(type => (
+              {Array.from(new Set(availableGroups.map(g => g.accountType))).sort().map(type => (
                 <optgroup key={type} label={type}>
-                  {groups.filter(g => g.accountType === type).sort((a, b) => a.name.localeCompare(b.name)).map(g => (
+                  {availableGroups.filter(g => g.accountType === type).sort((a, b) => a.name.localeCompare(b.name)).map(g => (
                     <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
                 </optgroup>
