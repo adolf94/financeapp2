@@ -46,6 +46,9 @@ namespace FinanceApp.Data
             modelBuilder.Entity<Account>()
                 .Property(x => x.AccountType)
                 .HasConversion<string>();
+            modelBuilder.Entity<Account>()
+                .Property(x => x.Tags)
+                .UsePropertyAccessMode(PropertyAccessMode.Property);
 
             // Transactions Container - using Discriminator for Transaction and LedgerEntry
             modelBuilder.Entity<Transaction>()
@@ -71,6 +74,9 @@ namespace FinanceApp.Data
             modelBuilder.Entity<Vendor>()
                 .Property(x => x.Type)
                 .HasConversion<string>();
+            modelBuilder.Entity<Vendor>()
+                .Property(x => x.Tags)
+                .UsePropertyAccessMode(PropertyAccessMode.Property);
 
             modelBuilder.Entity<VendorLookup>()
                 .ToContainer("VendorLookups")
