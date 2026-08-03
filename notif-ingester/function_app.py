@@ -2,6 +2,10 @@ import azure.functions as func
 import os
 import json
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 from models.phone_hook import PhoneHookMessage
 from repositories.hook_repository import CosmosHookRepository
 from repositories.ingestion_repository import CosmosIngestionRepository

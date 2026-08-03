@@ -141,7 +141,7 @@ Existing Vendors:
 
 Return ONLY valid JSON matching this schema:
 {{
-  "is_financial": boolean (true if this notification represents an actual financial transaction such as a charge, fee, cash withdrawal, transfer, debit, deposit, bill payment, etc. false if it is a general/non-financial notification, marketing promo, security alert, password reset, login notification, OTP code, etc.),
+  "is_financial":true,
   "vendor": string,
   "vendor_type": "Individual"|"Business"|"Internal" (Individual means a person/friend/relative, Business means a merchant/store/app/company, Internal means a transfer/adjustment/movement between the user's own accounts/assets or the user's own name),
   "suggested_vendor": {{
@@ -153,7 +153,7 @@ Return ONLY valid JSON matching this schema:
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
   "debit_account_id": string (account id from the list above),
   "credit_account_id": string (account id from the list above),
-  "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "description": "string", "tags": ["string (2-4 concise lowercase tags that are *unique transaction-routing keywords* for this account, e.g. 'grab', 'uber', 'taxi'. Rules: (1) Do NOT repeat the account name, account type, group name, bank name, country, or currency as tags. (2) Do NOT use tags already covered by the vendor's tags — account tags should complement, not duplicate vendor tags. (3) Tags must be specific enough to distinguish this account from similar ones.)"], "reason": "string (Explain the financial purpose of this account AND why you chose this specific name and group. NEVER mention that it is because an account is missing or not found. Focus purely on what financial activity this account tracks and why it is named this way, e.g., 'To track dining expenses under the Food group'.)"}}] (empty array if no accounts need to be created, or if not financial),
+  "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string (2-4 concise lowercase tags that are *unique transaction-routing keywords* for this account, e.g. 'grab', 'uber', 'taxi'. Rules: (1) Do NOT repeat the account name, account type, group name, bank name, country, or currency as tags. (2) Do NOT use tags already covered by the vendor's tags — account tags should complement, not duplicate vendor tags. (3) Tags must be specific enough to distinguish this account from similar ones.)"]}}] (empty array if no accounts need to be created, or if not financial),
   "notes": string,
   "summary": string (A concise, human-readable summary or description of this transaction based on the context. Do NOT use the raw notification text, null if not financial),
   "confidence": number (0.0-1.0),
@@ -162,7 +162,7 @@ Return ONLY valid JSON matching this schema:
   "sender_account_number": string (sender account/card/wallet number if mentioned in the message),
   "sender_account_name": string (sender name if mentioned in the message),
   "application": string (name of the app or SMS sender, e.g. BPI, GCash),
-  "why": string (brief explanation of why this transaction was classified this way, including which rules, keywords, or vector context matches were used. Do NOT include raw UUIDs in this explanation.)
+  "why": string (exactly 2 sentences explaining why this transaction was classified this way, including which rules, keywords, or vector context matches were used. Do NOT include raw UUIDs in this explanation.)
 }}
 
 Rules:
@@ -175,8 +175,8 @@ Rules:
 - Vendor Matching: You are provided with a list of "Existing Vendors". Prefer an exact match from this list if the business/person matches. If not found in the list, you may guess or extract a new vendor name.
 - Suggested Vendor: If the transaction vendor matches one of the "Existing Vendors" (either by exact name or lookup string), set `suggested_vendor` to null. If there is NO match in the existing vendors, you MUST provide a `suggested_vendor` object with proposed name, tags, and type. The type must strictly be one of "Individual", "Business", or "Internal".
 - Account IDs: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`.
-- Suggested Account Creation: Focus ONLY on the functional, financial purpose of the account AND explain why you chose this specific name and group (e.g., "To categorize online shopping expenses..."). NEVER say "because it doesn't exist" or "no account was found".
-- Explanation field ('why'): Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names.
+- Suggested Account Creation: Focus ONLY on the functional, financial purpose of the account.
+- Explanation field ('why'): Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names. MUST be strictly exactly 2 sentences long.
 """
 
 IS_FINANCIAL_PROMPT = """
@@ -197,6 +197,8 @@ class AiService:
     def __init__(self):
         api_key = os.environ.get("GEMINI_API_KEY", "")
         self.client = genai.Client(api_key=api_key)
+        self.model = os.environ.get("GEMINI_CLASSIFICATION_MODEL", "gemini-2.5-flash-lite")
+        self.reasoning_model = os.environ.get("GEMINI_REASONING_MODEL", "gemini-2.5-flash")
 
     def _build_context(self, similar_vectors: List[Tuple[TransactionVector, float]]) -> str:
         if not similar_vectors:
@@ -276,7 +278,7 @@ class AiService:
         context_section = f"\nCurrent Description: {context}\n" if context else ""
         
         prompt = f"""
-You are a financial AI assistant. Your task is to generate a short, unambiguous description for a financial account to help another AI correctly classify transactions into it in the future.
+You are a financial AI assistant. Your task is to generate tags for a financial account to help another AI correctly classify transactions into it in the future.
 
 Account Name: {account_name}
 Account Type: {account_type}
@@ -285,10 +287,9 @@ Account Group: {group_name}{context_section}
 Here are the existing accounts in the system:
 {formatted_accounts}
 
-Please write a 1-2 sentence description for this account that clearly distinguishes it from the existing accounts. Also provide 3-5 concise tags (e.g. 'grab', 'uber', 'taxi') that represent what this account is for.
+Please provide 3-5 concise tags (e.g. 'grab', 'uber', 'taxi') that represent what this account is for.
 Return ONLY valid JSON matching this schema:
 {{
-  "description": "string",
   "tags": ["string"]
 }}
 """
@@ -296,7 +297,7 @@ Return ONLY valid JSON matching this schema:
             from google.genai import types
 
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=self.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.2,
@@ -314,11 +315,12 @@ Return ONLY valid JSON matching this schema:
                     f.write("\n\n=== RESPONSE ===\n")
                     f.write(response.text)
 
-            return json.loads(response.text)
+            data = json.loads(response.text)
+            return {"description": "", "tags": data.get("tags", [])}
         except Exception as e:
             import logging
             logging.error(f"Error generating description: {e}")
-            return {"description": f"{account_name} ({account_type} - {group_name})", "tags": []}
+            return {"description": "", "tags": []}
 
     def get_default_runbook_content(self) -> str:
         # Load the runbook from the root of the project
@@ -339,7 +341,7 @@ Return ONLY valid JSON matching this schema:
 
         try:
             response = self.client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=self.model,
                 contents=prompt,
                 config={"response_mime_type": "application/json"}
             )
@@ -381,7 +383,7 @@ Return ONLY valid JSON matching this schema:
         system_instruction = f"You are a personal finance assistant. Classify the notification as a financial transaction."
 
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=self.model,
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
@@ -439,7 +441,7 @@ Return ONLY valid JSON matching this schema:
         )
 
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=self.reasoning_model,
             contents=prompt,
             config={"response_mime_type": "application/json"}
         )
@@ -501,7 +503,7 @@ Return ONLY valid JSON matching this schema:
         )
 
         response = self.client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=self.reasoning_model,
             contents=prompt,
             config={"response_mime_type": "application/json"}
         )

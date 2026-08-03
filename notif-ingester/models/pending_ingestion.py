@@ -39,8 +39,8 @@ class SuggestedAccountCreation(BaseModel):
     type: Optional[str] = None
     account_group: Optional[str] = None
     name: Optional[str] = None
-    description: Optional[str] = None
-    reason: Optional[str] = None
+    description: str = ""
+    reason: str = ""
 
 class PendingIngestion(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid7()))

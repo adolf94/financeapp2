@@ -1,4 +1,4 @@
-// Source: p/models/pending_ingestion.py
+// Source: Python (Original)
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
@@ -101,9 +101,9 @@ namespace FinanceApp.Models
         public string? Name { get; set; }
 
         [JsonPropertyName("description")]
-        public string? Description { get; set; }
+        public string Description { get; set; } = "";
 
         [JsonPropertyName("reason")]
-        public string? Reason { get; set; }
+        public string Reason { get; set; } = "";
     }
 }

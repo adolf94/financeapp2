@@ -1,6 +1,6 @@
 # Product Specification Document: Personal Finance App
 
-**Last Updated:** 2026-08-03 (Commit: 9ba5c2e)
+**Last Updated:** 2026-08-04
 
 ## 1. Product Vision & Objective
 **Objective:** Create a mobile-first personal finance application that allows users to seamlessly track income, expenses, and account balances, functioning as a robust personal accounting tool. The focus is strictly on historical tracking of transactions rather than forward-looking budgeting.
@@ -176,6 +176,10 @@ Users need a structured way to mirror their real-world financial accounts within
   - `POST /runbook/review/chat` — Chat with AI to iteratively refine the proposed runbook changes. The system prompt is configured to strictly enforce returning empty JSON arrays when no corrections are found. JWT auth.
   - `POST /runbook/review/approve` — Approve and save the reviewed runbook to Cosmos DB, JWT auth.
 - **Auto-Confirm Threshold:** Configurable via `AUTO_CONFIRM_THRESHOLD` env var (default `0.92`). When top cosine similarity score ≥ threshold and all account IDs are present, transactions are created automatically (`AutoConfirmed`).
+- **Gemini Model Configuration:** Gemini models are configurable via environment variables or a `.env` file:
+  - `GEMINI_EMBEDDING_MODEL` defines the model used for embedding raw notification text (default: `gemini-embedding-2`).
+  - `GEMINI_CLASSIFICATION_MODEL` defines the model used for structured transaction classification, non-financial filtering, and account description generation (default: `gemini-2.5-flash-lite`).
+  - `GEMINI_REASONING_MODEL` defines the model used for runbook review start and chat review sessions (default: `gemini-2.5-flash`).
 - **Key Models (Pydantic):**
   - `PhoneHookMessage` — Raw notification payload (`id`, `UserId`, `action`, `raw_msg`, `raw_payload`, `status`, `month_key`, `partition_key`, `received_at`). Includes a `_ttl` of 60 days for auto-expiry.
   - `PendingIngestion` — AI classification result with `AiParsedData`, `top_matches`, `similarity_score`, `status` (`Pending` | `AutoConfirmed` | `Confirmed` | `Rejected` | `NonFinancial`), `transaction_id`, `user_confirmed`, `month_key`, `partition_key`.

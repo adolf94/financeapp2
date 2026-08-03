@@ -12,7 +12,7 @@ class EmbeddingService:
         # As of current SDK, usually client.models.embed_content is blocking,
         # but Azure Functions Python async worker will run it.
         result = self.client.models.embed_content(
-            model="gemini-embedding-2",
+            model=os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2"),
             contents=text
         )
         return result.embeddings[0].values
