@@ -45,7 +45,7 @@ class CosmosHookRepository(IHookRepository):
         items = container.query_items(
             query=query,
             parameters=parameters,
-            partition_key="default" # Using user_id as partition_key? Plan said month_key or user_id. Let's use user_id = "default" for now based on previous discussion
+            partition_key="3575cfa0-ec94-40d2-8b25-ee9f0f135027"
         )
         async for item in items:
             return PhoneHookMessage(**item)
