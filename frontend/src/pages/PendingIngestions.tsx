@@ -5,7 +5,7 @@ import AddTransactionModal from '@/components/AddTransactionModal'
 import { Transaction } from '@/hooks/useTransactions'
 
 export default function PendingIngestions() {
-  const { data: pendingIngestions = [] } = useGetPendingIngestions('Pending')
+  const { data: pendingIngestions = [], isLoading } = useGetPendingIngestions('Pending')
   const [confirmingIngestionId, setConfirmingIngestionId] = useState<string | null>(null)
   
   const confirmingIngestion = useMemo(() => {
@@ -41,7 +41,7 @@ export default function PendingIngestions() {
       </div>
 
       <div className="flex-1 overflow-y-auto pb-6">
-        {pendingIngestions.length === 0 ? (
+        {!isLoading && pendingIngestions.length === 0 ? (
           <div className="p-8 text-center text-slate-400 italic">No pending notifications.</div>
         ) : (
           <PendingIngestionsList onEditConfirm={(ing) => setConfirmingIngestionId(ing.id)} />

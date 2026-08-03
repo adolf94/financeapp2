@@ -177,7 +177,7 @@ export default function PendingIngestionCard({
                             onChange={e => setEditingSuggestion({...editingSuggestion, data: {...editingSuggestion.data, type: e.target.value}})}
                             className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                           >
-                            {['Cash', 'Bank', 'CreditCard', 'Investment', 'Asset', 'Liability', 'Equity', 'Income', 'Expense', 'Adjustment'].map(t => (
+                            {['Adjustment', 'Asset', 'Bank', 'Cash', 'CreditCard', 'Equity', 'Expense', 'Income', 'Investment', 'Liability'].map(t => (
                               <option key={t} value={t}>{t}</option>
                             ))}
                           </select>

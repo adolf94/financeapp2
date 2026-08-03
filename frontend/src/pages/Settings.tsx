@@ -6,6 +6,8 @@ import AddTransactionModal from '@/components/AddTransactionModal'
 import { Transaction } from '@/hooks/useTransactions'
 import { useGetPendingIngestions, useRejectIngestion, PendingIngestion } from '@/hooks/useIngestions'
 import HistoricalHooksList from '@/components/HistoricalHooksList'
+import TagInput from '@/components/ui/TagInput'
+import EditAccountModal from '@/components/EditAccountModal'
 import {
   useGetAccountGroups,
   useCreateAccountGroup,
@@ -14,12 +16,15 @@ import {
   useCreateAccount,
   useDeleteAccount,
   useGenerateAccountDescription,
+  Account,
 } from '@/hooks/useAccounts'
 import {
   useGetVendors,
   useCreateVendor,
   useDeleteVendor,
+  Vendor,
 } from '@/hooks/useVendors'
+import EditVendorModal from '@/components/EditVendorModal'
 
 import { useGetRunbookCorrections, useGetRunbookSession } from '@/hooks/useRunbookReview'
 import { RunbookReviewModal } from '@/components/RunbookReviewModal'
@@ -30,7 +35,7 @@ export default function Settings() {
   const [activeTab, setActiveTab] = useState<'categories' | 'vendors' | 'notifications' | 'historicalLogs' | 'runbook'>('categories')
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950">
+    <div className="flex flex-col min-h-full bg-slate-50 dark:bg-slate-950">
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Settings</h1>
         <p className="text-slate-500 mt-1 text-sm">Manage your configuration, categories, and logs</p>
@@ -99,7 +104,7 @@ export default function Settings() {
         </button>
       </div>
 
-      <div className="p-4 overflow-y-auto">
+      <div className="p-4">
         {activeTab === 'categories' && <CategoriesSettings />}
         {activeTab === 'vendors' && <VendorsSettings />}
         {activeTab === 'notifications' && <NotificationLogSettings />}
@@ -124,10 +129,12 @@ function CategoriesSettings() {
   const [newGroupType, setNewGroupType] = useState<'Expense' | 'Income'>('Expense')
   const [newAccountNames, setNewAccountNames] = useState<Record<string, string>>({})
   const [newAccountDescriptions, setNewAccountDescriptions] = useState<Record<string, string>>({})
+  const [newAccountTags, setNewAccountTags] = useState<Record<string, string[]>>({})
   const [deleteGroupCandidate, setDeleteGroupCandidate] = useState<{ id: string, name: string } | null>(null)
   const [deleteAccountCandidate, setDeleteAccountCandidate] = useState<{ id: string, name: string } | null>(null)
+  const [editAccountCandidate, setEditAccountCandidate] = useState<Account | null>(null)
 
-  const categoryGroups = groups.filter((g) => g.accountType === 'Expense' || g.accountType === 'Income')
+  const categoryGroups = groups.filter((g) => g.accountType === 'Expense' || g.accountType === 'Income').sort((a, b) => a.name.localeCompare(b.name))
 
   const handleCreateGroup = (e: React.FormEvent) => {
     e.preventDefault()
@@ -143,12 +150,14 @@ function CategoriesSettings() {
     e.preventDefault()
     const name = newAccountNames[groupId]?.trim()
     const description = newAccountDescriptions[groupId]?.trim() || ''
+    const tags = newAccountTags[groupId] || []
     if (!name) return
     createAccount.mutate(
-      { name, description, accountGroupId: groupId, accountType: type as any, startingBalance: 0 },
+      { name, description, tags, accountGroupId: groupId, accountType: type as any, startingBalance: 0 },
       { onSuccess: () => {
           setNewAccountNames((prev) => ({ ...prev, [groupId]: '' }))
           setNewAccountDescriptions((prev) => ({ ...prev, [groupId]: '' }))
+          setNewAccountTags((prev) => ({ ...prev, [groupId]: [] }))
         }
       }
     )
@@ -160,13 +169,16 @@ function CategoriesSettings() {
     const context = newAccountDescriptions[groupId] || ""
     
     try {
-      const { description } = await generateDescriptionMutation.mutateAsync({
+      const { description, tags } = await generateDescriptionMutation.mutateAsync({
         name,
         type,
         groupName,
         context
       })
       setNewAccountDescriptions(prev => ({ ...prev, [groupId]: description }))
+      if (tags && tags.length > 0) {
+        setNewAccountTags(prev => ({ ...prev, [groupId]: tags }))
+      }
     } catch (e) {
       console.error(e)
       alert("Failed to generate description.")
@@ -204,7 +216,7 @@ function CategoriesSettings() {
 
       <div className="flex flex-col gap-4">
         {categoryGroups.map((group) => {
-          const groupAccounts = accounts.filter((a) => a.accountGroupId === group.id)
+          const groupAccounts = accounts.filter((a) => a.accountGroupId === group.id).sort((a, b) => a.name.localeCompare(b.name))
           const isExpense = group.accountType === 'Expense'
 
           return (
@@ -228,14 +240,32 @@ function CategoriesSettings() {
 
               <div className="p-2 flex flex-col">
                 {groupAccounts.map((acc) => (
-                  <div key={acc.id} className="flex justify-between items-center p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg group">
-                    <span className="text-slate-700 dark:text-slate-300 text-sm">{acc.name}</span>
-                    <button
-                      onClick={() => setDeleteAccountCandidate({ id: acc.id!, name: acc.name })}
-                      className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                  <div key={acc.id} className="flex justify-between items-center p-2 hover:bg-slate-50 dark:hover:bg-slate-800/50 rounded-lg group relative">
+                    <span className="text-slate-700 dark:text-slate-300 text-sm cursor-help">{acc.name}</span>
+                    
+                    <div className="absolute left-0 bottom-full mb-1 hidden group-hover:block w-64 bg-slate-900 dark:bg-slate-800 text-white dark:text-slate-200 text-xs rounded-lg p-3 shadow-xl z-20 pointer-events-none">
+                       {acc.description && <div className="mb-2"><span className="font-semibold text-slate-400 dark:text-slate-500 block mb-1">Description</span>{acc.description}</div>}
+                       {acc.tags && acc.tags.length > 0 && <div><span className="font-semibold text-slate-400 dark:text-slate-500 block mb-1">Tags</span><div className="flex flex-wrap gap-1">{acc.tags.map(t => <span key={t} className="bg-slate-700 dark:bg-slate-700/50 px-1.5 py-0.5 rounded text-[10px]">{t}</span>)}</div></div>}
+                       {(!acc.description && (!acc.tags || acc.tags.length === 0)) && <div className="text-slate-500 italic">No description or tags.</div>}
+                       <div className="absolute top-full left-4 w-2 h-2 bg-slate-900 dark:bg-slate-800 transform rotate-45 -mt-1"></div>
+                    </div>
+
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                      <button
+                        type="button"
+                        onClick={() => setEditAccountCandidate(acc as Account)}
+                        className="text-slate-300 hover:text-blue-500 transition-colors"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteAccountCandidate({ id: acc.id!, name: acc.name })}
+                        className="text-slate-300 hover:text-rose-500 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
 
@@ -273,6 +303,14 @@ function CategoriesSettings() {
                         onChange={(e) => setNewAccountDescriptions((prev) => ({ ...prev, [group.id]: e.target.value }))}
                         className="text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded px-2 py-1.5 text-slate-700 dark:text-slate-300 placeholder:text-slate-400"
                       />
+                      <div className="flex flex-col gap-1 mt-1">
+                        <span className="text-[10px] text-slate-400">Tags</span>
+                        <TagInput
+                          tags={newAccountTags[group.id] || []}
+                          onChange={(newTags) => setNewAccountTags((prev) => ({ ...prev, [group.id]: newTags }))}
+                          placeholder="Type tag and press Enter"
+                        />
+                      </div>
                     </div>
                   )}
                 </form>
@@ -307,6 +345,12 @@ function CategoriesSettings() {
         }}
         onCancel={() => setDeleteAccountCandidate(null)}
       />
+
+      <EditAccountModal
+        isOpen={!!editAccountCandidate}
+        onClose={() => setEditAccountCandidate(null)}
+        account={editAccountCandidate}
+      />
     </div>
   )
 }
@@ -320,6 +364,7 @@ function VendorsSettings() {
   const [newVendorType, setNewVendorType] = useState<'Individual' | 'Business'>('Business')
   const [newVendorTags, setNewVendorTags] = useState('')
   const [deleteCandidate, setDeleteCandidate] = useState<{ id: string, name: string } | null>(null)
+  const [editCandidate, setEditCandidate] = useState<Vendor | null>(null)
 
   const handleCreateVendor = (e: React.FormEvent) => {
     e.preventDefault()
@@ -378,18 +423,28 @@ function VendorsSettings() {
 
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
-          {vendors.map((vendor) => (
+          {vendors.slice().sort((a, b) => a.name.localeCompare(b.name)).map((vendor) => (
             <div key={vendor.id} className="flex justify-between items-center p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 group">
               <div className="flex flex-col">
                 <span className="font-medium text-slate-900 dark:text-slate-50">{vendor.name}</span>
                 <span className="text-xs text-slate-500">{vendor.type} {vendor.tags?.length ? `• ${vendor.tags.join(', ')}` : ''}</span>
               </div>
-              <button
-                onClick={() => setDeleteCandidate({ id: vendor.id!, name: vendor.name })}
-                className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+              <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                <button
+                  type="button"
+                  onClick={() => setEditCandidate(vendor as Vendor)}
+                  className="text-slate-300 hover:text-blue-500 transition-colors"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeleteCandidate({ id: vendor.id!, name: vendor.name })}
+                  className="text-slate-300 hover:text-rose-500 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))}
           {vendors.length === 0 && (
@@ -409,6 +464,12 @@ function VendorsSettings() {
           }
         }}
         onCancel={() => setDeleteCandidate(null)}
+      />
+
+      <EditVendorModal
+        isOpen={!!editCandidate}
+        onClose={() => setEditCandidate(null)}
+        vendor={editCandidate}
       />
     </div>
   )

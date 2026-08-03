@@ -43,3 +43,16 @@ export function useDeleteVendor() {
     },
   })
 }
+
+export function useUpdateVendor() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (vendor: Vendor) => {
+      const response = await apiClient.put(`/vendors/${vendor.id}`, vendor)
+      return response.data as Vendor
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vendors'] })
+    },
+  })
+}

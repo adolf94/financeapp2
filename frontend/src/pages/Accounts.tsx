@@ -110,7 +110,7 @@ export default function Accounts() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950">
+    <div className="flex flex-col min-h-full bg-slate-50 dark:bg-slate-950">
       <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Accounts</h1>
       </div>
@@ -133,14 +133,14 @@ export default function Accounts() {
                 onChange={(e) => setNewGroupType(e.target.value)}
                 className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
               >
-                <option value="Asset">Asset</option>
-                <option value="Liability">Liability</option>
-                <option value="Equity">Equity</option>
                 <option value="Adjustment">Adjustment</option>
+                <option value="Asset">Asset</option>
                 <option value="Bank">Bank</option>
                 <option value="Cash">Cash</option>
                 <option value="CreditCard">Credit Card</option>
+                <option value="Equity">Equity</option>
                 <option value="Investment">Investment</option>
+                <option value="Liability">Liability</option>
               </select>
             </div>
             <button
@@ -226,7 +226,7 @@ export default function Accounts() {
                 <option value="">Select Account Group...</option>
                 {Array.from(new Set(groups.filter(g => g.accountType !== 'Expense' && g.accountType !== 'Income').map(g => g.accountType))).sort().map(type => (
                   <optgroup key={type} label={type}>
-                    {groups.filter(g => g.accountType === type).map(g => (
+                    {groups.filter(g => g.accountType === type).sort((a, b) => a.name.localeCompare(b.name)).map(g => (
                       <option key={g.id} value={g.id}>{g.name}</option>
                     ))}
                   </optgroup>
@@ -272,8 +272,8 @@ export default function Accounts() {
         )}
 
         {/* Display Accounts grouped by AccountGroups */}
-        {groups.filter(g => g.accountType !== 'Expense' && g.accountType !== 'Income').map((group) => {
-          const groupAccounts = accounts.filter((a) => a.accountGroupId === group.id)
+        {groups.filter(g => g.accountType !== 'Expense' && g.accountType !== 'Income').sort((a, b) => a.name.localeCompare(b.name)).map((group) => {
+          const groupAccounts = accounts.filter((a) => a.accountGroupId === group.id).sort((a, b) => a.name.localeCompare(b.name))
           return (
             <div key={group.id} className="flex flex-col gap-2">
               <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{group.name}</h3>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useGetPendingIngestions, useConfirmIngestion, useRejectIngestion, useUpdateIngestionVendor, PendingIngestion } from '@/hooks/useIngestions'
-import { BellDot, Sparkles } from 'lucide-react'
+import { BellDot } from 'lucide-react'
 import { useGetAccounts, useCreateAccount, useGetAccountGroups, useCreateAccountGroup } from '@/hooks/useAccounts'
 import PendingIngestionCard from '@/components/PendingIngestionCard'
 
@@ -91,9 +91,52 @@ export default function PendingIngestionsList({ onEditConfirm }: PendingIngestio
 
   if (isLoading) {
     return (
-      <div className="mx-3 mt-3 p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center justify-center gap-2 text-sm text-slate-500">
-        <Sparkles className="w-4 h-4 animate-spin text-blue-500" />
-        Analyzing notification queue...
+      <div className="mx-3 mt-3 flex flex-col gap-3">
+        <div className="flex items-center gap-2 px-1">
+          <div className="w-4 h-4 bg-slate-200 dark:bg-slate-800 rounded-full animate-pulse" />
+          <div className="w-48 h-3 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+        </div>
+        <div className="flex flex-col gap-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col gap-3 shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-slate-200 dark:bg-slate-800 animate-pulse" />
+              <div className="flex justify-between items-start gap-4">
+                <div className="flex flex-col gap-2 flex-1">
+                  <div className="w-24 h-3 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                  <div className="w-3/4 h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                  <div className="w-1/2 h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <div className="w-20 h-5 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                  <div className="w-16 h-3 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl border border-slate-100 dark:border-slate-800/60">
+                <div className="flex flex-col gap-1.5">
+                  <div className="w-16 h-2 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                  <div className="w-24 h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                </div>
+                <div className="col-span-2 flex flex-col gap-1.5 bg-slate-100/50 dark:bg-slate-900/30 p-2 rounded-lg border border-slate-200/50 dark:border-slate-800/50">
+                  <div className="w-24 h-2 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                  <div className="w-40 h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <div className="w-20 h-2 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                  <div className="w-32 h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <div className="w-20 h-2 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                  <div className="w-24 h-4 bg-slate-200 dark:bg-slate-800 rounded animate-pulse" />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end items-center border-t border-slate-100 dark:border-slate-800/80 pt-3">
+                <div className="w-20 h-8 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse" />
+                <div className="w-20 h-8 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse" />
+                <div className="w-24 h-8 bg-slate-200 dark:bg-slate-800 rounded-lg animate-pulse" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }

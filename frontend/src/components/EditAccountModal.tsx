@@ -135,7 +135,7 @@ export default function EditAccountModal({ isOpen, onClose, account }: EditAccou
             >
               {Array.from(new Set(groups.filter(g => g.accountType !== 'Expense' && g.accountType !== 'Income').map(g => g.accountType))).sort().map(type => (
                 <optgroup key={type} label={type}>
-                  {groups.filter(g => g.accountType === type).map(g => (
+                  {groups.filter(g => g.accountType === type).sort((a, b) => a.name.localeCompare(b.name)).map(g => (
                     <option key={g.id} value={g.id}>{g.name}</option>
                   ))}
                 </optgroup>

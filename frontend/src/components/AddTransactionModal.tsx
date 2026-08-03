@@ -354,7 +354,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
   }, [isOpen, initialData, accounts])
 
   // Combine DB Vendors with presets - memoized for performance
-  const vendorOptions = useMemo(() => dbVendors.map((v) => v.name), [dbVendors])
+  const vendorOptions = useMemo(() => dbVendors.map((v) => v.name).sort((a, b) => a.localeCompare(b)), [dbVendors])
 
   // Payment Source Accounts (Asset / Bank / Cash / CreditCard / Investment)
   const paymentGroupIds = useMemo(() => new Set(
@@ -365,14 +365,14 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
 
   const paymentAccounts = useMemo(() => accounts.filter(
     (a) => !a.accountGroupId || paymentGroupIds.has(a.accountGroupId)
-  ), [accounts, paymentGroupIds])
+  ).sort((a, b) => a.name.localeCompare(b.name)), [accounts, paymentGroupIds])
 
   // Category Account Groups (Strictly Expense or Income)
   const categoryGroups = useMemo(() => accountGroups.filter((g) => {
     if (type === 'Expense') return g.accountType === 'Expense'
     if (type === 'Income') return g.accountType === 'Income'
     return false
-  }), [accountGroups, type])
+  }).sort((a, b) => a.name.localeCompare(b.name)), [accountGroups, type])
 
 
   const updateSplit = useCallback((id: string, updates: Partial<SplitLine>) => {
@@ -728,7 +728,11 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                       className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
                     >
                       <option value="">Select Account...</option>
-                      {Array.from(new Set(paymentAccounts.map(a => a.accountGroupId))).map(groupId => {
+                      {Array.from(new Set(paymentAccounts.map(a => a.accountGroupId))).sort((a, b) => {
+                        const gA = accountGroups.find(g => g.id === a)?.name || '';
+                        const gB = accountGroups.find(g => g.id === b)?.name || '';
+                        return gA.localeCompare(gB);
+                      }).map(groupId => {
                         const group = accountGroups.find(g => g.id === groupId)
                         const groupAccounts = paymentAccounts.filter(a => a.accountGroupId === groupId)
                         if (!group || groupAccounts.length === 0) return null
@@ -755,7 +759,11 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                         className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
                       >
                         <option value="">Select Destination Account...</option>
-                        {Array.from(new Set(paymentAccounts.filter(a => a.id !== sourceAccountId).map(a => a.accountGroupId))).map(groupId => {
+                        {Array.from(new Set(paymentAccounts.filter(a => a.id !== sourceAccountId).map(a => a.accountGroupId))).sort((a, b) => {
+                          const gA = accountGroups.find(g => g.id === a)?.name || '';
+                          const gB = accountGroups.find(g => g.id === b)?.name || '';
+                          return gA.localeCompare(gB);
+                        }).map(groupId => {
                           const group = accountGroups.find(g => g.id === groupId)
                           const groupAccounts = paymentAccounts.filter(a => a.accountGroupId === groupId && a.id !== sourceAccountId)
                           if (!group || groupAccounts.length === 0) return null
@@ -779,7 +787,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                       </div>
 
                       {splits.map((split) => {
-                        const subCategoryOptions = accounts.filter(a => a.accountGroupId === split.categoryId)
+                        const subCategoryOptions = accounts.filter(a => a.accountGroupId === split.categoryId).sort((a, b) => a.name.localeCompare(b.name))
                         return (
                           <div key={split.id} className="flex flex-col gap-2 p-3 bg-slate-100 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-800">
                             <div className="flex gap-2">
@@ -843,14 +851,14 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                     <div key={line.id} className="flex flex-col gap-2 p-2 border border-slate-200 dark:border-slate-800 rounded-lg">
                       <div className="flex gap-2">
                         <Combobox
-                          options={accountGroups.map(g => ({ value: g.id, label: g.name }))}
+                          options={accountGroups.slice().sort((a, b) => a.name.localeCompare(b.name)).map(g => ({ value: g.id, label: g.name }))}
                           value={line.categoryId}
                           onChange={(val) => updateJournalLine(line.id, { categoryId: val })}
                           placeholder="Category..."
                           className="flex-1 text-sm"
                         />
                         <Combobox
-                          options={accounts.filter(a => a.accountGroupId === line.categoryId).map(a => ({ value: a.id!, label: a.name }))}
+                          options={accounts.filter(a => a.accountGroupId === line.categoryId).sort((a, b) => a.name.localeCompare(b.name)).map(a => ({ value: a.id!, label: a.name }))}
                           value={line.subCategoryId}
                           onChange={(val) => updateJournalLine(line.id, { subCategoryId: val })}
                           placeholder="Account..."
@@ -1235,7 +1243,7 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                                     className="text-xs px-2 py-1 rounded border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white"
                                     aria-label="Account Type"
                                   >
-                                    {['Cash', 'Bank', 'CreditCard', 'Investment', 'Asset', 'Liability', 'Equity', 'Income', 'Expense', 'Adjustment'].map(t => (
+                                    {['Adjustment', 'Asset', 'Bank', 'Cash', 'CreditCard', 'Equity', 'Expense', 'Income', 'Investment', 'Liability'].map(t => (
                                       <option key={t} value={t}>{t}</option>
                                     ))}
                                   </select>

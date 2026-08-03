@@ -174,7 +174,7 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                     return next
                   })}
                   onUpdateChange={handleAccountUpdateChange}
-                  onSendFeedback={(id, name, text) => chatReview.mutate({ user_message: `Regarding account '${name}' description suggestion: ${text}` })}
+                  onSendFeedback={(_id, name, text) => chatReview.mutate({ user_message: `Regarding account '${name}' description suggestion: ${text}` })}
                   isThinking={isThinking}
                   getOldDescription={getOldDescription}
                   getOldTags={getOldTags}
@@ -191,7 +191,7 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                     return next
                   })}
                   onUpdateChange={handleVendorUpdateChange}
-                  onSendFeedback={(id, name, text) => chatReview.mutate({ user_message: `Regarding vendor '${name}' tag suggestion: ${text}` })}
+                  onSendFeedback={(_id, name, text) => chatReview.mutate({ user_message: `Regarding vendor '${name}' tag suggestion: ${text}` })}
                   isThinking={isThinking}
                   getOldVendorTags={getOldVendorTags}
                   getVendorName={getVendorName}
