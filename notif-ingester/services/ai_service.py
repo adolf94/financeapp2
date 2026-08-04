@@ -125,23 +125,7 @@ Return ONLY valid JSON matching this schema:
 CLASSIFICATION_PROMPT = """
 You are a personal finance assistant. Classify this notification as a financial transaction.
 
-User Runbook (Explicit Rules):
-{runbook_content}
-
-Notification: {raw_msg}
-Source App / Sender: {app_name}
-Full payload: {raw_payload}
-
-Similar past transactions (for context):
-{similar_context}
-
-Available accounts:
-{accounts}
-
-Existing Vendors:
-{vendors}
-
-Return ONLY valid JSON matching this schema:
+Apply the rules below to classify the transaction. Return ONLY valid JSON matching this schema:
 {{
   "is_financial":true,
   "vendor": string,
@@ -179,6 +163,26 @@ Rules:
 - Account IDs: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`.
 - Suggested Account Creation: Focus ONLY on the functional, financial purpose of the account.
 - Explanation field ('why'): Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names. MUST be strictly exactly 2 sentences long.
+
+User Runbook (Explicit Rules):
+{runbook_content}
+
+Available accounts:
+{accounts}
+
+Existing Vendors:
+{vendors}
+
+==================================================
+Now, classify the following specific notification transaction:
+==================================================
+
+Notification: {raw_msg}
+Source App / Sender: {app_name}
+Full payload: {raw_payload}
+
+Similar past transactions (for context):
+{similar_context}
 """
 
 IS_FINANCIAL_PROMPT = """
