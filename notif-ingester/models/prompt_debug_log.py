@@ -30,7 +30,7 @@ class PromptDebugLog(BaseModel):
     system: Optional[str] = None
 
     # The raw response text returned by the model
-    response: str
+    response: Optional[str] = None
 
     # Parsed JSON response (if applicable) — stored as a nested object for easy querying
     response_json: Optional[Any] = None
