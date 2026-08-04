@@ -26,6 +26,9 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 # Shared auth client (caches JWKS)
 _auth_client = ArAuthClient(authority="https://auth.adolfrey.com/api")
 
+# Set to track notif_ids currently in-flight / being inserted to prevent duplicates
+_processing_notif_ids = set()
+
 def _require_auth(req: func.HttpRequest) -> Tuple[Optional[dict], Optional[func.HttpResponse]]:
     """Validate Bearer JWT. Returns (payload, None) on success, (None, error_response) on failure."""
     auth_header = req.headers.get("Authorization") or req.headers.get("authorization", "")
@@ -89,9 +92,22 @@ async def PhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
     except ValueError:
         return func.HttpResponse(json.dumps({"message": "Invalid JSON"}), status_code=400, mimetype="application/json")
         
-    hook_service = get_hook_service()
+    notif_id = body.get("notif_id")
+    added_to_processing = False
     
+    if notif_id:
+        if notif_id in _processing_notif_ids:
+            logging.warning(f"Duplicate post detected in-flight for notif_id: {notif_id}")
+            return func.HttpResponse(
+                json.dumps({"message": "Duplicate request in progress"}),
+                status_code=202,
+                mimetype="application/json"
+            )
+        _processing_notif_ids.add(notif_id)
+        added_to_processing = True
+        
     try:
+        hook_service = get_hook_service()
         hook_msg = await hook_service.save_hook_async(body)
         return func.HttpResponse(
             json.dumps(hook_msg.model_dump(by_alias=True, mode="json")),
@@ -101,6 +117,9 @@ async def PhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"Error saving hook: {e}")
         return func.HttpResponse(json.dumps({"message": f"Internal server error: {e}"}), status_code=500, mimetype="application/json")
+    finally:
+        if added_to_processing and notif_id:
+            _processing_notif_ids.discard(notif_id)
 
 # ── Function 2: ClassifyNotificationFunction ────────────────────────────────
 @app.cosmos_db_trigger(

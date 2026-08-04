@@ -123,7 +123,7 @@ Return ONLY valid JSON matching this schema:
 """
 
 CLASSIFICATION_PROMPT = """
-You are a personal finance assistant. Classify this notification as a financial transaction.
+You are a personal finance assistant.
 
 Apply the rules below to classify the transaction. Return ONLY valid JSON matching this schema:
 {{
@@ -148,7 +148,7 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   "sender_account_number": string (sender account/card/wallet number if mentioned in the message),
   "sender_account_name": string (sender name if mentioned in the message),
   "application": string (name of the app or SMS sender, e.g. BPI, GCash),
-  "why": string (provide a concise explanation why this transaction was classified this way, including which rules, keywords, or vector context matches were used. Do NOT include raw UUIDs in this explanation.)
+  "why": string (explain the classification so the user can spot mistakes and provide corrections — mention which runbook rule, keyword, or past transaction match drove each decision. Do NOT include raw UUIDs.)
 }}
 
 Rules:
@@ -160,9 +160,9 @@ Rules:
 - Entries must balance (debit amount positive, credit amount negative)
 - Vendor Matching: You are provided with a list of "Existing Vendors". Prefer an exact match from this list if the business/person matches. If not found in the list, you may guess or extract a new vendor name.
 - Suggested Vendor: If the transaction vendor matches one of the "Existing Vendors" (either by exact name or lookup string), set `suggested_vendor` to null. If there is NO match in the existing vendors, you MUST provide a `suggested_vendor` object with proposed name, tags, and type. The type must strictly be one of "Individual", "Business", or "Internal".
-- Account IDs: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`.
+- Account IDs: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`. CRITICAL: Never invent or guess account IDs. If you are not 100% certain an account ID exists in the provided list, set it to null.
 - Suggested Account Creation: Focus ONLY on the functional, financial purpose of the account.
-- Explanation field ('why'): Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names. MUST be strictly exactly 2 sentences long.
+- Explanation field ('why'): Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names. Write enough detail that the user can clearly identify what drove each classification decision.
 
 User Runbook (Explicit Rules):
 {runbook_content}
