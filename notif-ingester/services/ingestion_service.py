@@ -137,7 +137,7 @@ class IngestionService:
 
         logging.info("[process_hook_async] 3c. Fetching vendors...")
         vendors = await self._finance_api_service.get_vendors_async(hook.user_id)
-
+        
         # 4. Classify via LLM
         logging.info("[process_hook_async] 4. Classifying via LLM...")
         ai_parsed = await self._ai_service.classify_async(hook, similar_vectors, accounts, runbook_content, vendors)

@@ -10,6 +10,7 @@ from models.phone_hook import PhoneHookMessage
 from repositories.hook_repository import CosmosHookRepository
 from repositories.ingestion_repository import CosmosIngestionRepository
 from repositories.vector_repository import CosmosVectorRepository
+from repositories.prompt_debug_repository import CosmosPromptDebugRepository, NoOpPromptDebugRepository
 from services.hook_service import HookService
 from services.embedding_service import EmbeddingService
 from services.vector_service import VectorService
@@ -58,7 +59,10 @@ def get_ingestion_service():
     vector_repo = CosmosVectorRepository()
     embedding_service = EmbeddingService()
     vector_service = VectorService(vector_repo)
-    ai_service = AiService()
+    # Only spin up the Cosmos debug repo when PROMPT_DEBUG is enabled
+    prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
+    debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
+    ai_service = AiService(debug_repo=debug_repo)
     finance_api_service = FinanceApiService()
     
     return IngestionService(

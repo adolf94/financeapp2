@@ -1,6 +1,7 @@
 azure-functions
 azure-cosmos
 google-genai
+openai>=1.0.0
 pydantic
 python-dotenv
 pytz

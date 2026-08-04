@@ -1,11 +1,13 @@
 import json
 import os
 import logging
-from google import genai
 from models.phone_hook import PhoneHookMessage
 from models.pending_ingestion import AiParsedData
 from models.transaction_vector import TransactionVector
-from typing import List, Tuple
+from models.prompt_debug_log import PromptDebugLog
+from typing import List, Optional, Tuple
+from services.llm_provider import LlmProvider, make_provider
+from repositories.prompt_debug_repository import IPromptDebugRepository, NoOpPromptDebugRepository
 
 RUNBOOK_REVIEW_PROMPT = """
 You are a personal finance assistant. Your job is to review the user's transaction classification rules runbook (RUNBOOK.md) and propose updates to it, as well as account descriptions and vendor tags.
@@ -162,7 +164,7 @@ Return ONLY valid JSON matching this schema:
   "sender_account_number": string (sender account/card/wallet number if mentioned in the message),
   "sender_account_name": string (sender name if mentioned in the message),
   "application": string (name of the app or SMS sender, e.g. BPI, GCash),
-  "why": string (exactly 2 sentences explaining why this transaction was classified this way, including which rules, keywords, or vector context matches were used. Do NOT include raw UUIDs in this explanation.)
+  "why": string (provide a concise explanation why this transaction was classified this way, including which rules, keywords, or vector context matches were used. Do NOT include raw UUIDs in this explanation.)
 }}
 
 Rules:
@@ -194,11 +196,55 @@ Return ONLY a boolean matching this JSON schema:
 """
 
 class AiService:
-    def __init__(self):
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        self.client = genai.Client(api_key=api_key)
-        self.model = os.environ.get("GEMINI_CLASSIFICATION_MODEL", "gemini-2.5-flash-lite")
-        self.reasoning_model = os.environ.get("GEMINI_REASONING_MODEL", "gemini-2.5-flash")
+    def __init__(self, debug_repo: Optional[IPromptDebugRepository] = None):
+        self.classification_provider = make_provider("CLASSIFICATION")
+        self.reasoning_provider = make_provider("REASONING")
+        self._debug_repo = debug_repo or NoOpPromptDebugRepository()
+        self._prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
+
+    async def _debug_log(
+        self,
+        call_type: str,
+        provider: LlmProvider,
+        prompt: str,
+        response_text: str,
+        system: Optional[str] = None,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+    ) -> None:
+        """Persist a PROMPT_DEBUG entry to CosmosDB (and file as fallback)."""
+        if not self._prompt_debug:
+            return
+
+        # Try to parse response as JSON for structured querying
+        try:
+            response_json = json.loads(response_text)
+        except Exception:
+            response_json = None
+
+        log = PromptDebugLog(
+            call_type=call_type,
+            provider=provider.provider_label,
+            prompt=prompt,
+            system=system,
+            response=response_text,
+            response_json=response_json,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+        # Primary: write to CosmosDB
+        await self._debug_repo.add_async(log)
+
+        # Fallback: also write a local file (keeps backward compat for local dev)
+        try:
+            import uuid
+            os.makedirs("debug_prompts", exist_ok=True)
+            file_path = os.path.join("debug_prompts", f"{call_type}_{uuid.uuid4().hex[:8]}.json")
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(log.model_dump(by_alias=True, mode="json"), f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logging.warning("PROMPT_DEBUG file fallback failed: %s", e)
 
     def _build_context(self, similar_vectors: List[Tuple[TransactionVector, float]]) -> str:
         if not similar_vectors:
@@ -294,28 +340,15 @@ Return ONLY valid JSON matching this schema:
 }}
 """
         try:
-            from google.genai import types
-
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    response_mime_type="application/json",
-                )
+            response_text, in_tok, out_tok = await self.classification_provider.generate(
+                prompt=prompt,
+                json_mode=True,
+                temperature=0.2,
             )
-            
-            if ai_debug or os.environ.get("PROMPT_DEBUG", "").lower() == "true":
-                os.makedirs("debug_prompts", exist_ok=True)
-                import uuid
-                file_path = os.path.join("debug_prompts", f"desc_{uuid.uuid4().hex[:8]}.txt")
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write("=== PROMPT ===\n")
-                    f.write(prompt)
-                    f.write("\n\n=== RESPONSE ===\n")
-                    f.write(response.text)
 
-            data = json.loads(response.text)
+            await self._debug_log("desc", self.classification_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
+
+            data = json.loads(response_text)
             return {"description": "", "tags": data.get("tags", [])}
         except Exception as e:
             import logging
@@ -340,13 +373,14 @@ Return ONLY valid JSON matching this schema:
         )
 
         try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=prompt,
-                config={"response_mime_type": "application/json"}
+            response_text, in_tok, out_tok = await self.classification_provider.generate(
+                prompt=prompt,
+                json_mode=True,
             )
-            
-            data = json.loads(response.text)
+
+            await self._debug_log("is_financial", self.classification_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
+
+            data = json.loads(response_text)
             return data.get("is_financial", True) # Default to true if ambiguous
         except Exception as e:
             logging.error(f"Error checking if financial transaction: {e}")
@@ -380,28 +414,25 @@ Return ONLY valid JSON matching this schema:
             vendors=vendors_text
         )
 
-        system_instruction = f"You are a personal finance assistant. Classify the notification as a financial transaction."
+        system_instruction = "You are a personal finance assistant. Classify the notification as a financial transaction."
 
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-            config={
-                "response_mime_type": "application/json",
-                "system_instruction": system_instruction
-            }
+        response_text, in_tok, out_tok = await self.classification_provider.generate(
+            prompt=prompt,
+            system=system_instruction,
+            json_mode=True,
         )
 
-        if os.environ.get("PROMPT_DEBUG", "").lower() == "true":
-            os.makedirs("debug_prompts", exist_ok=True)
-            import uuid
-            file_path = os.path.join("debug_prompts", f"classify_{uuid.uuid4().hex[:8]}.txt")
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write("=== PROMPT ===\n")
-                f.write(prompt)
-                f.write("\n\n=== RESPONSE ===\n")
-                f.write(response.text)
-        
-        data = json.loads(response.text)
+        await self._debug_log(
+            "classify",
+            self.classification_provider,
+            prompt,
+            response_text,
+            system=system_instruction,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+        )
+
+        data = json.loads(response_text)
         
         # Fallback for application field
         if not data.get("application"):
@@ -440,23 +471,14 @@ Return ONLY valid JSON matching this schema:
             corrections_section=corrections_section
         )
 
-        response = self.client.models.generate_content(
-            model=self.reasoning_model,
-            contents=prompt,
-            config={"response_mime_type": "application/json"}
+        response_text, in_tok, out_tok = await self.reasoning_provider.generate(
+            prompt=prompt,
+            json_mode=True,
         )
 
-        if os.environ.get("PROMPT_DEBUG", "").lower() == "true":
-            os.makedirs("debug_prompts", exist_ok=True)
-            import uuid
-            file_path = os.path.join("debug_prompts", f"review_start_{uuid.uuid4().hex[:8]}.txt")
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write("=== PROMPT ===\n")
-                f.write(prompt)
-                f.write("\n\n=== RESPONSE ===\n")
-                f.write(response.text)
-        
-        return json.loads(response.text)
+        await self._debug_log("review_start", self.reasoning_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
+
+        return json.loads(response_text)
 
     async def chat_runbook_review_async(
         self,
@@ -502,20 +524,11 @@ Return ONLY valid JSON matching this schema:
             user_message=user_message
         )
 
-        response = self.client.models.generate_content(
-            model=self.reasoning_model,
-            contents=prompt,
-            config={"response_mime_type": "application/json"}
+        response_text, in_tok, out_tok = await self.reasoning_provider.generate(
+            prompt=prompt,
+            json_mode=True,
         )
 
-        if os.environ.get("PROMPT_DEBUG", "").lower() == "true":
-            os.makedirs("debug_prompts", exist_ok=True)
-            import uuid
-            file_path = os.path.join("debug_prompts", f"review_chat_{uuid.uuid4().hex[:8]}.txt")
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write("=== PROMPT ===\n")
-                f.write(prompt)
-                f.write("\n\n=== RESPONSE ===\n")
-                f.write(response.text)
-        
-        return json.loads(response.text)
+        await self._debug_log("review_chat", self.reasoning_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
+
+        return json.loads(response_text)
