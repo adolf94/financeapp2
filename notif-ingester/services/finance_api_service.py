@@ -210,6 +210,88 @@ class FinanceApiService:
             logging.warning(f"Error searching vendors by lookups: {e}")
         return None
 
+    async def search_all_vendor_matches_by_lookups_async(self, user_id: str, lookups: list[str]) -> list[dict]:
+        """
+        Search for ALL vendor matches by lookup values.
+        Returns list of dictionaries with vendor info and matching lookup strings.
+        
+        Format: [
+            {
+                "vendor_id": str,
+                "vendor_name": str,
+                "matched_lookups": list[str],  # Which lookup values matched
+                "total_hits": int,             # Sum of hits for matched lookups
+                "vendor_type": str,            # Vendor type if available
+                "vendor_tags": list[str]       # Vendor tags for categorization
+            },
+            ...
+        ]
+        """
+        if not self.client or not lookups:
+            return []
+            
+        db = self.client.get_database_client(self.db_name)
+        try:
+            lookup_container = db.get_container_client("VendorLookups")
+            vendor_container = db.get_container_client("Vendors")
+            
+            # Normalize lookup values
+            lookup_values = [loc.lower().strip() for loc in lookups if loc and isinstance(loc, str) and loc.strip()]
+            if not lookup_values:
+                return []
+                
+            # Query all lookup matches
+            parameters = [{"name": f"@p{i}", "value": val} for i, val in enumerate(lookup_values)]
+            param_names = ", ".join(p["name"] for p in parameters)
+            
+            query = f"SELECT c.VendorId, c.LookupValue, c.Hits FROM c WHERE c.LookupValue IN ({param_names})"
+            lookup_items = lookup_container.query_items(
+                query=query,
+                parameters=parameters,
+                partition_key=user_id
+            )
+            
+            # Group by vendor ID
+            vendor_matches = {}
+            
+            async for item in lookup_items:
+                v_id = item.get("VendorId")
+                lookup_value = item.get("LookupValue")
+                hits = item.get("Hits", 1)
+                
+                if v_id not in vendor_matches:
+                    vendor_matches[v_id] = {
+                        "vendor_id": v_id,
+                        "matched_lookups": [],
+                        "total_hits": 0
+                    }
+                
+                vendor_matches[v_id]["matched_lookups"].append(lookup_value)
+                vendor_matches[v_id]["total_hits"] += hits
+            
+            # Fetch vendor details for matched vendors
+            matches_list = []
+            for v_id, match_info in vendor_matches.items():
+                try:
+                    vendor = await vendor_container.read_item(item=v_id, partition_key=user_id)
+                    match_info["vendor_name"] = vendor.get("Name", "")
+                    match_info["vendor_type"] = vendor.get("Type", "Business")
+                    match_info["vendor_tags"] = vendor.get("Tags", []) or vendor.get("tags", [])
+                    matches_list.append(match_info)
+                except Exception:
+                    # Skip vendors we can't fetch details for
+                    continue
+            
+            # Sort by total hits (most frequent matches first)
+            matches_list.sort(key=lambda x: x["total_hits"], reverse=True)
+            
+            return matches_list
+            
+        except Exception as e:
+            import logging
+            logging.warning(f"Error searching all vendor matches by lookups: {e}")
+            return []
+
     async def ensure_vendor_and_lookups_async(self, user_id: str, vendor_name: str, lookups: list[str], vendor_type: str = None) -> str | None:
         if not self.client or not vendor_name:
             return None

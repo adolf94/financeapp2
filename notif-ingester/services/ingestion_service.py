@@ -9,6 +9,7 @@ from services.embedding_service import EmbeddingService
 from services.vector_service import VectorService
 from services.ai_service import AiService
 from services.finance_api_service import FinanceApiService
+from services.preprocessing_service import PreprocessingService, ExtractedAccountInfo
 from models.pending_ingestion import AiParsedData
 
 class IngestionService:
@@ -25,6 +26,7 @@ class IngestionService:
         self._vector_service = vector_service
         self._ai_service = ai_service
         self._finance_api_service = finance_api_service
+        self._preprocessing_service = PreprocessingService(debug_repo=ai_service._debug_repo)
         self._auto_confirm_threshold = float(os.environ.get("AUTO_CONFIRM_THRESHOLD", "0.92"))
 
     @property
@@ -46,20 +48,17 @@ class IngestionService:
         return False
 
     def _build_lookups(self, ai_parsed, accounts: list[dict]) -> list[str]:
-        raw_lookups = [getattr(ai_parsed, 'vendor', None)]
+        # Extract ALL possible lookup strings from the AI classification
+        raw_lookups = [
+            getattr(ai_parsed, 'vendor', None),
+            getattr(ai_parsed, 'application', None),
+            getattr(ai_parsed, 'recipient_account_name', None),
+            getattr(ai_parsed, 'recipient_account_number', None),
+            getattr(ai_parsed, 'sender_account_name', None),
+            getattr(ai_parsed, 'sender_account_number', None)
+        ]
         
-        tx_type = getattr(ai_parsed, 'transaction_type', None)
-        if tx_type == "Expense":
-            raw_lookups.extend([
-                getattr(ai_parsed, 'recipient_account_name', None),
-                getattr(ai_parsed, 'recipient_account_number', None)
-            ])
-        elif tx_type == "Income":
-            raw_lookups.extend([
-                getattr(ai_parsed, 'sender_account_name', None),
-                getattr(ai_parsed, 'sender_account_number', None)
-            ])
-        
+        # Clean and filter lookups
         lookups = [loc.strip() for loc in raw_lookups if loc and isinstance(loc, str) and loc.strip()]
         
         stop_words = {
@@ -135,12 +134,31 @@ class IngestionService:
         if not runbook_content:
             runbook_content = self._ai_service.get_default_runbook_content()
 
+        # 3c. Fetch vendors...
         logging.info("[process_hook_async] 3c. Fetching vendors...")
         vendors = await self._finance_api_service.get_vendors_async(hook.user_id)
         
-        # 4. Classify via LLM
-        logging.info("[process_hook_async] 4. Classifying via LLM...")
-        ai_parsed = await self._ai_service.classify_async(hook, similar_vectors, accounts, runbook_content, vendors)
+        # 3d. Pre-process notification to extract account info and find vendor matches
+        logging.info("[process_hook_async] 3d. Pre-processing notification...")
+        extracted_info = await self._preprocessing_service.process_hook(hook)
+        
+        # Build lookup values from extracted info for vendor matching
+        pre_lookups = []
+        pre_lookups.extend(extracted_info.account_numbers)
+        pre_lookups.extend(extracted_info.account_names)
+        pre_lookups.extend(extracted_info.potential_vendor_names)
+        pre_lookups.append(extracted_info.application)
+        
+        # Search for vendor matches using extracted info
+        vendor_matches = await self._finance_api_service.search_all_vendor_matches_by_lookups_async(
+            hook.user_id, pre_lookups
+        )
+        
+        # 4. Classify via LLM with vendor match context
+        logging.info("[process_hook_async] 4. Classifying via LLM with vendor context...")
+        ai_parsed = await self._ai_service.classify_async(
+            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches
+        )
         
         # 4.5 Automatically map vendor from lookups or string match
         existing_vendor_names = {}
@@ -265,6 +283,35 @@ class IngestionService:
             runbook_content = self._ai_service.get_default_runbook_content()
         vendors = await self._finance_api_service.get_vendors_async(user_id)
 
+        # 3d. Pre-process notification to extract account info and find vendor matches
+        logging.info("[reclassify_ingestion_async] Pre-processing notification...")
+        # Create a minimal hook-like object for preprocessing
+        from models.phone_hook import PhoneHookMessage
+        hook_for_preprocess = PhoneHookMessage(
+            id=ingestion.id,
+            user_id=user_id,
+            raw_msg=ingestion.raw_msg,
+            raw_payload=ingestion.raw_payload,
+            action="",
+            status="",
+            month_key="",
+            partition_key=user_id,
+            received_at=ingestion.received_at
+        )
+        extracted_info = await self._preprocessing_service.process_hook(hook_for_preprocess)
+        
+        # Build lookup values from extracted info for vendor matching
+        pre_lookups = []
+        pre_lookups.extend(extracted_info.account_numbers)
+        pre_lookups.extend(extracted_info.account_names)
+        pre_lookups.extend(extracted_info.potential_vendor_names)
+        pre_lookups.append(extracted_info.application)
+        
+        # Search for vendor matches using extracted info
+        vendor_matches = await self._finance_api_service.search_all_vendor_matches_by_lookups_async(
+            user_id, pre_lookups
+        )
+
         # 4. Re-classify via LLM
         # Build a minimal hook-like object for classification
         from types import SimpleNamespace
@@ -273,7 +320,7 @@ class IngestionService:
             raw_payload=ingestion.raw_payload,
             user_id=user_id
         )
-        ai_parsed = await self._ai_service.classify_async(hook_like, similar_vectors, accounts, runbook_content, vendors)
+        ai_parsed = await self._ai_service.classify_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches)
 
 
         # 4.5 Automatically map vendor from lookups or string match

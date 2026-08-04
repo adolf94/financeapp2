@@ -158,11 +158,14 @@ Rules:
 - For Income: debit = bank account, credit = income account
 - For Transfer: debit = receiving asset/bank account, credit = sending asset/bank account
 - Entries must balance (debit amount positive, credit amount negative)
-- Vendor Matching: You are provided with a list of "Existing Vendors". Prefer an exact match from this list if the business/person matches. If not found in the list, you may guess or extract a new vendor name.
-- Suggested Vendor: If the transaction vendor matches one of the "Existing Vendors" (either by exact name or lookup string), set `suggested_vendor` to null. If there is NO match in the existing vendors, you MUST provide a `suggested_vendor` object with proposed name, tags, and type. The type must strictly be one of "Individual", "Business", or "Internal".
-- Account IDs: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`. CRITICAL: Never invent or guess account IDs. If you are not 100% certain an account ID exists in the provided list, set it to null.
-- Suggested Account Creation: Focus ONLY on the functional, financial purpose of the account.
-- Explanation field ('why'): Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names. Write enough detail that the user can clearly identify what drove each classification decision.
+
+
+- **Pre-matched Vendors**: You are provided with "Vendor Matches Found" - these vendors were matched based on extracted account numbers/names from the notification text. **STRONGLY PRIORITIZE THESE MATCHES** in your classification. Check their tags to understand what they're for. If a vendor match has high hit counts, it's very likely correct.
+- **Vendor Matching**: You are also provided with a list of "Existing Vendors" with their tags. Check if any of these match the transaction vendor. If a vendor from the "Vendor Matches Found" list also appears in "Existing Vendors", that's a strong confirmation.
+- **Suggested Vendor**: If the transaction vendor matches one of the "Existing Vendors" (either by exact name or was found in "Vendor Matches Found"), set `suggested_vendor` to null. If there is NO match in the existing vendors or vendor matches, you MUST provide a `suggested_vendor` object with proposed name, tags, and type. The type must strictly be one of "Individual", "Business", or "Internal". When suggesting tags, consider the vendor's purpose and existing vendor tags to maintain consistency.
+- **Account IDs**: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`. CRITICAL: Never invent or guess account IDs. If you are not 100% certain an account ID exists in the provided list, set it to null.
+- **Suggested Account Creation**: Focus ONLY on the functional, financial purpose of the account.
+- **Explanation field ('why')**: Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names. Write enough detail that the user can clearly identify what drove each classification decision. Mention if vendor matches influenced your decision.
 
 User Runbook (Explicit Rules):
 {runbook_content}
@@ -172,6 +175,9 @@ Available accounts:
 
 Existing Vendors:
 {vendors}
+
+Vendor Matches Found (via account number/name lookup):
+{vendor_matches}
 
 ==================================================
 Now, classify the following specific notification transaction:
@@ -280,24 +286,23 @@ class AiService:
             
             # Determine header/label names dynamically based on the account type value
             if 'expense' in type_name_lower:
-                header = "Expense\nid | Category | Name | Tags"
+                header = "Expense\nCategory | Name | Tags"
             elif 'income' in type_name_lower:
-                header = "Income\nid | Category | Name | Tags"
+                header = "Income\nCategory | Name | Tags"
             elif 'creditcard' in type_name_lower or 'credit card' in type_name_lower:
-                header = "Credit Card\nid | Group | Name | Tags"
+                header = "Credit Card\nGroup | Name | Tags"
             elif 'asset' in type_name_lower:
-                header = "Asset\nid | Group | Name | Tags"
+                header = "Asset\nGroup | Name | Tags"
             else:
-                header = f"{type_name}\nid | Group | Name | Tags"
+                header = f"{type_name}\nGroup | Name | Tags"
                 
             lines = []
             for acc in acc_list:
-                acc_id = acc.get('id') or ''
                 name = acc.get('name') or ''
                 tags = acc.get('tags') or []
                 tags_str = ", ".join(tags)
                 group_info = acc.get('accountGroupName') or acc.get('accountGroupId') or "N/A"
-                lines.append(f"{acc_id} | {group_info} | {name} | {tags_str}")
+                lines.append(f"{group_info} | {name} | {tags_str}")
                 
             sections.append(f"{header}\n" + "\n".join(lines))
             
@@ -309,15 +314,40 @@ class AiService:
         vendors_lines = []
         for v in vendors:
             if isinstance(v, dict):
-                v_id = v.get("id") or ""
                 name = v.get("name") or ""
                 tags = ", ".join(v.get("tags") or [])
                 tags_str = f" [Tags: {tags}]" if tags else ""
                 v_type = v.get("type") or "Business"
-                vendors_lines.append(f"{v_id} | {name} (Type: {v_type}){tags_str}")
+                vendors_lines.append(f"{name} (Type: {v_type}){tags_str}")
             else:
                 vendors_lines.append(f"- {v}")
         return "\n".join(vendors_lines)
+
+    def _format_vendor_matches(self, vendor_matches: list[dict]) -> str:
+        """Format vendor matches found via lookup values for AI context"""
+        if not vendor_matches:
+            return "No vendor matches found via account number/name lookup."
+        
+        matches_lines = []
+        matches_lines.append("Vendor matches found via account number/name lookup:")
+        matches_lines.append("(These vendors matched based on extracted account info - consider them in classification)")
+        
+        for match in vendor_matches:
+            vendor_name = match.get("vendor_name", "Unknown")
+            matched_lookups = match.get("matched_lookups", [])
+            total_hits = match.get("total_hits", 0)
+            vendor_type = match.get("vendor_type", "Business")
+            vendor_tags = match.get("vendor_tags", [])
+            
+            lookups_str = ", ".join(matched_lookups[:3])  # Show first 3 matches
+            if len(matched_lookups) > 3:
+                lookups_str += f" (+{len(matched_lookups)-3} more)"
+            
+            tags_str = f" [Tags: {', '.join(vendor_tags)}]" if vendor_tags else ""
+                
+            matches_lines.append(f"- {vendor_name} (Type: {vendor_type}, Hits: {total_hits}){tags_str} matched via: {lookups_str}")
+        
+        return "\n".join(matches_lines)
 
     async def generate_account_description_async(self, account_name: str, account_type: str, group_name: str, accounts: list[dict], context: str = "", ai_debug: bool = False) -> dict:
         """
@@ -397,13 +427,17 @@ Return ONLY valid JSON matching this schema:
         similar_vectors: List[Tuple[TransactionVector, float]],
         accounts: list[dict],
         runbook_content: str,
-        vendors: list[dict] | list[str] = None
+        vendors: list[dict] | list[str] = None,
+        vendor_matches: list[dict] = None
     ) -> AiParsedData:
         
         context = self._build_context(similar_vectors)
         accounts_text = self._format_accounts(accounts)
         
         vendors_text = self._format_vendors(vendors)
+        
+        # Format vendor matches for AI context
+        vendor_matches_text = self._format_vendor_matches(vendor_matches)
 
         # Resolve a clean app name from the hook data
         app_name = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_rcv_sender") or hook.raw_payload.get("sms_sender") or ""
@@ -415,7 +449,8 @@ Return ONLY valid JSON matching this schema:
             raw_payload=json.dumps(hook.raw_payload, indent=2),
             similar_context=context,
             accounts=accounts_text,
-            vendors=vendors_text
+            vendors=vendors_text,
+            vendor_matches=vendor_matches_text
         )
 
         system_instruction = "You are a personal finance assistant. Classify the notification as a financial transaction."
