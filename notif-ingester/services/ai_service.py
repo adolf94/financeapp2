@@ -286,23 +286,24 @@ class AiService:
             
             # Determine header/label names dynamically based on the account type value
             if 'expense' in type_name_lower:
-                header = "Expense\nCategory | Name | Tags"
+                header = "Expense\nID | Category | Name | Tags"
             elif 'income' in type_name_lower:
-                header = "Income\nCategory | Name | Tags"
+                header = "Income\nID | Category | Name | Tags"
             elif 'creditcard' in type_name_lower or 'credit card' in type_name_lower:
-                header = "Credit Card\nGroup | Name | Tags"
+                header = "Credit Card\nID | Group | Name | Tags"
             elif 'asset' in type_name_lower:
-                header = "Asset\nGroup | Name | Tags"
+                header = "Asset\nID | Group | Name | Tags"
             else:
-                header = f"{type_name}\nGroup | Name | Tags"
+                header = f"{type_name}\nID | Group | Name | Tags"
                 
             lines = []
             for acc in acc_list:
+                acc_id = acc.get('id') or ''
                 name = acc.get('name') or ''
                 tags = acc.get('tags') or []
                 tags_str = ", ".join(tags)
                 group_info = acc.get('accountGroupName') or acc.get('accountGroupId') or "N/A"
-                lines.append(f"{group_info} | {name} | {tags_str}")
+                lines.append(f"{acc_id} | {group_info} | {name} | {tags_str}")
                 
             sections.append(f"{header}\n" + "\n".join(lines))
             
