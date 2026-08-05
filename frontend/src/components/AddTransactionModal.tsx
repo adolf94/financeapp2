@@ -282,6 +282,15 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
 
   const prevInitialDataStr = useRef<string | null>(null)
   const isOpenPrev = useRef<boolean>(false)
+  // Keep a ref to accounts so we can use the latest value inside useEffect
+  // without adding accounts to the dependency array (which would cause the effect
+  // to re-run whenever accounts refetches and potentially overwrite user edits).
+  const accountsRef = useRef(accounts)
+  useEffect(() => { accountsRef.current = accounts }, [accounts])
+
+  // Track which initialData the form is currently populated for, so we never
+  // re-populate while the user is actively editing (e.g., after accounts refetch).
+  const formInitializedForRef = useRef<string | null>(null)
 
   useEffect(() => {
     const dataStr = initialData ? JSON.stringify(initialData) : null
@@ -289,10 +298,13 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
     isOpenPrev.current = isOpen
 
     if (isOpen) {
-      if (!justOpened && prevInitialDataStr.current === dataStr) {
+      // Skip re-population if the form is already populated for this exact initialData
+      // AND this is not the first open. This prevents overwriting user edits.
+      if (!justOpened && formInitializedForRef.current === dataStr) {
         return
       }
       prevInitialDataStr.current = dataStr
+      formInitializedForRef.current = dataStr
 
       if (initialData) {
         setMode(initialData.type === 'Journal' ? 'Advanced' : 'Simple')
@@ -300,10 +312,12 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
         setDate(dayjs(initialData.date).format('YYYY-MM-DDTHH:mm'))
         setNote(initialData.note || '')
         setVendor(initialData.vendor || '')
+        setToAccountId('') // Always reset toAccountId; will be set below if Transfer
 
         if (initialData.type === 'Journal') {
+          // Use accountsRef.current to get the latest accounts without dependency
           setJournalLines(initialData.entries.map(e => {
-            const acc = accounts.find(a => a.id === e.accountId)
+            const acc = accountsRef.current.find(a => a.id === e.accountId)
             return {
               id: generateId(),
               categoryId: acc?.accountGroupId || '',
@@ -330,8 +344,8 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
               setSourceAccountId(srcEntry.accountId)
               setTotalAmount(Math.abs(srcEntry.amount).toString())
 
-              // We need categoryId, we can try to guess it from accounts if possible
-              const account = accounts.find(a => a.id === dstEntry.accountId)
+              // Use accountsRef to get the latest accounts (not a stale snapshot)
+              const account = accountsRef.current.find(a => a.id === dstEntry.accountId)
               setSplits([{
                 id: generateId(),
                 categoryId: account?.accountGroupId || '',
@@ -344,14 +358,48 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
       } else {
         if (justOpened) resetForm()
       }
-      if (justOpened || prevInitialDataStr.current !== dataStr) {
+      if (justOpened) {
         setUserWhy(ingestion?.user_confirmed?.user_why || '')
       }
     } else {
+      // Modal closed — reset tracking so next open re-populates fresh
       prevInitialDataStr.current = null
+      formInitializedForRef.current = null
     }
+    // accounts intentionally excluded from deps — accessed via accountsRef to avoid
+    // re-populating the form when accounts data refetches during active editing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, initialData, accounts])
+  }, [isOpen, initialData])
+
+  // Supplementary effect: back-fill missing categoryId in splits/journal lines when
+  // accounts data arrives after form initialization. This handles the case where the
+  // modal opened before accounts were loaded from the server.
+  useEffect(() => {
+    if (!isOpen || !initialData) return
+
+    // Fix splits that have a subCategoryId but missing categoryId (accounts weren't loaded yet)
+    setSplits(prev => prev.map(split => {
+      if (split.subCategoryId && !split.categoryId) {
+        const acc = accounts.find(a => a.id === split.subCategoryId)
+        if (acc?.accountGroupId) {
+          return { ...split, categoryId: acc.accountGroupId }
+        }
+      }
+      return split
+    }))
+
+    // Fix journal lines that have a subCategoryId but missing categoryId
+    setJournalLines(prev => prev.map(line => {
+      if (line.subCategoryId && !line.categoryId) {
+        const acc = accounts.find(a => a.id === line.subCategoryId)
+        if (acc?.accountGroupId) {
+          return { ...line, categoryId: acc.accountGroupId }
+        }
+      }
+      return line
+    }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts, isOpen])
 
   // Combine DB Vendors with presets - memoized for performance
   const vendorOptions = useMemo(() => dbVendors.map((v) => v.name).sort((a, b) => a.localeCompare(b)), [dbVendors])
@@ -691,6 +739,8 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
                     onClick={() => {
                       setType(t)
                       setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
+                      // Clear toAccountId when switching away from Transfer
+                      if (t !== 'Transfer') setToAccountId('')
                     }}
                     className={`py-2 rounded-lg font-medium text-sm transition-all cursor-pointer ${type === t
                       ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm'
