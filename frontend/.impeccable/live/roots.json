@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "appRoot": "D:\\Users\\adolf\\source\\repos\\Finance\\frontend",
+  "repoRoot": "D:\\Users\\adolf\\source\\repos\\Finance",
+  "contextRoot": "D:\\Users\\adolf\\source\\repos\\Finance",
+  "sessionRoot": "D:\\Users\\adolf\\source\\repos\\Finance\\frontend\\.impeccable\\live",
+  "productPath": "D:\\Users\\adolf\\source\\repos\\Finance\\PRODUCT.md",
+  "designPath": "D:\\Users\\adolf\\source\\repos\\Finance\\DESIGN.md",
+  "resolvedFrom": "target:frontend"
+}

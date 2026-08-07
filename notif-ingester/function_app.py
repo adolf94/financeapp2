@@ -194,10 +194,16 @@ async def GetPendingIngestionsFunction(req: func.HttpRequest) -> func.HttpRespon
     status = req.params.get("status", "Pending")
     user_id = user.get("sub", "default")
     
-    ingestion_service = get_ingestion_service()
+    # Lazy-load only what's needed for this query — avoids initializing AI/embedding clients
+    ingestion_repo = CosmosIngestionRepository()
     try:
-        # Access the repository directly from the service
-        ingestions = await ingestion_service.ingestion_repo.get_by_status_async(user_id, status)
+        skip = int(req.params.get("$skip", 0))
+        top = int(req.params.get("$top", 50))
+    except (ValueError, TypeError):
+        skip, top = 0, 50
+        
+    try:
+        ingestions = await ingestion_repo.get_by_status_async(user_id, status, skip=skip, top=top)
         return func.HttpResponse(
             json.dumps([i.model_dump(by_alias=True, mode="json") for i in ingestions]),
             status_code=200, mimetype="application/json"
@@ -603,10 +609,12 @@ async def GetRunbookCorrectionsFunction(req: func.HttpRequest) -> func.HttpRespo
     if err: return err
 
     user_id = user.get("sub", "default")
-    ingestion_service = get_ingestion_service()
+    
+    # Lazy-load only the repository — no AI/embedding clients needed
+    ingestion_repo = CosmosIngestionRepository()
     try:
-        # Fetch Confirmed ingestions
-        ingestions = await ingestion_service.ingestion_repo.get_by_status_async(user_id, "Confirmed")
+        # Fetch Confirmed ingestions with higher limit for corrections review
+        ingestions = await ingestion_repo.get_by_status_async(user_id, "Confirmed", top=200)
         
         # Filter for those with user_why and not runbook_synced
         corrections = [

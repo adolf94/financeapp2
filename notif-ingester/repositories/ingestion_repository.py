@@ -14,7 +14,7 @@ class IIngestionRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_by_status_async(self, user_id: str, status: str) -> list[PendingIngestion]:
+    async def get_by_status_async(self, user_id: str, status: str, skip: int = 0, top: int = 50) -> list[PendingIngestion]:
         pass
 
     @abstractmethod
@@ -45,16 +45,18 @@ class CosmosIngestionRepository(IIngestionRepository):
         except Exception:
             return None
 
-    async def get_by_status_async(self, user_id: str, status: str) -> list[PendingIngestion]:
+    async def get_by_status_async(self, user_id: str, status: str, skip: int = 0, top: int = 50) -> list[PendingIngestion]:
         container = await self._get_container()
         query = (
             "SELECT * FROM c "
             "WHERE c.UserId = @user_id AND c.status = @status "
-            "ORDER BY c.received_at DESC"
+            "OFFSET @skip LIMIT @top"
         )
         parameters = [
             {"name": "@user_id", "value": user_id},
-            {"name": "@status", "value": status}
+            {"name": "@status", "value": status},
+            {"name": "@skip", "value": skip},
+            {"name": "@top", "value": top}
         ]
         items = container.query_items(
             query=query,
