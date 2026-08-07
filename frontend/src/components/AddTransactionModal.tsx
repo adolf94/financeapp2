@@ -461,12 +461,15 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
         const amt = parseFloat(line.amount || '0')
         if (amt === 0) continue
 
-        if (line.type === 'Debit') debitSum += amt
-        else creditSum += amt
+        // Round to 2 decimal places to prevent floating-point precision issues
+        const roundedAmt = Math.round(amt * 100) / 100
+
+        if (line.type === 'Debit') debitSum += roundedAmt
+        else creditSum += roundedAmt
 
         entries.push({
           accountId: line.subCategoryId,
-          amount: line.type === 'Debit' ? amt : -amt
+          amount: line.type === 'Debit' ? roundedAmt : -roundedAmt
         })
       }
 
@@ -480,33 +483,22 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
         return
       }
 
-      const transaction: Transaction = {
-        ...(initialData ? { id: initialData.id } : {}),
-        type: 'Journal',
-        entries,
-        vendor: null,
-        note,
-        date: new Date(date).toISOString(),
+      if (vendor && hasMasks(vendor)) {
+        alert("Vendor name contains mask characters (*, xxx, or related). Please select or create a clean vendor name.");
+        return;
       }
 
-      const mutation = initialData ? updateTxMutation : createTxMutation
-      mutation.mutate(transaction, {
-        onSuccess: () => {
-          if (submitTypeRef.current === 'more') {
-            setTotalAmount('')
-            setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
-            setJournalLines([
-              { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit' },
-              { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit' }
-            ])
-            setVendor('')
-            setNote('')
-          } else {
-            onClose()
-            if (!initialData) resetForm()
+      if (vendor && !dbVendors.some((v) => v.name.toLowerCase() === vendor.toLowerCase())) {
+        const tags = suggestedVendorTags ? suggestedVendorTags.split(',').map(t => t.trim()).filter(Boolean) : []
+        createVendorMutation.mutate({ name: vendor, type: suggestedVendorType, tags }, {
+          onSettled: () => {
+            saveAdvancedTransaction(entries)
           }
-        },
-      })
+        })
+        return
+      }
+
+      saveAdvancedTransaction(entries)
       return
     }
 
@@ -654,6 +646,36 @@ export default function AddTransactionModal({ isOpen, onClose, initialData, inge
       },
     })
   }, [mode, date, journalLines, totalAmount, sourceAccountId, type, toAccountId, splits, vendor, dbVendors, note, userWhy, initialData, ingestionId, createTxMutation, updateTxMutation, createVendorMutation, resetForm, onClose, onSave, isRecurring, frequency, maxOccurrences, createRecurringTxMutation, confirmIngestionMutation, learnIngestionMutation, ingestion])
+
+  function saveAdvancedTransaction(entries: LedgerEntry[]) {
+    const transaction: Transaction = {
+      ...(initialData ? { id: initialData.id } : {}),
+      type: 'Journal',
+      entries,
+      vendor,
+      note,
+      date: new Date(date).toISOString(),
+    }
+
+    const mutation = initialData ? updateTxMutation : createTxMutation
+    mutation.mutate(transaction, {
+      onSuccess: () => {
+        if (submitTypeRef.current === 'more') {
+          setTotalAmount('')
+          setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
+          setJournalLines([
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit' },
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit' }
+          ])
+          setVendor('')
+          setNote('')
+        } else {
+          onClose()
+          if (!initialData) resetForm()
+        }
+      },
+    })
+  }
 
   if (!isOpen) return null
 

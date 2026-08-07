@@ -105,7 +105,8 @@ namespace FinanceApp.Services
             }
 
             var balance = transaction.Entries.Sum(e => e.Amount);
-            if (balance != 0)
+            var tolerance = 0.00001m;
+            if (Math.Abs(balance) > tolerance)
             {
                 throw new InvalidOperationException($"Transaction entries must balance to zero. Current balance is {balance}.");
             }

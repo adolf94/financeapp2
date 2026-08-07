@@ -49,8 +49,62 @@ namespace FinanceApp.Functions
                 return new BadRequestObjectResult("Vendor name is required.");
             }
 
-            var vendor = await _vendorService.CreateVendorAsync(userId, nameProp.GetString()!);
-            return new CreatedResult($"/api/vendors/{vendor.Id}", vendor);
+            VendorType? type = null;
+            if (doc.RootElement.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String)
+            {
+                type = Enum.TryParse<VendorType>(typeProp.GetString(), ignoreCase: true, out var parsedType) ? parsedType : null;
+            }
+
+            List<string> tags = new();
+            if (doc.RootElement.TryGetProperty("tags", out var tagsProp) && tagsProp.ValueKind == JsonValueKind.Array)
+            {
+                tags = tagsProp.EnumerateArray()
+                    .Select(t => t.GetString()?.Trim())
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Cast<string>()
+                    .ToList();
+            }
+
+            var vendor = new Models.Vendor
+            {
+                UserId = userId,
+                Name = nameProp.GetString()!.Trim(),
+                Type = type,
+                Tags = tags.Any() ? tags : new List<string>()
+            };
+
+            var createdVendor = await _vendorService.CreateOrUpdateVendorAsync(userId, vendor);
+            return new CreatedResult($"/api/vendors/{createdVendor.Id}", createdVendor);
+        }
+
+        [Function("UpdateVendor")]
+        public async Task<IActionResult> UpdateVendor(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "vendors/{id}")] HttpRequest req, FunctionContext context,
+            string id)
+        {
+            string? userId = context.GetUserId();
+            if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            
+            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            var vendor = JsonSerializer.Deserialize<Models.Vendor>(requestBody, _jsonOptions);
+            
+            if (vendor == null || string.IsNullOrWhiteSpace(vendor.Name))
+            {
+                return new BadRequestObjectResult("Invalid vendor data.");
+            }
+
+            if (string.IsNullOrEmpty(vendor.Id))
+            {
+                vendor.Id = id;
+            }
+
+            if (!vendor.Type.HasValue)
+            {
+                vendor.Type = VendorType.Business;
+            }
+
+            var updatedVendor = await _vendorService.UpdateVendorAsync(userId, vendor);
+            return new OkObjectResult(updatedVendor);
         }
 
         [Function("DeleteVendor")]

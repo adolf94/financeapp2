@@ -41,6 +41,20 @@ namespace FinanceApp.Repositories
             await _context.SaveChangesAsync();
         }
 
+        public async Task UpdateVendorAsync(string userId, Vendor vendor)
+        {
+            var existing = await _context.Vendors
+                .WithPartitionKey(userId)
+                .FirstOrDefaultAsync(v => v.Id == vendor.Id);
+            if (existing != null)
+            {
+                existing.Name = vendor.Name;
+                existing.Type = vendor.Type;
+                existing.Tags = vendor.Tags;
+                await _context.SaveChangesAsync();
+            }
+        }
+
         public async Task DeleteVendorAsync(string userId, string id)
         {
             var vendor = await _context.Vendors

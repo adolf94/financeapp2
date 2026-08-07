@@ -48,6 +48,51 @@ namespace FinanceApp.Services
             return vendor;
         }
 
+        public async Task<Vendor> CreateOrUpdateVendorAsync(string userId, Vendor vendor)
+        {
+            var existing = await GetVendorByNameAsync(userId, vendor.Name);
+            if (existing != null)
+            {
+                existing.Type = vendor.Type ?? existing.Type;
+                existing.Tags = vendor.Tags.Any() ? vendor.Tags : existing.Tags;
+                await _repository.UpdateVendorAsync(userId, existing);
+                return existing;
+            }
+
+            vendor.UserId = userId;
+            if (vendor.Type == null)
+            {
+                vendor.Type = VendorType.Business;
+            }
+            if (vendor.Tags == null || !vendor.Tags.Any())
+            {
+                vendor.Tags = new List<string>();
+            }
+            await _repository.AddVendorAsync(vendor);
+            return vendor;
+        }
+
+        public async Task<Vendor> UpdateVendorAsync(string userId, Vendor vendor)
+        {
+            var existing = await GetVendorByNameAsync(userId, vendor.Name);
+            if (existing != null && existing.Id != vendor.Id)
+            {
+                throw new InvalidOperationException($"A vendor with name '{vendor.Name}' already exists.");
+            }
+
+            vendor.UserId = userId;
+            if (vendor.Type == null)
+            {
+                vendor.Type = VendorType.Business;
+            }
+            if (vendor.Tags == null)
+            {
+                vendor.Tags = new List<string>();
+            }
+            await _repository.UpdateVendorAsync(userId, vendor);
+            return vendor;
+        }
+
         public async Task DeleteVendorAsync(string userId, string id)
         {
             await _repository.DeleteVendorAsync(userId, id);

@@ -15,7 +15,11 @@ export default function EditVendorModal({ isOpen, onClose, vendor }: EditVendorM
 
   useEffect(() => {
     if (vendor && isOpen) {
-      setFormData(vendor)
+      setFormData({
+        ...vendor,
+        type: vendor.type || 'Business',
+        tags: vendor.tags || [],
+      })
     }
   }, [vendor, isOpen])
 
