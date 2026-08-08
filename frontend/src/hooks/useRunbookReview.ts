@@ -137,7 +137,28 @@ export function useDiscardRunbookReview() {
   })
 }
 
+// ── Update Session ──────────────────────────────────────────────────────────
+
+/** Updates the active review session state (proposed runbook draft or updates). */
+export function useUpdateRunbookSession() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (params: { 
+      proposed_runbook?: string
+      account_description_updates?: AccountDescriptionUpdate[]
+      vendor_updates?: VendorUpdate[]
+    }) => {
+      const { data } = await ingesterClient.put<RunbookReviewSession>('/runbook/review/session', params)
+      return data
+    },
+    onSuccess: (session) => {
+      queryClient.setQueryData(['runbook_session'], session)
+    },
+  })
+}
+
 // ── Runbook content (C# backend) ───────────────────────────────────────────
 
 /** Legacy: kept for Settings page to fetch raw runbook content from the .NET API. */
 export { apiClient }
+

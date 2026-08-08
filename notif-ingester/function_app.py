@@ -799,6 +799,44 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error in runbook review chat: {e}")
         return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
 
+
+# ── Function 14.5: UpdateRunbookSessionFunction ──────────────────────────────
+@app.route(route="runbook/review/session", methods=["PUT"])
+async def UpdateRunbookSessionFunction(req: func.HttpRequest) -> func.HttpResponse:
+    """Updates the active session's proposed runbook, account, or vendor updates."""
+    user, err = _require_auth(req)
+    if err: return err
+
+    user_id = user.get("sub", "default")
+    
+    try:
+        body = req.get_json()
+    except ValueError:
+        return func.HttpResponse(json.dumps({"error": "Invalid JSON"}), status_code=400, mimetype="application/json")
+        
+    ingestion_service = get_ingestion_service()
+    try:
+        from datetime import datetime, timezone
+        session = await ingestion_service._finance_api_service.get_runbook_session_async(user_id)
+        if not session:
+            return func.HttpResponse(json.dumps({"error": "No active review session found."}), status_code=404, mimetype="application/json")
+
+        if "proposed_runbook" in body:
+            session["proposed_runbook"] = body["proposed_runbook"]
+        if "account_description_updates" in body:
+            session["account_description_updates"] = body["account_description_updates"]
+        if "vendor_updates" in body:
+            session["vendor_updates"] = body["vendor_updates"]
+
+        session["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await ingestion_service._finance_api_service.save_runbook_session_async(user_id, session)
+
+        return func.HttpResponse(json.dumps(session, default=str), status_code=200, mimetype="application/json")
+    except Exception as e:
+        logging.error(f"Error updating runbook session: {e}")
+        return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
+
+
 # ── Function 15: ApproveRunbookReviewFunction ────────────────────────────────
 @app.route(route="runbook/review/approve", methods=["POST"])
 async def ApproveRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:

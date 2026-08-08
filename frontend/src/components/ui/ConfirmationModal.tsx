@@ -8,6 +8,7 @@ interface ConfirmationModalProps {
   cancelLabel?: string
   onConfirm: () => void
   onCancel: () => void
+  confirmVariant?: 'danger' | 'primary'
 }
 
 export default function ConfirmationModal({
@@ -17,7 +18,8 @@ export default function ConfirmationModal({
   confirmLabel = 'Delete',
   cancelLabel = 'Cancel',
   onConfirm,
-  onCancel
+  onCancel,
+  confirmVariant = 'danger'
 }: ConfirmationModalProps) {
   if (!isOpen) return null
 
@@ -66,7 +68,11 @@ export default function ConfirmationModal({
           <button
             type="button"
             onClick={onConfirm}
-            className="px-4 py-2 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors cursor-pointer"
+            className={`px-4 py-2 text-xs font-semibold text-white rounded-lg transition-colors cursor-pointer ${
+              confirmVariant === 'danger'
+                ? 'bg-rose-600 hover:bg-rose-700'
+                : 'bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-700'
+            }`}
           >
             {confirmLabel}
           </button>

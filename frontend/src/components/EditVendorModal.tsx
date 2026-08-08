@@ -7,9 +7,10 @@ interface EditVendorModalProps {
   isOpen: boolean
   onClose: () => void
   vendor: Vendor | null
+  onSaveSuccess?: (updatedVendor: Vendor) => void
 }
 
-export default function EditVendorModal({ isOpen, onClose, vendor }: EditVendorModalProps) {
+export default function EditVendorModal({ isOpen, onClose, vendor, onSaveSuccess }: EditVendorModalProps) {
   const updateMutation = useUpdateVendor()
   const [formData, setFormData] = useState<Vendor | null>(null)
 
@@ -27,7 +28,10 @@ export default function EditVendorModal({ isOpen, onClose, vendor }: EditVendorM
     e.preventDefault()
     if (!formData) return
     updateMutation.mutate(formData, {
-      onSuccess: () => {
+      onSuccess: (data) => {
+        if (onSaveSuccess) {
+          onSaveSuccess(data)
+        }
         onClose()
       }
     })

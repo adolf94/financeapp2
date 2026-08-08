@@ -17,6 +17,8 @@ import { RunbookChatPanel } from './RunbookReview/RunbookChatPanel'
 import { RunbookAccountUpdatesPanel } from './RunbookReview/RunbookAccountUpdatesPanel'
 import { RunbookVendorUpdatesPanel } from './RunbookReview/RunbookVendorUpdatesPanel'
 import { RunbookDocumentPanel } from './RunbookReview/RunbookDocumentPanel'
+import { RunbookEditorPanel } from './RunbookReview/RunbookEditorPanel'
+import { MessageSquare, FileEdit } from 'lucide-react'
 
 interface RunbookReviewModalProps {
   isOpen: boolean
@@ -26,6 +28,7 @@ interface RunbookReviewModalProps {
 }
 
 export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunbook }: RunbookReviewModalProps) {
+  const [mode, setMode] = useState<'chat' | 'editor'>('chat')
   const [isMaximized, setIsMaximized] = useState(false)
   
   // Local state for tracking edited/ignored account updates
@@ -106,16 +109,46 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
       <div className={`bg-neutral-900 border border-neutral-800 shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${isMaximized ? 'w-full h-full rounded-none' : 'w-full max-w-6xl h-[85vh] rounded-xl'}`}>
 
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900 z-10">
-          <div>
-            <h2 className="text-xl font-semibold text-white">Review Runbook Changes</h2>
-            {session?.updated_at && (
-              <p className="text-xs text-neutral-500 mt-0.5">
-                Session active · last updated {new Date(session.updated_at).toLocaleTimeString()}
-              </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900 z-10 gap-3">
+          <div className="flex items-center gap-4">
+            <div>
+              <h2 className="text-xl font-semibold text-white">Review Runbook Changes</h2>
+              {session?.updated_at && (
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Session active · last updated {new Date(session.updated_at).toLocaleTimeString()}
+                </p>
+              )}
+            </div>
+            
+            {/* Mode Switcher */}
+            {session && !isInitializing && (
+              <div className="flex bg-neutral-950 rounded-lg p-0.5 border border-neutral-800">
+                <button
+                  onClick={() => setMode('chat')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                    mode === 'chat'
+                      ? 'bg-neutral-800 text-white shadow-sm'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  Chat Mode
+                </button>
+                <button
+                  onClick={() => setMode('editor')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+                    mode === 'editor'
+                      ? 'bg-neutral-800 text-white shadow-sm'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  <FileEdit className="w-3.5 h-3.5" />
+                  Editor Mode
+                </button>
+              </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             <button
               onClick={() => setIsMaximized(!isMaximized)}
               className="p-2 text-neutral-400 hover:text-white rounded-md hover:bg-neutral-800 transition-colors"
@@ -144,85 +177,95 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
         {/* Body */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
 
-          {/* Left: Chat */}
-          <div className="w-full lg:w-1/3 h-1/2 lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-neutral-800 bg-neutral-900/50">
-            <RunbookChatPanel
-              chatHistory={chatHistory}
-              isThinking={isThinking}
-              onSendMessage={(text) => chatReview.mutate({ user_message: text })}
+          {mode === 'editor' && session && !isInitializing ? (
+            <RunbookEditorPanel
+              currentRunbook={currentRunbook}
+              proposedRunbook={proposedRunbook}
               sessionActive={!!session}
             />
-          </div>
-
-          {/* Right: Diff & Previews */}
-          <div className="w-full lg:w-2/3 h-1/2 lg:h-full flex flex-col bg-neutral-950 overflow-hidden">
-            {isInitializing ? (
-              <div className="h-full flex flex-col items-center justify-center text-neutral-500">
-                <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
-                <p>Analyzing corrections and proposing changes...</p>
-              </div>
-            ) : proposedRunbook ? (
-              <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-8">
-                
-                <RunbookAccountUpdatesPanel
-                  updates={localAccountUpdates}
-                  ignoredUpdates={ignoredUpdates}
-                  onToggleIgnore={(id) => setIgnoredUpdates(prev => {
-                    const next = new Set(prev)
-                    if (next.has(id)) next.delete(id)
-                    else next.add(id)
-                    return next
-                  })}
-                  onUpdateChange={handleAccountUpdateChange}
-                  onSendFeedback={(_id, name, text) => chatReview.mutate({ user_message: `Regarding account '${name}' description suggestion: ${text}` })}
+          ) : (
+            <>
+              {/* Left: Chat */}
+              <div className="w-full lg:w-1/3 h-1/2 lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-neutral-800 bg-neutral-900/50">
+                <RunbookChatPanel
+                  chatHistory={chatHistory}
                   isThinking={isThinking}
-                  getOldDescription={getOldDescription}
-                  getOldTags={getOldTags}
-                  getAccountName={getAccountName}
+                  onSendMessage={(text) => chatReview.mutate({ user_message: text })}
+                  sessionActive={!!session}
                 />
-                
-                <RunbookVendorUpdatesPanel
-                  updates={localVendorUpdates}
-                  ignoredUpdates={ignoredVendorUpdates}
-                  onToggleIgnore={(id) => setIgnoredVendorUpdates(prev => {
-                    const next = new Set(prev)
-                    if (next.has(id)) next.delete(id)
-                    else next.add(id)
-                    return next
-                  })}
-                  onUpdateChange={handleVendorUpdateChange}
-                  onSendFeedback={(_id, name, text) => chatReview.mutate({ user_message: `Regarding vendor '${name}' tag suggestion: ${text}` })}
-                  isThinking={isThinking}
-                  getOldVendorTags={getOldVendorTags}
-                  getVendorName={getVendorName}
-                />
-                
-                <RunbookDocumentPanel
-                  currentRunbook={currentRunbook}
-                  proposedRunbook={proposedRunbook}
-                />
+              </div>
 
+              {/* Right: Diff & Previews */}
+              <div className="w-full lg:w-2/3 h-1/2 lg:h-full flex flex-col bg-neutral-950 overflow-hidden">
+                {isInitializing ? (
+                  <div className="h-full flex flex-col items-center justify-center text-neutral-500">
+                    <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
+                    <p>Analyzing corrections and proposing changes...</p>
+                  </div>
+                ) : proposedRunbook ? (
+                  <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-8">
+                    
+                    <RunbookAccountUpdatesPanel
+                      updates={localAccountUpdates}
+                      ignoredUpdates={ignoredUpdates}
+                      onToggleIgnore={(id) => setIgnoredUpdates(prev => {
+                        const next = new Set(prev)
+                        if (next.has(id)) next.delete(id)
+                        else next.add(id)
+                        return next
+                      })}
+                      onUpdateChange={handleAccountUpdateChange}
+                      onSendFeedback={(_id, name, text) => chatReview.mutate({ user_message: `Regarding account '${name}' description suggestion: ${text}` })}
+                      isThinking={isThinking}
+                      getOldDescription={getOldDescription}
+                      getOldTags={getOldTags}
+                      getAccountName={getAccountName}
+                    />
+                    
+                    <RunbookVendorUpdatesPanel
+                      updates={localVendorUpdates}
+                      ignoredUpdates={ignoredVendorUpdates}
+                      onToggleIgnore={(id) => setIgnoredVendorUpdates(prev => {
+                        const next = new Set(prev)
+                        if (next.has(id)) next.delete(id)
+                        else next.add(id)
+                        return next
+                      })}
+                      onUpdateChange={handleVendorUpdateChange}
+                      onSendFeedback={(_id, name, text) => chatReview.mutate({ user_message: `Regarding vendor '${name}' tag suggestion: ${text}` })}
+                      isThinking={isThinking}
+                      getOldVendorTags={getOldVendorTags}
+                      getVendorName={getVendorName}
+                    />
+                    
+                    <RunbookDocumentPanel
+                      currentRunbook={currentRunbook}
+                      proposedRunbook={proposedRunbook}
+                    />
+
+                  </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-neutral-600 text-sm">
+                    Preparing review session...
+                  </div>
+                )}
+                
+                {/* Action Bar */}
+                {proposedRunbook && (
+                  <div className="p-4 border-t border-neutral-800 bg-neutral-900 flex justify-end shrink-0 z-10">
+                    <button
+                      onClick={handleApprove}
+                      disabled={approveReview.isPending}
+                      className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 shadow-lg shadow-green-900/20"
+                    >
+                      {approveReview.isPending ? 'Applying...' : 'Approve & Apply All'}
+                      <Check className="w-5 h-5" />
+                    </button>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="h-full flex items-center justify-center text-neutral-600 text-sm">
-                Preparing review session...
-              </div>
-            )}
-            
-            {/* Action Bar */}
-            {proposedRunbook && (
-              <div className="p-4 border-t border-neutral-800 bg-neutral-900 flex justify-end shrink-0 z-10">
-                <button
-                  onClick={handleApprove}
-                  disabled={approveReview.isPending}
-                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 shadow-lg shadow-green-900/20"
-                >
-                  {approveReview.isPending ? 'Applying...' : 'Approve & Apply All'}
-                  <Check className="w-5 h-5" />
-                </button>
-              </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>

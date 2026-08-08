@@ -132,11 +132,14 @@ Users need a structured way to mirror their real-world financial accounts within
   - `EditAccountModal.tsx` (`components/`) — Modal for editing existing accounts (name, description, group, starting balance, credit card fields).
   - `TransactionCard.tsx` (`components/`) — Reusable component for rendering a single transaction row.
   - `PendingIngestionCard.tsx` (`components/`) — Reusable component for rendering a pending AI-classified ingestion item. Displays suggested vendor name, type badges (Individual/Business, skipping Internal), and tags. Disables the Quick Confirm icon button and shows a warning when the suggestion contains masks (wildcards, xxx, repeating x, or 4+ digits), requiring manual correction.
-  - `RunbookReviewModal.tsx` (`components/`) — Modal for interactively reviewing and chatting with AI to apply suggested `RUNBOOK.md` corrections. Modularized into responsive sub-panels (`RunbookChatPanel`, `RunbookAccountUpdatesPanel`, `RunbookVendorUpdatesPanel`, `RunbookDocumentPanel`).
+  - `RunbookReviewModal.tsx` (`components/`) — Modal for interactively reviewing and chatting with AI to apply suggested `RUNBOOK.md` corrections. Features a dual-mode interface: Chat Mode (visualizing suggested updates and conversational refinements) and Editor Mode (direct markdown editing via Monaco Editor, formatting toolbar, table-of-contents section navigator, and enhanced diff/preview tabs).
   - `DiffViewer.tsx` (`components/`) — Visualizer for displaying text differences in runbook updates.
+  - `EnhancedDiffViewer.tsx` (`components/ui/`) — Rich diff visualizer supporting Line, Word, and Character differences.
+  - `RunbookEditorPanel.tsx` (`components/RunbookReview/`) — Container component for the Monaco-based direct runbook markdown editor.
+  - `RunbookSectionNavigator.tsx` (`components/RunbookReview/`) — Table of contents section jump navigator.
 - **Key Hooks:**
   - `useIngestions.ts` — `useGetPendingIngestions`, `useConfirmIngestion`, `useRejectIngestion`, `useUpdateIngestionVendor`, `useGenerateAccountDescription`, `useReclassifyIngestion`. All use `ingesterClient`.
-  - `useRunbookReview.ts` — `useGetRunbookCorrections`, `useStartRunbookReview`, `useChatRunbookReview`, `useApproveRunbookReview`. Uses `pythonApiClient`.
+  - `useRunbookReview.ts` — `useGetRunbookCorrections`, `useStartRunbookReview`, `useChatRunbookReview`, `useUpdateRunbookSession`, `useApproveRunbookReview`. Uses `pythonApiClient`.
 - **Account Interface (`useAccounts.ts`):** The `Account.accountType` field uses the full enum union matching the backend: `'Cash' | 'Bank' | 'CreditCard' | 'Investment' | 'Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense' | 'Adjustment'`. This is required for the calendar to identify income/expense accounts during per-day aggregation.
 
 ### 4.4 API Design Guidelines
@@ -174,6 +177,7 @@ Users need a structured way to mirror their real-world financial accounts within
   - `GET /runbook/corrections` — Fetch AI-suggested runbook mapping corrections, JWT auth.
   - `POST /runbook/review/start` — Start a runbook review session, JWT auth.
   - `POST /runbook/review/chat` — Chat with AI to iteratively refine the proposed runbook changes. The system prompt is configured to strictly enforce returning empty JSON arrays when no corrections are found. JWT auth.
+  - `PUT /runbook/review/session` — Update active review session's proposed runbook content or update lists. JWT auth.
   - `POST /runbook/review/approve` — Approve and save the reviewed runbook to Cosmos DB, JWT auth.
 - **Auto-Confirm Threshold:** Configurable via `AUTO_CONFIRM_THRESHOLD` env var (default `0.92`). When top cosine similarity score ≥ threshold and all account IDs are present, transactions are created automatically (`AutoConfirmed`).
 - **Gemini Model Configuration:** Gemini models are configurable via environment variables or a `.env` file:
