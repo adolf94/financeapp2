@@ -20,6 +20,9 @@ class PromptDebugLog(BaseModel):
     # Which call this was (e.g. "classify", "is_financial", "desc", "review_start", "review_chat")
     call_type: str
 
+    # Optional notification type (e.g. "app", "sms", "email")
+    notification_type: Optional[str] = None
+
     # Provider info  e.g. "gemini:gemini-2.5-flash-lite"
     provider: str
 

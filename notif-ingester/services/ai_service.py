@@ -10,6 +10,7 @@ from services.llm_provider import LlmProvider, make_provider
 from repositories.prompt_debug_repository import IPromptDebugRepository, NoOpPromptDebugRepository
 from prompts.sms_prompts import SMS_IS_FINANCIAL_PROMPT, SMS_EXTRACTION_PROMPT, SMS_CLASSIFICATION_PROMPT
 from prompts.app_prompts import APP_IS_FINANCIAL_PROMPT, APP_CLASSIFICATION_PROMPT
+from prompts.email_prompts import EMAIL_CLASSIFICATION_PROMPT
 
 RUNBOOK_REVIEW_PROMPT = """
 You are a personal finance assistant. Your job is to review the user's transaction classification rules runbook (RUNBOOK.md) and propose updates to it, as well as account descriptions and vendor tags.
@@ -213,6 +214,7 @@ class AiService:
         system: Optional[str] = None,
         input_tokens: Optional[int] = None,
         output_tokens: Optional[int] = None,
+        notification_type: Optional[str] = None,
     ) -> None:
         """Persist a PROMPT_DEBUG entry to CosmosDB (and file as fallback)."""
         if not self._prompt_debug:
@@ -233,6 +235,7 @@ class AiService:
             response_json=response_json,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            notification_type=notification_type,
         )
 
         # Primary: write to CosmosDB
@@ -242,9 +245,44 @@ class AiService:
         try:
             import uuid
             os.makedirs("debug_prompts", exist_ok=True)
-            file_path = os.path.join("debug_prompts", f"{call_type}_{uuid.uuid4().hex[:8]}.json")
+            prefix = f"{notification_type}_" if notification_type else ""
+            file_name = f"{prefix}{call_type}_{uuid.uuid4().hex[:8]}.md"
+            file_path = os.path.join("debug_prompts", file_name)
+            
+            yaml_lines = [
+                "---",
+                f"timestamp: '{log.timestamp.isoformat()}'",
+                f"call_type: '{call_type}'",
+                f"notification_type: '{notification_type}'" if notification_type else "notification_type: null",
+                f"provider: '{provider.provider_label}'",
+                f"system: {repr(system) if system else 'null'}",
+                f"input_tokens: {input_tokens if input_tokens is not None else 'null'}",
+                f"output_tokens: {output_tokens if output_tokens is not None else 'null'}",
+                "---"
+            ]
+            yaml_header = "\n".join(yaml_lines)
+            
+            md_content = f"""{yaml_header}
+
+# Prompt Debug Log: {call_type}
+
+## System Instruction
+```text
+{system or 'None'}
+```
+
+## Prompt
+```text
+{prompt}
+```
+
+## Response
+```json
+{response_text}
+```
+"""
             with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(log.model_dump(by_alias=True, mode="json"), f, indent=2, ensure_ascii=False)
+                f.write(md_content)
         except Exception as e:
             logging.warning("PROMPT_DEBUG file fallback failed: %s", e)
 
@@ -405,7 +443,15 @@ Return ONLY valid JSON matching this schema:
                 json_mode=True,
             )
 
-            await self._debug_log("is_financial", self.classification_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
+            await self._debug_log(
+                "is_financial",
+                self.classification_provider,
+                prompt,
+                response_text,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                notification_type="app",
+            )
 
             data = json.loads(response_text)
             return data.get("is_financial", True) # Default to true if ambiguous
@@ -462,6 +508,7 @@ Return ONLY valid JSON matching this schema:
             system=system_instruction,
             input_tokens=in_tok,
             output_tokens=out_tok,
+            notification_type="app",
         )
 
         data = json.loads(response_text)
@@ -515,13 +562,14 @@ Return ONLY valid JSON matching this schema:
         )
 
         await self._debug_log(
-            "classify_sms",
+            "classify",
             self.classification_provider,
             prompt,
             response_text,
             system=system_instruction,
             input_tokens=in_tok,
             output_tokens=out_tok,
+            notification_type="sms",
         )
 
         data = json.loads(response_text)
@@ -531,6 +579,117 @@ Return ONLY valid JSON matching this schema:
 
         return AiParsedData(**data)
 
+    async def classify_email_async(
+        self,
+        hook: PhoneHookMessage,
+        similar_vectors: List[Tuple[TransactionVector, float]],
+        accounts: list[dict],
+        runbook_content: str,
+        vendors: list[dict] | list[str] = None,
+        vendor_matches: list[dict] = None
+    ) -> AiParsedData:
+        """Classify using Email-specific prompt (tailored for email receipts/statements)."""
+        context = self._build_context(similar_vectors)
+        accounts_text = self._format_accounts(accounts)
+        vendors_text = self._format_vendors(vendors)
+        vendor_matches_text = self._format_vendor_matches(vendor_matches)
+
+        sender = hook.raw_payload.get("sender") or ""
+        subject = hook.raw_payload.get("subject") or ""
+
+        prompt = EMAIL_CLASSIFICATION_PROMPT.format(
+            runbook_content=runbook_content,
+            raw_msg=hook.raw_msg,
+            sender=sender,
+            subject=subject,
+            accounts=accounts_text,
+            vendors=vendors_text,
+            vendor_matches=vendor_matches_text
+        )
+
+        system_instruction = "You are a personal finance assistant. Classify the Email notification as a financial transaction. Pay special attention to invoice tables, vendor names, and credit/debit account assignments."
+
+        response_text, in_tok, out_tok = await self.classification_provider.generate(
+            prompt=prompt,
+            system=system_instruction,
+            json_mode=True,
+        )
+
+        await self._debug_log(
+            "classify",
+            self.classification_provider,
+            prompt,
+            response_text,
+            system=system_instruction,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            notification_type="email",
+        )
+
+        data = json.loads(response_text)
+
+        if not data.get("application"):
+            # Use sender email/domain or fallback
+            data["application"] = sender.split("@")[-1].replace(">", "") if "@" in sender else sender
+
+        return AiParsedData(**data)
+
+    async def summarize_email_async(self, sender: str, subject: str, markdown_content: str) -> dict:
+        prompt = f"""You are a financial data extraction assistant. Extract ALL account identifiers, vendor names, and provide a summary from this email.
+
+Sender: {sender}
+Subject: {subject}
+Body:
+{markdown_content}
+
+Extract the following information:
+1. **Account Numbers**: Any account/card/wallet numbers mentioned (e.g., "1234", "****5678")
+2. **Account Names**: Any account holder/merchant/person names mentioned (e.g., "John Doe", "Merchant Name")
+3. **Potential Vendor Names**: Any store/merchant/business names mentioned
+4. **Summary**: A concise, 1-sentence financial transaction summary (e.g., "Payment made to [Vendor] via [Method] from [Sender]"). Do NOT include extraneous details like "sent a confirmation", "notes that...", etc. Focus ONLY on the core transaction. CRITICAL: You must explicitly include any sender, recipient, vendor, or account names mentioned in the text within this summary.
+
+CRITICAL FILTERING RULES:
+- If this appears to be a FUND TRANSFER between accounts (e.g., bank transfer, e-wallet transfer, payment to another person):
+  - DO NOT include bank names (e.g., BPI, BDO, UnionBank), e-wallet names (e.g., GCash, Maya), or financial institution names in 'potential_vendor_names'
+  - For transfers, the vendor should be the PERSON or BUSINESS receiving the money, not the bank/wallet
+
+Return ONLY valid JSON matching this schema:
+{{
+  "summary": "string",
+  "account_numbers": ["string"],
+  "account_names": ["string"],
+  "potential_vendor_names": ["string"]
+}}
+"""
+        system_instruction = "You are a helpful assistant. Provide a concise summary and extract details."
+        
+        response_text, in_tok, out_tok = await self.classification_provider.generate(
+            prompt=prompt,
+            system=system_instruction,
+            json_mode=True,
+        )
+        try:
+            parsed_data = json.loads(response_text)
+        except Exception as e:
+            logging.error(f"Failed to parse summarize_email_async JSON: {e}")
+            parsed_data = {
+                "summary": "Email received",
+                "account_numbers": [],
+                "account_names": [],
+                "potential_vendor_names": []
+            }
+            
+        await self._debug_log(
+            "summarize",
+            self.classification_provider,
+            prompt,
+            response_text,
+            system=system_instruction,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            notification_type="email",
+        )
+        return parsed_data
 
     async def start_runbook_review_async(
         self,

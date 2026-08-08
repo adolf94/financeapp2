@@ -57,6 +57,7 @@ class PendingIngestion(BaseModel):
     transaction_id: Optional[str] = None
     month_key: str
     partition_key: str
+    notification_type: str = Field(default="unknown")
     ttl: Optional[int] = Field(default=None, alias="_ttl")
     runbook_synced: bool = False
 

@@ -13,10 +13,11 @@ class IPromptDebugRepository(ABC):
         pass
 
 
+from repositories.cosmos_client import get_cosmos_client
+
 class CosmosPromptDebugRepository(IPromptDebugRepository):
     def __init__(self):
-        self.endpoint = os.environ.get("CosmosConnectionString", "")
-        self.client = CosmosClient.from_connection_string(self.endpoint)
+        self.client = get_cosmos_client()
         self.db_name = os.environ.get("COSMOS_DB", "FinanceDb")
         self.container_name = "PromptDebugLogs"
 

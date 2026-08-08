@@ -13,4 +13,9 @@ pytest
 pytest-asyncio
 debugpy
 
+beautifulsoup4
+bleach
+bleach[css]
+tinycss2
+markdownify
 ar-auth-client @ git+https://github.com/adolf94/ar-oauth2.git#subdirectory=ar-auth-client-python

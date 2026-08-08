@@ -3,10 +3,11 @@ from azure.cosmos.aio import CosmosClient
 from models.pending_ingestion import PendingIngestion
 from uuid_extensions import uuid7
 
+from repositories.cosmos_client import get_cosmos_client
+
 class FinanceApiService:
     def __init__(self):
-        self.endpoint = os.environ.get("CosmosConnectionString", "")
-        self.client = CosmosClient.from_connection_string(self.endpoint) if self.endpoint else None
+        self.client = get_cosmos_client()
         self.db_name = os.environ.get("COSMOS_DB", "FinanceDb")
 
     async def get_accounts_async(self, user_id: str) -> list[dict]:

@@ -1,25 +1,51 @@
 import { useState } from 'react'
-import { useGetPendingIngestions, useConfirmIngestion, useRejectIngestion, useUpdateIngestionVendor, PendingIngestion } from '@/hooks/useIngestions'
+import { useGetPendingIngestions, useConfirmIngestion, useRejectIngestion, useUpdateIngestionVendor, useReclassifyIngestion, PendingIngestion } from '@/hooks/useIngestions'
 import { BellDot } from 'lucide-react'
 import { useGetAccounts, useCreateAccount, useGetAccountGroups, useCreateAccountGroup } from '@/hooks/useAccounts'
 import PendingIngestionCard from '@/components/PendingIngestionCard'
 
 interface PendingIngestionsListProps {
+  filter: 'all' | 'sms' | 'app' | 'email'
   onEditConfirm: (ingestion: PendingIngestion) => void
 }
 
-export default function PendingIngestionsList({ onEditConfirm }: PendingIngestionsListProps) {
-  const { data: ingestions = [], isLoading } = useGetPendingIngestions()
+export default function PendingIngestionsList({ filter, onEditConfirm }: PendingIngestionsListProps) {
+  const { data: allIngestions = [], isLoading } = useGetPendingIngestions()
+
+  const ingestionsWithTypes = allIngestions.map(i => {
+    let type = i.notification_type
+    if (!type || type === 'unknown') {
+      const action = (i.raw_payload?.action || '').toLowerCase()
+      if (action === 'email_received') type = 'email'
+      else if (action.includes('sms') || i.raw_payload?.sms_msg || i.raw_payload?.sms_sender) type = 'sms'
+      else type = 'app'
+    }
+    return { ...i, notification_type: type }
+  })
+
+  const ingestions = filter === 'all' 
+    ? ingestionsWithTypes 
+    : ingestionsWithTypes.filter(i => i.notification_type === filter)
   const { data: accounts = [] } = useGetAccounts()
   const { data: groups = [] } = useGetAccountGroups()
   
   const confirmMutation = useConfirmIngestion()
   const rejectMutation = useRejectIngestion()
   const updateVendorMutation = useUpdateIngestionVendor()
+  const reclassifyMutation = useReclassifyIngestion()
   const createAccountMutation = useCreateAccount()
   const createGroupMutation = useCreateAccountGroup()
 
   const [processingIds, setProcessingIds] = useState<string[]>([])
+
+  const handleReclassify = (id: string) => {
+    setProcessingIds(prev => [...prev, id])
+    reclassifyMutation.mutate(id, {
+      onSettled: () => {
+        setProcessingIds(prev => prev.filter(x => x !== id))
+      }
+    })
+  }
 
   const getAccountName = (id?: string | null) => {
     if (!id) return 'Unassigned'
@@ -168,6 +194,7 @@ export default function PendingIngestionsList({ onEditConfirm }: PendingIngestio
               onEditConfirm={onEditConfirm}
               onUpdateVendor={handleUpdateVendor}
               onCreateSuggestedAccount={handleCreateSuggestedAccount}
+              onReclassify={handleReclassify}
             />
           )
         })}

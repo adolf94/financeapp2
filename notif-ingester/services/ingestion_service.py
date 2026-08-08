@@ -160,7 +160,8 @@ class IngestionService:
                 similarity_score=0.0,
                 top_matches=[],
                 month_key=hook.month_key,
-                partition_key=hook.partition_key
+                partition_key=hook.partition_key,
+                notification_type=hook.notification_type
             )
             ingestion.status = "NonFinancial"
             ingestion.ttl = 7 * 24 * 60 * 60  # 7 days
@@ -192,7 +193,17 @@ class IngestionService:
         
         # 3d. Pre-process notification to extract account info and find vendor matches
         logging.info("[process_hook_async] 3d. Pre-processing notification...")
-        extracted_info = await self._preprocessing_service.process_hook(hook)
+        if "extracted_info" in hook.raw_payload:
+            logging.info("[process_hook_async] Bypassing extraction AI call (already present in payload)")
+            extracted_info_dict = hook.raw_payload["extracted_info"]
+            extracted_info = ExtractedAccountInfo(
+                account_numbers=extracted_info_dict.get("account_numbers", []),
+                account_names=extracted_info_dict.get("account_names", []),
+                application=self._preprocessing_service.extract_application(hook),
+                potential_vendor_names=extracted_info_dict.get("potential_vendor_names", [])
+            )
+        else:
+            extracted_info = await self._preprocessing_service.process_hook(hook)
         
         # Build lookup values from extracted info for vendor matching
         pre_lookups = []
@@ -239,7 +250,8 @@ class IngestionService:
             similarity_score=top_score,
             top_matches=matches,
             month_key=hook.month_key,
-            partition_key=hook.partition_key
+            partition_key=hook.partition_key,
+            notification_type=hook.notification_type
         )
 
         # 6. Auto-confirm logic

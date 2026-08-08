@@ -17,8 +17,8 @@ Users cannot ingest email transactions automatically. Currently, financial infor
 ## Technical Requirements
 
 ### Core Requirements
-1. **Gmail Integration**: OAuth2 authentication and email fetching
-2. **Scheduled Azure Function**: Regular email polling (e.g., every 5 minutes)
+1. **Gmail Integration**: IMAP connection with App Password (SSL) and email fetching
+2. **Scheduled Azure Function**: Regular email polling via timer trigger (`0 32 */3 * * *`)
 3. **Email Parsing**: Extract financial information from email body
 4. **Email-Specific AI Prompts**: Optimized for email language and structure
 5. **Email-Specific Runbook**: Rules for email classification patterns
@@ -38,7 +38,7 @@ Users cannot ingest email transactions automatically. Currently, financial infor
 
 ### Overall Architecture
 ```
-Gmail API → Azure Function (Timer Trigger) → Email Parser → Notification Pipeline → Email Processing Service → PendingIngestions
+Gmail IMAP → Azure Function (Timer Trigger) → Email Parser → Notification Pipeline → Email Processing Service → PendingIngestions
 ```
 
 ### Component Structure
@@ -46,12 +46,14 @@ Gmail API → Azure Function (Timer Trigger) → Email Parser → Notification P
 #### 1. **Email Fetching Service**
 ```python
 class EmailFetchingService:
-    def __init__(self, credentials: dict):
-        self.gmail_service = build_gmail_service(credentials)
+    def __init__(self):
+        self.imap_user = os.environ.get("SECONDARY_EMAIL", "")
+        self.imap_password = os.environ.get("SECONDARY_EMAIL_PW", "")
         
     async def fetch_unread_emails(self) -> List[EmailMessage]:
-        # Query Gmail API for unread emails
-        # Filter for likely financial emails
+        # Connect to imap.gmail.com using imaplib
+        # Search for UNSEEN emails
+        # Validate forward/source using is_validated_forward()
         # Return structured email objects
 ```
 
@@ -82,12 +84,12 @@ class EmailProcessingService(IngestionService):
 
 #### 4. **Azure Function (Timer Trigger)**
 ```python
-@app.timer_trigger(schedule="0 */5 * * * *", arg_name="timer")
-async def EmailFetchingFunction(timer: func.TimerRequest):
-    # Fetch unread emails
-    # Process each email
-    # Mark as processed in Gmail
-    # Create pending ingestions
+@app.timer_trigger(schedule="0 32 */3 * * *", arg_name="myTimer", run_on_startup=False, use_monitor=False) 
+def timer_trigger(myTimer: func.TimerRequest) -> None:
+    if myTimer.past_due:
+        logging.info('The timer is past due!')
+    process_unread_emails()
+    logging.info('Python timer trigger function executed.')
 ```
 
 ### Data Model Enhancements
@@ -141,15 +143,14 @@ Settings container:
 ## Implementation Plan
 
 ### Phase 1: Foundation (Gmail Integration & Infrastructure)
-1. **OAuth2 Setup**
-   - Google Cloud Console project setup
-   - OAuth2 credentials configuration
-   - Token storage and refresh management
-   - User email authorization flow
+1. **IMAP Integration Setup**
+   - Gmail App Password configuration
+   - Environment variables setup (`SECONDARY_EMAIL` and `SECONDARY_EMAIL_PW`)
+   - Source validation logic (`is_validated_forward` checking delivery headers)
 
 2. **Azure Function Timer Setup**
-   - Create timer-triggered Azure Function
-   - Environment configuration for schedules
+   - Create timer-triggered Azure Function running at `0 32 */3 * * *`
+   - Setup `run_on_startup=False` and `use_monitor=False`
    - Error handling and retry logic
    - Logging and monitoring setup
 
@@ -160,10 +161,10 @@ Settings container:
 
 ### Phase 2: Email Processing Pipeline
 1. **Email Fetching Service**
-   - Gmail API integration
-   - Unread email querying
-   - Email filtering (financial vs non-financial)
-   - Batch processing logic
+   - IMAP connection integration with SSL (`imaplib.IMAP4_SSL`)
+   - Unread email querying (`UNSEEN`)
+   - Forwarding/Source validation logic and server reputation check
+   - HTML parsing prioritizing markdown tables conversion
 
 2. **Email Parsing Service**
    - HTML/plain text parsing
@@ -234,9 +235,9 @@ Settings container:
 5. `frontend/src/pages/EmailSettings.tsx` (New)
 
 ### Configuration Files
-1. `notif-ingester/.env` (Gmail OAuth2 credentials)
+1. `notif-ingester/.env` (Gmail App Password credentials: `SECONDARY_EMAIL` and `SECONDARY_EMAIL_PW`)
 2. `notif-ingester/local.settings.json` (Timer schedule)
-3. `notif-ingester/requirements.txt` (Gmail API libraries)
+3. `notif-ingester/requirements.txt` (IMAP-related packages, beautifulsoup4, bleach, uuid_extensions)
 
 ## API Design
 
@@ -267,10 +268,12 @@ async def EmailStatusFunction(req: func.HttpRequest):
 
 ### Timer-Triggered Function
 ```python
-@app.timer_trigger(schedule="0 */5 * * * *", arg_name="timer")
-async def EmailFetchingFunction(timer: func.TimerRequest):
-    # Main scheduled email processing
-    # Fetch → Parse → Process → Ingest cycle
+@app.timer_trigger(schedule="0 32 */3 * * *", arg_name="myTimer", run_on_startup=False, use_monitor=False) 
+def timer_trigger(myTimer: func.TimerRequest) -> None:
+    if myTimer.past_due:
+        logging.info('The timer is past due!')
+    process_unread_emails()
+    logging.info('Python timer trigger function executed.')
 ```
 
 ## AI Prompt Engineering

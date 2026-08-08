@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell } from 'lucide-react'
+import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell, Mail, RefreshCw } from 'lucide-react'
 import dayjs from 'dayjs'
 import { PendingIngestion } from '@/hooks/useIngestions'
 import { AccountGroup } from '@/hooks/useAccounts'
@@ -14,6 +14,7 @@ interface PendingIngestionCardProps {
   onEditConfirm: (ingestion: PendingIngestion) => void
   onUpdateVendor: (ingestionId: string, vendor: string) => Promise<void>
   onCreateSuggestedAccount: (data: any, ingestionId: string) => Promise<void>
+  onReclassify: (id: string) => void
 }
 
 export function hasMasks(name?: string | null): boolean {
@@ -35,7 +36,8 @@ export default function PendingIngestionCard({
   onDismiss,
   onEditConfirm,
   onUpdateVendor,
-  onCreateSuggestedAccount
+  onCreateSuggestedAccount,
+  onReclassify
 }: PendingIngestionCardProps) {
   const [editingVendor, setEditingVendor] = useState<string | null>(null)
   const [editingSuggestion, setEditingSuggestion] = useState<{ idx: number, data: { name: string, account_group: string, type: string, description: string, tagsInput: string } } | null>(null)
@@ -68,7 +70,13 @@ export default function PendingIngestionCard({
                 SMS
               </span>
             )}
-            {(ingestion.notification_type === 'app' || (ingestion.notification_type && ingestion.notification_type !== 'sms' && ingestion.notification_type !== 'unknown')) && (
+            {ingestion.notification_type === 'email' && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-cyan-300 border border-emerald-200 dark:border-emerald-700/50">
+                <Mail className="w-2.5 h-2.5" />
+                Email
+              </span>
+            )}
+            {ingestion.notification_type === 'app' && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/50">
                 <Bell className="w-2.5 h-2.5" />
                 App
@@ -314,6 +322,14 @@ export default function PendingIngestionCard({
         >
           <X className="w-4 h-4" strokeWidth={2} />
           Dismiss
+        </button>
+        <button
+          onClick={() => onReclassify(ingestion.id)}
+          disabled={isProcessing}
+          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
+        >
+          <RefreshCw className="w-4 h-4 text-blue-500" strokeWidth={2} />
+          Refetch Ingestion
         </button>
         <button
           onClick={() => onEditConfirm(ingestion)}

@@ -19,6 +19,7 @@ from services.finance_api_service import FinanceApiService
 from services.ingestion_service import IngestionService
 from services.sms_processing_service import SmsProcessingService
 from services.notification_type_detector import NotificationTypeDetector
+from services.email_fetching_service import check_and_save_emails_async
 from ar_auth.client import ArAuthClient
 from ar_auth.exceptions import TokenValidationError
 from typing import Optional, Tuple
@@ -97,6 +98,26 @@ def get_sms_ingestion_service():
         finance_api_service=finance_api_service
     )
 
+def get_email_ingestion_service():
+    """Factory for the Email-specific processing pipeline."""
+    ingestion_repo = CosmosIngestionRepository()
+    vector_repo = CosmosVectorRepository()
+    embedding_service = EmbeddingService()
+    vector_service = VectorService(vector_repo)
+    prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
+    debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
+    ai_service = AiService(debug_repo=debug_repo)
+    finance_api_service = FinanceApiService()
+
+    from services.email_processing_service import EmailProcessingService
+    return EmailProcessingService(
+        ingestion_repo=ingestion_repo,
+        embedding_service=embedding_service,
+        vector_service=vector_service,
+        ai_service=ai_service,
+        finance_api_service=finance_api_service
+    )
+
 _type_detector = NotificationTypeDetector()
 
 def validate_api_key(req: func.HttpRequest) -> bool:
@@ -159,6 +180,7 @@ async def ClassifyNotificationFunction(documents: func.DocumentList) -> None:
 
     app_ingestion_service = get_ingestion_service()
     sms_ingestion_service = get_sms_ingestion_service()
+    email_ingestion_service = get_email_ingestion_service()
     hook_repo = CosmosHookRepository()
 
     for doc in documents:
@@ -175,6 +197,8 @@ async def ClassifyNotificationFunction(documents: func.DocumentList) -> None:
 
             if notif_type == "sms":
                 await sms_ingestion_service.process_hook_async(hook_msg)
+            elif notif_type == "email":
+                await email_ingestion_service.process_hook_async(hook_msg)
             else:
                 await app_ingestion_service.process_hook_async(hook_msg)
 
@@ -267,6 +291,40 @@ async def GetIngestionByIdFunction(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error fetching ingestion: {e}")
         return func.HttpResponse(f"Internal server error: {e}", status_code=500)
 
+
+# ── Function 3.1c: ReclassifyIngestionFunction ─────────────────────────
+@app.route(route="ingestions/{ingestion_id}/reclassify", methods=["POST"])
+async def ReclassifyIngestionFunction(req: func.HttpRequest) -> func.HttpResponse:
+    user, err = _require_auth(req)
+    if err: return err
+
+    ingestion_id = req.route_params.get("ingestion_id")
+    user_id = user.get("sub", "default")
+
+    ingestion_repo = CosmosIngestionRepository()
+    try:
+        ingestion = await ingestion_repo.get_by_id_async(ingestion_id, user_id)
+        if not ingestion:
+            return func.HttpResponse("Ingestion not found", status_code=404)
+        
+        notif_type = ingestion.notification_type
+        if notif_type == "sms":
+            service = get_sms_ingestion_service()
+        elif notif_type == "email":
+            service = get_email_ingestion_service()
+        else:
+            service = get_ingestion_service()
+
+        reclassified = await service.reclassify_ingestion_async(ingestion_id, user_id)
+        return func.HttpResponse(
+            json.dumps(reclassified.model_dump(by_alias=True, mode="json")),
+            status_code=200, mimetype="application/json"
+        )
+    except Exception as e:
+        logging.error(f"Error reclassifying ingestion: {e}")
+        return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
+
+
 # ── Function 3.2: RejectIngestionFunction ──────────────────────────────
 @app.route(route="ingestions/{ingestion_id}/reject", methods=["POST"])
 async def RejectIngestionFunction(req: func.HttpRequest) -> func.HttpResponse:
@@ -332,46 +390,6 @@ async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
         )
     except Exception as e:
         logging.error(f"Error confirming ingestion status: {e}")
-        return func.HttpResponse(f"Internal server error: {e}", status_code=500)
-
-# ── Function 4: ReclassifyIngestionFunction ───────────────────────────────
-@app.route(route="ingestions/{ingestion_id}/reclassify", methods=["POST"])
-async def ReclassifyIngestionFunction(req: func.HttpRequest) -> func.HttpResponse:
-    user, err = _require_auth(req)
-    if err: return err
-
-    ingestion_id = req.route_params.get("ingestion_id")
-    user_id = user.get("sub", "default")
-
-    try:
-        # Fetch the ingestion first to determine its notification type
-        ingestion_repo = CosmosIngestionRepository()
-        ingestion = await ingestion_repo.get_by_id_async(ingestion_id, user_id)
-        if not ingestion:
-            return func.HttpResponse("Ingestion not found", status_code=404)
-
-        # Detect notification type from the stored payload
-        notif_type = _type_detector.detect_type_from_payload(
-            ingestion.raw_payload.get("action", ""),
-            ingestion.raw_payload
-        )
-        logging.info(f"[ReclassifyIngestionFunction] Reclassifying {ingestion_id} as '{notif_type}'")
-
-        if notif_type == "sms":
-            ingestion_service = get_sms_ingestion_service()
-        else:
-            ingestion_service = get_ingestion_service()
-
-        reclassified = await ingestion_service.reclassify_ingestion_async(ingestion_id, user_id)
-        return func.HttpResponse(
-            json.dumps(reclassified.model_dump(by_alias=True, mode="json")),
-            status_code=200,
-            mimetype="application/json"
-        )
-    except ValueError as e:
-        return func.HttpResponse(str(e), status_code=404)
-    except Exception as e:
-        logging.error(f"Error reclassifying ingestion: {e}")
         return func.HttpResponse(f"Internal server error: {e}", status_code=500)
 
 # ── Function 4.5: PatchIngestionVendorFunction ──────────────────────────────
@@ -1018,5 +1036,37 @@ async def DiscardRunbookReviewFunction(req: func.HttpRequest) -> func.HttpRespon
     except Exception as e:
         logging.error(f"Error discarding runbook session: {e}")
         return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
+
+
+# ── Function 18: CheckEmailManualFunction ─────────────────────────────────────
+@app.route(route="email/check", methods=["POST"])
+async def CheckEmailManualFunction(req: func.HttpRequest) -> func.HttpResponse:
+    user, err = _require_auth(req)
+    if err: return err
+
+    logging.info("Manual check for unread emails triggered.")
+    try:
+        saved_count = await check_and_save_emails_async()
+        return func.HttpResponse(json.dumps({"success": True, "count": saved_count}), status_code=200, mimetype="application/json")
+    except Exception as ex:
+        logging.error(f"Error in manual email check: {ex}")
+        return func.HttpResponse(json.dumps({"error": str(ex)}), status_code=500, mimetype="application/json")
+
+
+# ── Function 17: EmailTimerTriggerFunction ───────────────────────────────────
+@app.timer_trigger(schedule="0 32 */3 * * *", arg_name="myTimer", run_on_startup=False, use_monitor=False)
+def timer_trigger(myTimer: func.TimerRequest) -> None:
+    if myTimer.past_due:
+        logging.info('The timer is past due!')
+
+    logging.info("Checking for unread emails...")
+    try:
+        import asyncio
+        saved_count = asyncio.run(check_and_save_emails_async())
+        logging.info(f"Timer trigger processed emails. Saved {saved_count} new hooks.")
+    except Exception as ex:
+        logging.error(f"Error in email timer trigger: {ex}")
+        
+    logging.info('Python timer trigger function executed.')
 
 
