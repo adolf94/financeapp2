@@ -73,6 +73,8 @@ interface AddTransactionContextProps {
   setNote: (note: string) => void
   userWhy: string
   setUserWhy: (why: string) => void
+  skipLearning: boolean
+  setSkipLearning: (skip: boolean) => void
 
   // Recurring
   isRecurring: boolean
@@ -154,6 +156,7 @@ export function AddTransactionProvider({
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DDTHH:mm'))
   const [note, setNote] = useState('')
   const [userWhy, setUserWhy] = useState('')
+  const [skipLearning, setSkipLearning] = useState(false)
 
   const [isRecurring, setIsRecurring] = useState(false)
   const [frequency, setFrequency] = useState<'Daily' | 'Weekly' | 'Monthly' | 'Yearly'>('Monthly')
@@ -190,6 +193,7 @@ export function AddTransactionProvider({
     setVendor('')
     setNote('')
     setUserWhy('')
+    setSkipLearning(false)
     setDate(dayjs().format('YYYY-MM-DDTHH:mm'))
     setIsRecurring(false)
     setFrequency('Monthly')
@@ -346,7 +350,7 @@ export function AddTransactionProvider({
 
   const saveAdvancedTransaction = (entries: LedgerEntry[]) => {
     const transaction: Transaction = {
-      ...(initialData ? { id: initialData.id } : {}),
+      ...(initialData?.id ? { id: initialData.id } : {}),
       type: 'Journal',
       entries,
       vendor,
@@ -354,9 +358,35 @@ export function AddTransactionProvider({
       date: new Date(date).toISOString(),
     }
 
-    const mutation = initialData ? updateTxMutation : createTxMutation
+    const mutation = initialData?.id ? updateTxMutation : createTxMutation
     mutation.mutate(transaction, {
-      onSuccess: () => {
+      onSuccess: (data) => {
+        if (ingestionId) {
+          confirmIngestionMutation.mutate(
+            {
+              id: ingestionId,
+              transactionId: data.id,
+              skipLearning: skipLearning,
+              userConfirmed: {
+                vendor: vendor || null,
+                amount: entries.filter((e) => e.amount > 0).reduce((sum, e) => sum + e.amount, 0),
+                transaction_type: 'Journal',
+                notes: note || null,
+                user_why: userWhy || null,
+                date: dayjs(date).toISOString(),
+              },
+            },
+            {
+              onSuccess: () => {
+                onSave?.(dayjs(date).toISOString())
+                onClose()
+                resetForm()
+              },
+            }
+          )
+          return
+        }
+
         if (submitTypeRef.current === 'more') {
           setTotalAmount('')
           setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
@@ -368,7 +398,7 @@ export function AddTransactionProvider({
           setNote('')
         } else {
           onClose()
-          if (!initialData) resetForm()
+          if (!initialData?.id) resetForm()
         }
       },
     })
@@ -498,6 +528,7 @@ export function AddTransactionProvider({
       confirmIngestionMutation.mutate(
         {
           id: ingestionId,
+          skipLearning: skipLearning,
           userConfirmed: {
             vendor: vendor || null,
             amount: parsedTotal,
@@ -531,7 +562,7 @@ export function AddTransactionProvider({
     }
 
     const transaction: Transaction = {
-      ...(initialData ? { id: initialData.id } : {}),
+      ...(initialData?.id ? { id: initialData.id } : {}),
       type,
       scheduleId: finalScheduleId,
       entries,
@@ -540,11 +571,11 @@ export function AddTransactionProvider({
       date: dayjs(date).toISOString(),
     }
 
-    const mutation = initialData ? updateTxMutation : createTxMutation
+    const mutation = initialData?.id ? updateTxMutation : createTxMutation
 
     mutation.mutate(transaction, {
       onSuccess: () => {
-        if (initialData && ingestionId === undefined && ingestion) {
+        if (initialData?.id && ingestionId === undefined && ingestion) {
           const updatedUserConfirmed = {
             ...(ingestion.user_confirmed || {}),
             vendor: type === 'Transfer' ? null : vendor || null,
@@ -591,7 +622,7 @@ export function AddTransactionProvider({
           setUserWhy('')
         } else {
           onClose()
-          if (!initialData) resetForm()
+          if (!initialData?.id) resetForm()
         }
       },
     })
@@ -652,6 +683,8 @@ export function AddTransactionProvider({
       handleSubmit,
       submitTypeRef,
       reclassifyMutation,
+      skipLearning,
+      setSkipLearning,
     }),
     [
       isOpen,
@@ -685,6 +718,7 @@ export function AddTransactionProvider({
       resetForm,
       handleSubmit,
       reclassifyMutation,
+      skipLearning,
     ]
   )
 

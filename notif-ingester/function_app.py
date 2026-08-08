@@ -274,6 +274,7 @@ async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
         body = req.get_json()
         transaction_id = body.get("transaction_id")
         user_confirmed = body.get("user_confirmed", {})
+        skip_learning = body.get("skip_learning", False)
     except ValueError:
         return func.HttpResponse("Invalid JSON", status_code=400)
         
@@ -287,8 +288,11 @@ async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
         ingestion.transaction_id = transaction_id
         await ingestion_service.ingestion_repo.update_async(ingestion)
         
-        # Trigger learning asynchronously (we await it here, but it happens after C# created the tx)
-        learned = await ingestion_service.learn_ingestion_async(ingestion_id, user_id, user_confirmed)
+        # Trigger learning asynchronously if not skipped
+        if not skip_learning:
+            learned = await ingestion_service.learn_ingestion_async(ingestion_id, user_id, user_confirmed)
+        else:
+            learned = ingestion
         
         return func.HttpResponse(
             json.dumps(learned.model_dump(by_alias=True, mode="json")),

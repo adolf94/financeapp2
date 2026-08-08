@@ -81,7 +81,7 @@ export function useGetIngestionById(id?: string | null) {
 export function useConfirmIngestion() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, userConfirmed, transactionId }: { id: string; userConfirmed: Partial<AiParsedData>; transactionId?: string }) => {
+    mutationFn: async ({ id, userConfirmed, transactionId, skipLearning }: { id: string; userConfirmed: Partial<AiParsedData>; transactionId?: string; skipLearning?: boolean }) => {
       // Step 1: Create transaction in C#
       let txId = transactionId;
       if (!txId) {
@@ -94,7 +94,8 @@ export function useConfirmIngestion() {
       // Step 2: Confirm status in Python
       const pyResponse = await ingesterClient.post(`/ingestions/${id}/confirm-status`, {
         transaction_id: txId,
-        user_confirmed: userConfirmed
+        user_confirmed: userConfirmed,
+        skip_learning: skipLearning || false
       })
       
       return pyResponse.data

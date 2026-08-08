@@ -88,6 +88,8 @@ function AddTransactionModalContent() {
     handleSubmit,
     submitTypeRef,
     reclassifyMutation,
+    skipLearning,
+    setSkipLearning,
   } = useAddTransaction()
 
   const queryClient = useQueryClient()
@@ -596,21 +598,38 @@ function AddTransactionModalContent() {
               </div>
 
               {ingestion && (
-                <div className="flex flex-col gap-1 mt-2">
-                  <label
-                    htmlFor="correction-reason-textarea"
-                    className="text-xs font-semibold text-slate-500 uppercase tracking-wider"
-                  >
-                    Correction Reason / Notes (Why)
-                  </label>
-                  <textarea
-                    id="correction-reason-textarea"
-                    placeholder="Describe adjustments or rules to be set against the AI reasoning..."
-                    value={userWhy}
-                    onChange={(e) => setUserWhy(e.target.value)}
-                    className="p-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full text-sm focus:outline-none focus:border-blue-600 resize-y"
-                    rows={2}
-                  />
+                <div className="flex flex-col gap-1.5 mt-2">
+                  <div className="flex items-center justify-between">
+                    {!skipLearning ? (
+                      <label
+                        htmlFor="correction-reason-textarea"
+                        className="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                      >
+                        Correction Reason / Notes (Why)
+                      </label>
+                    ) : (
+                      <div />
+                    )}
+                    <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-500 uppercase tracking-wider select-none">
+                      <span>Skip AI Learning</span>
+                      <input
+                        type="checkbox"
+                        checked={skipLearning}
+                        onChange={(e) => setSkipLearning(e.target.checked)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 cursor-pointer dark:bg-slate-950 dark:border-slate-800"
+                      />
+                    </label>
+                  </div>
+                  {!skipLearning && (
+                    <textarea
+                      id="correction-reason-textarea"
+                      placeholder="Describe adjustments or rules to be set against the AI reasoning..."
+                      value={userWhy}
+                      onChange={(e) => setUserWhy(e.target.value)}
+                      className="p-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full text-sm focus:outline-none focus:border-blue-600 resize-y"
+                      rows={2}
+                    />
+                  )}
                 </div>
               )}
 
