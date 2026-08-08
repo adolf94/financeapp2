@@ -588,7 +588,7 @@ function HistoricalLogsSettings() {
 }
 
 function RunbookReviewSettings() {
-  const [runbookType, setRunbookType] = useState<'app' | 'sms'>('app')
+  const [runbookType, setRunbookType] = useState<'app' | 'sms' | 'email'>('app')
   const { data: session } = useGetRunbookSession()
   const hasActiveSession = !!session
   const activeRunbookType = session?.runbook_type || runbookType
@@ -610,7 +610,7 @@ function RunbookReviewSettings() {
   return (
     <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full pb-8">
       {/* Runbook Type Selector (disabled when session is active) */}
-      <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 max-w-xs border border-slate-200 dark:border-slate-700">
+      <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 max-w-sm border border-slate-200 dark:border-slate-700">
         <button
           onClick={() => setRunbookType('app')}
           disabled={hasActiveSession}
@@ -633,12 +633,23 @@ function RunbookReviewSettings() {
         >
           SMS Runbook
         </button>
+        <button
+          onClick={() => setRunbookType('email')}
+          disabled={hasActiveSession}
+          className={`flex-1 px-4 py-1.5 rounded-md text-xs font-semibold transition-all duration-200 cursor-pointer ${
+            activeRunbookType === 'email'
+              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-50'
+          }`}
+        >
+          Email Runbook
+        </button>
       </div>
 
       {hasActiveSession && (
         <div className="text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/20 px-3 py-2.5 rounded-lg border border-indigo-100 dark:border-indigo-900/50 flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-          <span>Active review session in progress for <strong>{session.runbook_type === 'sms' ? 'SMS' : 'App'} Runbook</strong>. Complete or discard the session to review another runbook.</span>
+          <span>Active review session in progress for <strong>{session.runbook_type === 'sms' ? 'SMS' : session.runbook_type === 'email' ? 'Email' : 'App'} Runbook</strong>. Complete or discard the session to review another runbook.</span>
         </div>
       )}
 

@@ -758,15 +758,23 @@ async def GetRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
     
     # Check runbook type
     r_type = req.params.get("type", "app").lower()
-    runbook_id = "runbook-sms" if r_type == "sms" else "runbook"
+    if r_type == "sms":
+        runbook_id = "runbook-sms"
+    elif r_type == "email":
+        runbook_id = "runbook-email"
+    else:
+        runbook_id = "runbook"
     
     ingestion_service = get_ingestion_service()
     try:
         content = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
-        # If SMS runbook is requested but empty, bootstrap it
+        # If SMS/Email runbook is requested but empty, bootstrap it
         if r_type == "sms" and not content:
             sms_service = get_sms_ingestion_service()
             content = await sms_service._get_or_bootstrap_sms_runbook(user_id)
+        elif r_type == "email" and not content:
+            email_service = get_email_ingestion_service()
+            content = await email_service._get_or_bootstrap_email_runbook(user_id)
             
         return func.HttpResponse(json.dumps({"content": content or ""}), status_code=200, mimetype="application/json")
     except Exception as e:
@@ -782,7 +790,12 @@ async def UpdateRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
     user_id = user.get("sub", "default")
     
     r_type = req.params.get("type", "app").lower()
-    runbook_id = "runbook-sms" if r_type == "sms" else "runbook"
+    if r_type == "sms":
+        runbook_id = "runbook-sms"
+    elif r_type == "email":
+        runbook_id = "runbook-email"
+    else:
+        runbook_id = "runbook"
     
     try:
         body = req.get_json()
@@ -819,12 +832,20 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
         from datetime import datetime, timezone
         accounts = await ingestion_service._finance_api_service.get_accounts_async(user_id)
         vendors = await ingestion_service._finance_api_service.get_vendors_async(user_id)
-        runbook_id = "runbook-sms" if runbook_type == "sms" else "runbook"
+        if runbook_type == "sms":
+            runbook_id = "runbook-sms"
+        elif runbook_type == "email":
+            runbook_id = "runbook-email"
+        else:
+            runbook_id = "runbook"
         current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
         if not current_runbook:
             if runbook_type == "sms":
                 sms_service = get_sms_ingestion_service()
                 current_runbook = await sms_service._get_or_bootstrap_sms_runbook(user_id)
+            elif runbook_type == "email":
+                email_service = get_email_ingestion_service()
+                current_runbook = await email_service._get_or_bootstrap_email_runbook(user_id)
             else:
                 current_runbook = ingestion_service._ai_service.get_default_runbook_content()
             
@@ -992,7 +1013,12 @@ async def ApproveRunbookReviewFunction(req: func.HttpRequest) -> func.HttpRespon
 
         # Save updated runbook
         runbook_type = session.get("runbook_type", "app")
-        runbook_id = "runbook-sms" if runbook_type == "sms" else "runbook"
+        if runbook_type == "sms":
+            runbook_id = "runbook-sms"
+        elif runbook_type == "email":
+            runbook_id = "runbook-email"
+        else:
+            runbook_id = "runbook"
         await ingestion_service._finance_api_service.save_runbook_content_async(user_id, proposed_runbook, runbook_id=runbook_id)
         
         # Update account descriptions
