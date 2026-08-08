@@ -8,6 +8,8 @@ from models.prompt_debug_log import PromptDebugLog
 from typing import List, Optional, Tuple
 from services.llm_provider import LlmProvider, make_provider
 from repositories.prompt_debug_repository import IPromptDebugRepository, NoOpPromptDebugRepository
+from prompts.sms_prompts import SMS_IS_FINANCIAL_PROMPT, SMS_EXTRACTION_PROMPT, SMS_CLASSIFICATION_PROMPT
+from prompts.app_prompts import APP_IS_FINANCIAL_PROMPT, APP_CLASSIFICATION_PROMPT
 
 RUNBOOK_REVIEW_PROMPT = """
 You are a personal finance assistant. Your job is to review the user's transaction classification rules runbook (RUNBOOK.md) and propose updates to it, as well as account descriptions and vendor tags.
@@ -191,19 +193,9 @@ Similar past transactions (for context):
 {similar_context}
 """
 
-IS_FINANCIAL_PROMPT = """
-You are a personal finance assistant. Determine if this notification represents a financial transaction.
-A financial transaction is anything involving movement of money (e.g., payments, expenses, income, transfers, withdrawals, bills).
-General notifications, security alerts, login OTPs, promotional messages, etc., are NOT financial transactions.
+IS_FINANCIAL_PROMPT = APP_IS_FINANCIAL_PROMPT
+CLASSIFICATION_PROMPT = APP_CLASSIFICATION_PROMPT
 
-Notification: {raw_msg}
-Source App / Sender: {app_name}
-
-Return ONLY a boolean matching this JSON schema:
-{{
-  "is_financial": boolean
-}}
-"""
 
 class AiService:
     def __init__(self, debug_repo: Optional[IPromptDebugRepository] = None):
@@ -479,6 +471,66 @@ Return ONLY valid JSON matching this schema:
             data["application"] = app_name
             
         return AiParsedData(**data)
+
+    async def classify_sms_async(
+        self,
+        hook: PhoneHookMessage,
+        similar_vectors: List[Tuple[TransactionVector, float]],
+        accounts: list[dict],
+        runbook_content: str,
+        vendors: list[dict] | list[str] = None,
+        vendor_matches: list[dict] = None
+    ) -> AiParsedData:
+        """Classify using SMS-specific prompt (tailored for SMS banking messages)."""
+        context = self._build_context(similar_vectors)
+        accounts_text = self._format_accounts(accounts)
+        vendors_text = self._format_vendors(vendors)
+        vendor_matches_text = self._format_vendor_matches(vendor_matches)
+
+        # Resolve SMS sender from payload
+        app_name = (
+            hook.raw_payload.get("sms_rcv_sender")
+            or hook.raw_payload.get("sms_sender")
+            or hook.raw_payload.get("notif_pkg")
+            or ""
+        )
+
+        prompt = SMS_CLASSIFICATION_PROMPT.format(
+            runbook_content=runbook_content,
+            raw_msg=hook.raw_msg,
+            app_name=app_name,
+            raw_payload=json.dumps(hook.raw_payload, indent=2),
+            similar_context=context,
+            accounts=accounts_text,
+            vendors=vendors_text,
+            vendor_matches=vendor_matches_text
+        )
+
+        system_instruction = "You are a personal finance assistant. Classify the SMS banking notification as a financial transaction. Pay special attention to transfer patterns, masked account numbers, and person-to-person payment indicators."
+
+        response_text, in_tok, out_tok = await self.classification_provider.generate(
+            prompt=prompt,
+            system=system_instruction,
+            json_mode=True,
+        )
+
+        await self._debug_log(
+            "classify_sms",
+            self.classification_provider,
+            prompt,
+            response_text,
+            system=system_instruction,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+        )
+
+        data = json.loads(response_text)
+
+        if not data.get("application"):
+            data["application"] = app_name
+
+        return AiParsedData(**data)
+
 
     async def start_runbook_review_async(
         self,

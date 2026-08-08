@@ -7,6 +7,17 @@ class HookService:
     def __init__(self, repo: IHookRepository):
         self._repo = repo
 
+    def _is_sms_action(self, action: str, body: dict) -> bool:
+        """Determine if this is an SMS notification."""
+        if not action:
+            return False
+        action_lower = action.lower()
+        if "sms" in action_lower:
+            return True
+        if body.get("sms_rcv_sender") or body.get("sms_sender"):
+            return True
+        return False
+
     async def save_hook_async(self, body: dict) -> PhoneHookMessage:
         notif_id = body.get("notif_id")
         timestamp_str = body.get("timestamp")
@@ -28,8 +39,20 @@ class HookService:
                 return existing # Already processed
 
         action = body.get("action", "unknown")
-        raw_msg = f"{body.get('notif_title', '')}: {body.get('notif_msg', '')}".strip()
-        if not raw_msg or raw_msg == ":":
+        is_sms = self._is_sms_action(action, body)
+
+        if is_sms:
+            # SMS: primary message is in sms_rcv_msg
+            sender = body.get("sms_rcv_sender") or body.get("sms_sender") or ""
+            sms_msg = body.get("sms_rcv_msg") or body.get("sms_msg") or ""
+            raw_msg = f"[SMS from {sender}] {sms_msg}".strip() if sender else sms_msg
+            notification_type = "sms"
+        else:
+            # App notification
+            raw_msg = f"{body.get('notif_title', '')}: {body.get('notif_msg', '')}".strip()
+            notification_type = "app"
+
+        if not raw_msg or raw_msg in (":", "[SMS from ]"):
             raw_msg = "Unknown notification"
 
         hook_msg = PhoneHookMessage(
@@ -38,7 +61,8 @@ class HookService:
             raw_payload=body,
             raw_msg=raw_msg,
             month_key=month_key,
-            partition_key=month_key
+            partition_key=month_key,
+            notification_type=notification_type
         )
 
         return await self._repo.add_async(hook_msg)

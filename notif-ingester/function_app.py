@@ -17,6 +17,8 @@ from services.vector_service import VectorService
 from services.ai_service import AiService
 from services.finance_api_service import FinanceApiService
 from services.ingestion_service import IngestionService
+from services.sms_processing_service import SmsProcessingService
+from services.notification_type_detector import NotificationTypeDetector
 from ar_auth.client import ArAuthClient
 from ar_auth.exceptions import TokenValidationError
 from typing import Optional, Tuple
@@ -76,6 +78,27 @@ def get_ingestion_service():
         finance_api_service=finance_api_service
     )
 
+def get_sms_ingestion_service():
+    """Factory for the SMS-specific processing pipeline."""
+    ingestion_repo = CosmosIngestionRepository()
+    vector_repo = CosmosVectorRepository()
+    embedding_service = EmbeddingService()
+    vector_service = VectorService(vector_repo)
+    prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
+    debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
+    ai_service = AiService(debug_repo=debug_repo)
+    finance_api_service = FinanceApiService()
+
+    return SmsProcessingService(
+        ingestion_repo=ingestion_repo,
+        embedding_service=embedding_service,
+        vector_service=vector_service,
+        ai_service=ai_service,
+        finance_api_service=finance_api_service
+    )
+
+_type_detector = NotificationTypeDetector()
+
 def validate_api_key(req: func.HttpRequest) -> bool:
     expected_key = os.environ.get("API_KEY")
     provided_key = req.headers.get("x-api-key")
@@ -133,19 +156,28 @@ async def PhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
 async def ClassifyNotificationFunction(documents: func.DocumentList) -> None:
     if not documents:
         return
-        
-    ingestion_service = get_ingestion_service()
+
+    app_ingestion_service = get_ingestion_service()
+    sms_ingestion_service = get_sms_ingestion_service()
     hook_repo = CosmosHookRepository()
-    
+
     for doc in documents:
         doc_dict = dict(doc)
         if doc_dict.get("status") != "received":
             continue
-            
+
         try:
             hook_msg = PhoneHookMessage(**doc_dict)
-            await ingestion_service.process_hook_async(hook_msg)
-            
+
+            # Route to the appropriate pipeline based on notification type
+            notif_type = _type_detector.detect_type(hook_msg)
+            logging.info(f"[ClassifyNotificationFunction] Routing {hook_msg.id} as '{notif_type}'")
+
+            if notif_type == "sms":
+                await sms_ingestion_service.process_hook_async(hook_msg)
+            else:
+                await app_ingestion_service.process_hook_async(hook_msg)
+
             # Mark hook as processed
             await hook_repo.update_status_async(
                 hook_msg.id, "processed", hook_msg.user_id
@@ -310,10 +342,26 @@ async def ReclassifyIngestionFunction(req: func.HttpRequest) -> func.HttpRespons
 
     ingestion_id = req.route_params.get("ingestion_id")
     user_id = user.get("sub", "default")
-    
-    ingestion_service = get_ingestion_service()
-    
+
     try:
+        # Fetch the ingestion first to determine its notification type
+        ingestion_repo = CosmosIngestionRepository()
+        ingestion = await ingestion_repo.get_by_id_async(ingestion_id, user_id)
+        if not ingestion:
+            return func.HttpResponse("Ingestion not found", status_code=404)
+
+        # Detect notification type from the stored payload
+        notif_type = _type_detector.detect_type_from_payload(
+            ingestion.raw_payload.get("action", ""),
+            ingestion.raw_payload
+        )
+        logging.info(f"[ReclassifyIngestionFunction] Reclassifying {ingestion_id} as '{notif_type}'")
+
+        if notif_type == "sms":
+            ingestion_service = get_sms_ingestion_service()
+        else:
+            ingestion_service = get_ingestion_service()
+
         reclassified = await ingestion_service.reclassify_ingestion_async(ingestion_id, user_id)
         return func.HttpResponse(
             json.dumps(reclassified.model_dump(by_alias=True, mode="json")),
@@ -478,7 +526,7 @@ async def ImportHistoricalHookFunction(req: func.HttpRequest) -> func.HttpRespon
             old_item["Status"] = "Imported"
             await old_container.upsert_item(old_item)
 
-        # 3. Map old schema → PhoneHookMessage (no type juggling needed in Python)
+        # 3. Map old schema -> PhoneHookMessage
         date_str = _scalar(old_item.get("Date"))
         try:
             received_at = datetime.fromisoformat(date_str.replace("Z", "+00:00")) if date_str else datetime.now(timezone.utc)
@@ -499,8 +547,22 @@ async def ImportHistoricalHookFunction(req: func.HttpRequest) -> func.HttpRespon
         if sender_val := _scalar(extracted.get("senderName")):
             raw_payload.setdefault("sms_sender", sender_val)
 
-        raw_msg = _scalar(old_item.get("RawMsg")) or "Unknown notification"
         action = _scalar(old_item.get("Type")) or "notif"
+
+        # Detect notification type from the action field
+        is_sms = "sms" in action.lower() or bool(
+            raw_payload.get("sms_rcv_sender") or raw_payload.get("sms_sender") or raw_payload.get("sms_rcv_msg")
+        )
+        notification_type = "sms" if is_sms else "app"
+
+        # Build raw_msg: prefer the persisted RawMsg, but for SMS re-derive from sender+body
+        raw_msg = _scalar(old_item.get("RawMsg")) or ""
+        if is_sms and not raw_msg:
+            sender = raw_payload.get("sms_rcv_sender") or raw_payload.get("sms_sender") or ""
+            body = raw_payload.get("sms_rcv_msg") or raw_payload.get("sms_msg") or ""
+            raw_msg = f"[SMS from {sender}] {body}".strip() if sender else body
+        if not raw_msg:
+            raw_msg = "Unknown notification"
 
         hook_msg = PhoneHookMessage(
             id=hook_id,
@@ -512,14 +574,19 @@ async def ImportHistoricalHookFunction(req: func.HttpRequest) -> func.HttpRespon
             status="processed",
             month_key=month_key,
             partition_key=month_key,
+            notification_type=notification_type,
         )
 
         # 4. Upsert into new CosmosDB PhoneHookMessages
         hook_repo = CosmosHookRepository()
         await hook_repo.add_async(hook_msg)
 
-        # 5. Classify synchronously
-        ingestion_service = get_ingestion_service()
+        # 5. Classify synchronously — route to the correct pipeline
+        logging.info(f"[ImportHistoricalHookFunction] Routing {hook_id} as '{notification_type}'")
+        if notification_type == "sms":
+            ingestion_service = get_sms_ingestion_service()
+        else:
+            ingestion_service = get_ingestion_service()
         pending_ingestion = await ingestion_service.process_hook_async(hook_msg)
 
         return func.HttpResponse(
@@ -531,6 +598,7 @@ async def ImportHistoricalHookFunction(req: func.HttpRequest) -> func.HttpRespon
     except Exception as e:
         logging.error(f"Error importing historical hook {hook_id}: {e}")
         return func.HttpResponse(f"Internal server error: {e}", status_code=500)
+
 
 
 # ── Function 9: IgnoreHistoricalHookFunction ────────────────────────────────
@@ -613,6 +681,7 @@ async def GetRunbookCorrectionsFunction(req: func.HttpRequest) -> func.HttpRespo
     if err: return err
 
     user_id = user.get("sub", "default")
+    r_type = req.params.get("type", "app").lower()
     
     # Lazy-load only the repository — no AI/embedding clients needed
     ingestion_repo = CosmosIngestionRepository()
@@ -620,11 +689,20 @@ async def GetRunbookCorrectionsFunction(req: func.HttpRequest) -> func.HttpRespo
         # Fetch Confirmed ingestions with higher limit for corrections review
         ingestions = await ingestion_repo.get_by_status_async(user_id, "Confirmed", top=200)
         
-        # Filter for those with user_why and not runbook_synced
-        corrections = [
-            i for i in ingestions 
-            if i.user_confirmed and i.user_confirmed.get("user_why") and not getattr(i, "runbook_synced", False)
-        ]
+        # Filter for those with user_why, not runbook_synced, and matching type
+        corrections = []
+        for i in ingestions:
+            if not (i.user_confirmed and i.user_confirmed.get("user_why") and not getattr(i, "runbook_synced", False)):
+                continue
+            
+            # Detect type
+            hook_type = _type_detector.detect_type_from_payload(
+                i.raw_payload.get("action", ""),
+                i.raw_payload
+            )
+            
+            if hook_type == r_type:
+                corrections.append(i)
         
         return func.HttpResponse(
             json.dumps([c.model_dump(by_alias=True, mode="json") for c in corrections]),
@@ -655,14 +733,23 @@ async def GetRunbookSessionFunction(req: func.HttpRequest) -> func.HttpResponse:
 # ── Function 12.1: GetRunbookFunction ───────────────────────────────────────
 @app.route(route="runbook", methods=["GET"])
 async def GetRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
-    """Returns the current runbook content."""
+    """Returns the current runbook content (accepts ?type=sms or ?type=app)."""
     user, err = _require_auth(req)
     if err: return err
     user_id = user.get("sub", "default")
     
+    # Check runbook type
+    r_type = req.params.get("type", "app").lower()
+    runbook_id = "runbook-sms" if r_type == "sms" else "runbook"
+    
     ingestion_service = get_ingestion_service()
     try:
-        content = await ingestion_service._finance_api_service.get_runbook_content_async(user_id)
+        content = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
+        # If SMS runbook is requested but empty, bootstrap it
+        if r_type == "sms" and not content:
+            sms_service = get_sms_ingestion_service()
+            content = await sms_service._get_or_bootstrap_sms_runbook(user_id)
+            
         return func.HttpResponse(json.dumps({"content": content or ""}), status_code=200, mimetype="application/json")
     except Exception as e:
         logging.error(f"Error fetching runbook: {e}")
@@ -671,10 +758,13 @@ async def GetRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
 # ── Function 12.2: UpdateRunbookFunction ────────────────────────────────────
 @app.route(route="runbook", methods=["PUT"])
 async def UpdateRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
-    """Updates the runbook content."""
+    """Updates the runbook content (accepts ?type=sms or ?type=app)."""
     user, err = _require_auth(req)
     if err: return err
     user_id = user.get("sub", "default")
+    
+    r_type = req.params.get("type", "app").lower()
+    runbook_id = "runbook-sms" if r_type == "sms" else "runbook"
     
     try:
         body = req.get_json()
@@ -684,7 +774,7 @@ async def UpdateRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
         
     ingestion_service = get_ingestion_service()
     try:
-        await ingestion_service._finance_api_service.save_runbook_content_async(user_id, content)
+        await ingestion_service._finance_api_service.save_runbook_content_async(user_id, content, runbook_id=runbook_id)
         return func.HttpResponse(json.dumps({"success": True}), status_code=200, mimetype="application/json")
     except Exception as e:
         logging.error(f"Error saving runbook: {e}")

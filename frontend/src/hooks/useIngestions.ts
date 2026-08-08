@@ -54,6 +54,7 @@ export interface PendingIngestion {
   transaction_id?: string | null
   month_key: string
   partition_key: string
+  notification_type?: 'sms' | 'app' | 'unknown'
 }
 
 export function useGetPendingIngestions(status: string = 'Pending') {

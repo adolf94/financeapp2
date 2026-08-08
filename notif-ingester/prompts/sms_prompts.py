@@ -1,0 +1,117 @@
+"""
+SMS-specific prompts for the notification ingestion pipeline.
+These prompts are tailored for the unique characteristics of SMS banking messages:
+- Masked card numbers (****1234)
+- Embedded account numbers
+- Informal language
+- Bank-specific SMS formatting patterns
+"""
+
+SMS_IS_FINANCIAL_PROMPT = """
+You are a personal finance assistant. Determine if this SMS represents a financial transaction.
+A financial transaction includes: payments, transfers, withdrawals, deposits, bills, purchases.
+Promotional messages, OTPs, security alerts, and balance inquiry replies ARE financial if they contain transaction amounts.
+
+SMS Sender: {app_name}
+SMS Message: {raw_msg}
+
+Return ONLY valid JSON:
+{{
+  "is_financial": boolean
+}}
+"""
+
+SMS_EXTRACTION_PROMPT = """
+You are a financial data extraction assistant. Extract ALL account identifiers, vendor names, and transaction details from this SMS banking message.
+
+SMS from: {sender}
+SMS Message: {raw_msg}
+
+Extract the following information:
+1. **Account Numbers**: Any account/card/wallet numbers mentioned (e.g., "1234", "****5678", "0917****", masked numbers)
+2. **Account Names**: Any account holder/merchant/person names mentioned
+3. **Potential Vendor Names**: Any store/merchant/business/person names that received the payment
+
+CRITICAL FILTERING RULES:
+- For fund transfers between individuals: the vendor should be the PERSON receiving money, not the bank
+- DO NOT include bank names (BPI, BDO, Metrobank, UnionBank, GCash, Maya) as potential_vendor_names — they are account senders, not vendors
+- DO include the RECIPIENT person/business name as potential_vendor_names for transfers
+- Masked numbers like "****1234" or "xxxx-5678" should still be included in account_numbers
+
+Return ONLY valid JSON matching this schema:
+{{
+  "account_numbers": ["string"],
+  "account_names": ["string"],
+  "potential_vendor_names": ["string"]
+}}
+"""
+
+SMS_CLASSIFICATION_PROMPT = """
+You are a personal finance assistant classifying an SMS banking transaction.
+
+Apply the rules below to classify the transaction. Return ONLY valid JSON matching this schema:
+{{
+  "is_financial":true,
+  "vendor": string,
+  "vendor_type": "Individual"|"Business"|"Internal",
+  "suggested_vendor": {{
+    "name": "string",
+    "tags": ["string"],
+    "type": "Individual"|"Business"|"Internal"
+  }} (or null if vendor already in Existing Vendors),
+  "amount": number (positive),
+  "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
+  "debit_account_id": string,
+  "credit_account_id": string,
+  "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string"]}}],
+  "notes": string,
+  "summary": string,
+  "confidence": number (0.0-1.0),
+  "recipient_account_number": string,
+  "recipient_account_name": string,
+  "sender_account_number": string,
+  "sender_account_name": string,
+  "application": string,
+  "why": string
+}}
+
+Rules:
+- Apply the SMS Runbook rules ABOVE everything else.
+- For transaction_type: "Expense" = money leaving user accounts; "Income" = money entering; "Transfer" = money moving between user's own accounts.
+- For Expense: debit = expense account, credit = source bank/cash account
+- For Income: debit = bank account, credit = income account
+- For Transfer: debit = receiving account, credit = sending account
+
+SMS-Specific Rules:
+- "sent to" / "transferred to" patterns → likely Transfer or Expense
+- "received from" patterns → likely Income or Transfer
+- If the SMS mentions a PERSON NAME as recipient → vendor_type = "Individual"
+- Masked card numbers (****1234) should be noted but don't prevent classification
+- SMS sender (the bank/telco name) is NOT the vendor — the recipient/payee is the vendor
+- For SMS bank transfers to another person: set vendor = recipient person name, vendor_type = Individual
+- **Pre-matched Vendors**: "Vendor Matches Found" were matched by extracted account numbers — STRONGLY PRIORITIZE these.
+- **Account Number Uniqueness**: The same account number CANNOT appear in both recipient_account_number and sender_account_number. If a message contains only one account number, assign it to the most contextually appropriate field (recipient if money was sent, sender if money was received) and leave the other field empty.
+
+User SMS Runbook (Explicit Rules):
+{runbook_content}
+
+Available accounts:
+{accounts}
+
+Existing Vendors:
+{vendors}
+
+Vendor Matches Found (via account number/name lookup):
+{vendor_matches}
+
+==================================================
+Now classify the following SMS transaction:
+==================================================
+
+SMS from {app_name}: {raw_msg}
+Full payload: {raw_payload}
+
+Similar past transactions (for context):
+{similar_context}
+"""
+

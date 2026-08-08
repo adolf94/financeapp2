@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, X, Edit, Sparkles, PlusCircle } from 'lucide-react'
+import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell } from 'lucide-react'
 import dayjs from 'dayjs'
 import { PendingIngestion } from '@/hooks/useIngestions'
 import { AccountGroup } from '@/hooks/useAccounts'
@@ -58,9 +58,23 @@ export default function PendingIngestionCard({
 
       <div className="flex justify-between items-start gap-4">
         <div className="flex flex-col gap-1 flex-1">
-          <span className="text-xs font-semibold text-slate-400">
-            {dayjs(ingestion.received_at).format('MMM DD, YYYY • h:mm A')}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-400">
+              {dayjs(ingestion.received_at).format('MMM DD, YYYY • h:mm A')}
+            </span>
+            {ingestion.notification_type === 'sms' && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-700/50">
+                <MessageSquare className="w-2.5 h-2.5" />
+                SMS
+              </span>
+            )}
+            {(ingestion.notification_type === 'app' || (ingestion.notification_type && ingestion.notification_type !== 'sms' && ingestion.notification_type !== 'unknown')) && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/50">
+                <Bell className="w-2.5 h-2.5" />
+                App
+              </span>
+            )}
+          </div>
           <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
             "{ingestion.raw_msg}"
           </p>

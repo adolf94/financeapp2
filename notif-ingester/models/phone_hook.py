@@ -14,6 +14,8 @@ class PhoneHookMessage(BaseModel):
     month_key: str
     partition_key: str
     ttl: int = Field(default=60 * 24 * 60 * 60, alias="_ttl")
+    notification_type: str = Field(default="unknown")  # 'sms' | 'app' | 'unknown'
+    processing_metadata: dict = Field(default_factory=dict)
 
     class Config:
         populate_by_name = True

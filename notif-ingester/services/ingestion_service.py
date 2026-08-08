@@ -29,6 +29,10 @@ class IngestionService:
         self._preprocessing_service = PreprocessingService(debug_repo=ai_service._debug_repo)
         self._auto_confirm_threshold = float(os.environ.get("AUTO_CONFIRM_THRESHOLD", "0.92"))
 
+    def _get_runbook_id(self) -> str:
+        """Return the CosmosDB Settings id for this pipeline's runbook. Override in subclasses."""
+        return "runbook"
+
     @property
     def ingestion_repo(self) -> IIngestionRepository:
         return self._repo
@@ -86,6 +90,54 @@ class IngestionService:
             
         return clean_lookups
 
+    async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches) -> 'AiParsedData':
+        """Run AI classification. Override in subclasses to use a different prompt."""
+        return await self._ai_service.classify_async(hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches)
+
+    async def _apply_vendor_matching(self, ai_parsed: 'AiParsedData', vendors: list, accounts: list, lookups: list, user_id: str) -> None:
+        """Apply vendor matching logic in-place on ai_parsed. Shared between process_hook_async and reclassify_ingestion_async."""
+        existing_vendor_names = {}
+        if vendors:
+            for v in vendors:
+                if isinstance(v, dict) and v.get("name"):
+                    existing_vendor_names[v.get("name").lower().strip()] = v.get("name")
+                elif isinstance(v, str):
+                    existing_vendor_names[v.lower().strip()] = v
+
+        target_vendor = (ai_parsed.vendor or "").strip()
+        if not target_vendor and ai_parsed.suggested_vendor:
+            target_vendor = (ai_parsed.suggested_vendor.name or "").strip()
+
+        string_match_name = None
+        if target_vendor.lower() in existing_vendor_names:
+            string_match_name = existing_vendor_names[target_vendor.lower()]
+
+        matched_vendor = await self._finance_api_service.search_vendors_by_lookups_async(user_id, lookups)
+
+        if matched_vendor:
+            ai_parsed.vendor = matched_vendor
+            ai_parsed.vendor_matched = True
+            ai_parsed.suggested_vendor = None
+        elif string_match_name:
+            ai_parsed.vendor = string_match_name
+            ai_parsed.vendor_matched = True
+            ai_parsed.suggested_vendor = None
+        else:
+            if ai_parsed.suggested_vendor and ai_parsed.suggested_vendor.name:
+                ai_parsed.vendor = ai_parsed.suggested_vendor.name
+                ai_parsed.vendor_type = ai_parsed.suggested_vendor.type or "Business"
+
+            if self._has_masks(ai_parsed.vendor):
+                ai_parsed.vendor_matched = False
+            else:
+                if ai_parsed.confidence and ai_parsed.confidence >= self._auto_confirm_threshold and ai_parsed.debit_account_id and ai_parsed.credit_account_id and ai_parsed.vendor:
+                    await self._finance_api_service.ensure_vendor_and_lookups_async(user_id, ai_parsed.vendor, lookups, ai_parsed.vendor_type)
+                    ai_parsed.vendor_matched = True
+                    if ai_parsed.suggested_vendor:
+                        ai_parsed.suggested_vendor.is_created = True
+                else:
+                    ai_parsed.vendor_matched = False
+
     async def process_hook_async(self, hook: PhoneHookMessage) -> PendingIngestion:
         logging.info("[process_hook_async] Starting...")
         
@@ -130,7 +182,7 @@ class IngestionService:
         accounts = await self._finance_api_service.get_accounts_async(hook.user_id)
         
         logging.info("[process_hook_async] 3b. Fetching runbook...")
-        runbook_content = await self._finance_api_service.get_runbook_content_async(hook.user_id)
+        runbook_content = await self._finance_api_service.get_runbook_content_async(hook.user_id, self._get_runbook_id())
         if not runbook_content:
             runbook_content = self._ai_service.get_default_runbook_content()
 
@@ -156,53 +208,13 @@ class IngestionService:
         
         # 4. Classify via LLM with vendor match context
         logging.info("[process_hook_async] 4. Classifying via LLM with vendor context...")
-        ai_parsed = await self._ai_service.classify_async(
+        ai_parsed = await self._classify_hook_async(
             hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches
         )
-        
+
         # 4.5 Automatically map vendor from lookups or string match
-        existing_vendor_names = {}
-        if vendors:
-            for v in vendors:
-                if isinstance(v, dict) and v.get("name"):
-                    existing_vendor_names[v.get("name").lower().strip()] = v.get("name")
-                elif isinstance(v, str):
-                    existing_vendor_names[v.lower().strip()] = v
-
-        target_vendor = (ai_parsed.vendor or "").strip()
-        if not target_vendor and ai_parsed.suggested_vendor:
-            target_vendor = (ai_parsed.suggested_vendor.name or "").strip()
-
-        string_match_name = None
-        if target_vendor.lower() in existing_vendor_names:
-            string_match_name = existing_vendor_names[target_vendor.lower()]
-
         lookups = self._build_lookups(ai_parsed, accounts)
-        matched_vendor = await self._finance_api_service.search_vendors_by_lookups_async(hook.user_id, lookups)
-        
-        if matched_vendor:
-            ai_parsed.vendor = matched_vendor
-            ai_parsed.vendor_matched = True
-            ai_parsed.suggested_vendor = None
-        elif string_match_name:
-            ai_parsed.vendor = string_match_name
-            ai_parsed.vendor_matched = True
-            ai_parsed.suggested_vendor = None
-        else:
-            if ai_parsed.suggested_vendor and ai_parsed.suggested_vendor.name:
-                ai_parsed.vendor = ai_parsed.suggested_vendor.name
-                ai_parsed.vendor_type = ai_parsed.suggested_vendor.type or "Business"
-            
-            if self._has_masks(ai_parsed.vendor):
-                ai_parsed.vendor_matched = False
-            else:
-                if ai_parsed.confidence and ai_parsed.confidence >= self._auto_confirm_threshold and ai_parsed.debit_account_id and ai_parsed.credit_account_id and ai_parsed.vendor:
-                    await self._finance_api_service.ensure_vendor_and_lookups_async(hook.user_id, ai_parsed.vendor, lookups, ai_parsed.vendor_type)
-                    ai_parsed.vendor_matched = True
-                    if ai_parsed.suggested_vendor:
-                        ai_parsed.suggested_vendor.is_created = True
-                else:
-                    ai_parsed.vendor_matched = False
+        await self._apply_vendor_matching(ai_parsed, vendors, accounts, lookups, hook.user_id)
 
         # 5. Create PendingIngestion
         matches = []
@@ -278,7 +290,7 @@ class IngestionService:
 
         # 3. Fetch accounts, runbook, and vendors
         accounts = await self._finance_api_service.get_accounts_async(user_id)
-        runbook_content = await self._finance_api_service.get_runbook_content_async(user_id)
+        runbook_content = await self._finance_api_service.get_runbook_content_async(user_id, self._get_runbook_id())
         if not runbook_content:
             runbook_content = self._ai_service.get_default_runbook_content()
         vendors = await self._finance_api_service.get_vendors_async(user_id)
@@ -320,52 +332,11 @@ class IngestionService:
             raw_payload=ingestion.raw_payload,
             user_id=user_id
         )
-        ai_parsed = await self._ai_service.classify_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches)
-
+        ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches)
 
         # 4.5 Automatically map vendor from lookups or string match
-        existing_vendor_names = {}
-        if vendors:
-            for v in vendors:
-                if isinstance(v, dict) and v.get("name"):
-                    existing_vendor_names[v.get("name").lower().strip()] = v.get("name")
-                elif isinstance(v, str):
-                    existing_vendor_names[v.lower().strip()] = v
-
-        target_vendor = (ai_parsed.vendor or "").strip()
-        if not target_vendor and ai_parsed.suggested_vendor:
-            target_vendor = (ai_parsed.suggested_vendor.name or "").strip()
-
-        string_match_name = None
-        if target_vendor.lower() in existing_vendor_names:
-            string_match_name = existing_vendor_names[target_vendor.lower()]
-
         lookups = self._build_lookups(ai_parsed, accounts)
-        matched_vendor = await self._finance_api_service.search_vendors_by_lookups_async(user_id, lookups)
-        
-        if matched_vendor:
-            ai_parsed.vendor = matched_vendor
-            ai_parsed.vendor_matched = True
-            ai_parsed.suggested_vendor = None
-        elif string_match_name:
-            ai_parsed.vendor = string_match_name
-            ai_parsed.vendor_matched = True
-            ai_parsed.suggested_vendor = None
-        else:
-            if ai_parsed.suggested_vendor and ai_parsed.suggested_vendor.name:
-                ai_parsed.vendor = ai_parsed.suggested_vendor.name
-                ai_parsed.vendor_type = ai_parsed.suggested_vendor.type or "Business"
-            
-            if self._has_masks(ai_parsed.vendor):
-                ai_parsed.vendor_matched = False
-            else:
-                if ai_parsed.confidence and ai_parsed.confidence >= self._auto_confirm_threshold and ai_parsed.debit_account_id and ai_parsed.credit_account_id and ai_parsed.vendor:
-                    await self._finance_api_service.ensure_vendor_and_lookups_async(user_id, ai_parsed.vendor, lookups, ai_parsed.vendor_type)
-                    ai_parsed.vendor_matched = True
-                    if ai_parsed.suggested_vendor:
-                        ai_parsed.suggested_vendor.is_created = True
-                else:
-                    ai_parsed.vendor_matched = False
+        await self._apply_vendor_matching(ai_parsed, vendors, accounts, lookups, user_id)
 
         # 5. Update ingestion with new classification
         matches = []

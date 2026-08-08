@@ -451,28 +451,38 @@ class FinanceApiService:
             
         return tx_doc
 
-    async def get_runbook_content_async(self, user_id: str) -> str:
+    async def get_runbook_content_async(self, user_id: str, runbook_id: str = "runbook") -> str:
+        """Fetch runbook content by id. Default is 'runbook' (app). Use 'runbook-sms' for SMS."""
         if not self.client:
             return ""
         try:
             db = self.client.get_database_client(self.db_name)
             container = db.get_container_client("Settings")
-            item = await container.read_item(item="runbook", partition_key=user_id)
+            item = await container.read_item(item=runbook_id, partition_key=user_id)
             return item.get("content", "")
         except Exception:
             return ""
 
-    async def save_runbook_content_async(self, user_id: str, content: str) -> None:
+    async def save_runbook_content_async(self, user_id: str, content: str, runbook_id: str = "runbook") -> None:
+        """Persist runbook content by id. Default is 'runbook' (app). Use 'runbook-sms' for SMS."""
         if not self.client:
             return
         db = self.client.get_database_client(self.db_name)
         container = db.get_container_client("Settings")
         doc = {
-            "id": "runbook",
+            "id": runbook_id,
             "UserId": user_id,
             "content": content
         }
         await container.upsert_item(doc)
+
+    async def get_sms_runbook_content_async(self, user_id: str) -> str:
+        """Fetch the SMS-specific runbook. Returns empty string if not found."""
+        return await self.get_runbook_content_async(user_id, runbook_id="runbook-sms")
+
+    async def save_sms_runbook_content_async(self, user_id: str, content: str) -> None:
+        """Persist the SMS-specific runbook."""
+        await self.save_runbook_content_async(user_id, content, runbook_id="runbook-sms")
 
     async def update_account_descriptions_async(self, user_id: str, updates: list[dict]) -> None:
         if not self.client or not updates:
