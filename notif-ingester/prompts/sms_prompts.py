@@ -71,6 +71,7 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   "recipient_account_name": string,
   "sender_account_number": string,
   "sender_account_name": string,
+  "reference_number": string (reference number/transaction id/trace number if mentioned in the message),
   "application": string,
   "why": string
 }}

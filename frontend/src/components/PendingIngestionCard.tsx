@@ -306,6 +306,14 @@ export default function PendingIngestionCard({
             </span>
           </div>
         )}
+        {ingestion.ai_parsed.reference_number && (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-slate-400 uppercase font-semibold text-[10px]">Ref No.</span>
+            <span className="text-slate-700 dark:text-slate-350 font-medium truncate">
+              {ingestion.ai_parsed.reference_number}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Action buttons */}

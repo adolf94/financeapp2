@@ -28,6 +28,7 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   "recipient_account_name": string (recipient name if mentioned in the message),
   "sender_account_number": string (sender account/card/wallet number if mentioned in the message),
   "sender_account_name": string (sender name if mentioned in the message),
+  "reference_number": string (reference number/transaction id/trace number if mentioned in the message),
   "application": string (name of the app or SMS sender, e.g. BPI, GCash),
   "why": string (explain the classification so the user can spot mistakes and provide corrections — mention which runbook rule, keyword, or past transaction match drove each decision. Do NOT include raw UUIDs.)
 }}

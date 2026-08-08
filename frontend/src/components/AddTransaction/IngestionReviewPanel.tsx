@@ -134,6 +134,16 @@ export default function IngestionReviewPanel() {
                 </p>
               </div>
             )}
+            {ingestion.ai_parsed.reference_number && (
+              <div>
+                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Ref No.
+                </span>
+                <p className="text-slate-800 dark:text-slate-250 font-bold text-xs mt-0.5 truncate">
+                  {ingestion.ai_parsed.reference_number}
+                </p>
+              </div>
+            )}
             {(ingestion.ai_parsed.recipient_account_name ||
               ingestion.ai_parsed.recipient_account_number) && (
               <div className="col-span-2 border-t border-slate-100 dark:border-slate-800 pt-2">

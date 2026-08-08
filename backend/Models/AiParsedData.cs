@@ -46,6 +46,9 @@ namespace FinanceApp.Models
         [JsonPropertyName("sender_account_name")]
         public string? SenderAccountName { get; set; }
 
+        [JsonPropertyName("reference_number")]
+        public string? ReferenceNumber { get; set; }
+
         [JsonPropertyName("application")]
         public string? Application { get; set; }
 

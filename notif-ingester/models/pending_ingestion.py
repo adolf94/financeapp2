@@ -26,6 +26,7 @@ class AiParsedData(BaseModel):
     recipient_account_name: Optional[str] = None
     sender_account_number: Optional[str] = None
     sender_account_name: Optional[str] = None
+    reference_number: Optional[str] = None
     application: Optional[str] = None
     why: Optional[str] = None
     user_why: Optional[str] = None

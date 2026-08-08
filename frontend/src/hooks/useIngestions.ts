@@ -26,6 +26,7 @@ export interface AiParsedData {
   recipient_account_name?: string | null
   sender_account_number?: string | null
   sender_account_name?: string | null
+  reference_number?: string | null
   application?: string | null
   why?: string | null
   user_why?: string | null
