@@ -588,13 +588,16 @@ function HistoricalLogsSettings() {
 }
 
 function RunbookReviewSettings() {
-  const { data: corrections = [], isLoading } = useGetRunbookCorrections()
+  const [runbookType, setRunbookType] = useState<'app' | 'sms'>('app')
   const { data: session } = useGetRunbookSession()
   const hasActiveSession = !!session
+  const activeRunbookType = session?.runbook_type || runbookType
+
+  const { data: corrections = [], isLoading } = useGetRunbookCorrections(activeRunbookType)
   const { data: runbookRes } = useQuery({
-    queryKey: ['runbook_content'],
+    queryKey: ['runbook_content', activeRunbookType],
     queryFn: async () => {
-      const res = await ingesterClient.get('/runbook')
+      const res = await ingesterClient.get(`/runbook?type=${activeRunbookType}`)
       return res.data
     }
   })
@@ -606,21 +609,54 @@ function RunbookReviewSettings() {
 
   return (
     <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full pb-8">
+      {/* Runbook Type Selector (disabled when session is active) */}
+      <div className="flex bg-slate-100 dark:bg-slate-800 rounded-lg p-1 max-w-xs border border-slate-200 dark:border-slate-700">
+        <button
+          onClick={() => setRunbookType('app')}
+          disabled={hasActiveSession}
+          className={`flex-1 px-4 py-1.5 rounded-md text-xs font-semibold transition-all duration-200 cursor-pointer ${
+            activeRunbookType === 'app'
+              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-50'
+          }`}
+        >
+          App Runbook
+        </button>
+        <button
+          onClick={() => setRunbookType('sms')}
+          disabled={hasActiveSession}
+          className={`flex-1 px-4 py-1.5 rounded-md text-xs font-semibold transition-all duration-200 cursor-pointer ${
+            activeRunbookType === 'sms'
+              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-50'
+          }`}
+        >
+          SMS Runbook
+        </button>
+      </div>
+
+      {hasActiveSession && (
+        <div className="text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/20 px-3 py-2.5 rounded-lg border border-indigo-100 dark:border-indigo-900/50 flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+          <span>Active review session in progress for <strong>{session.runbook_type === 'sms' ? 'SMS' : 'App'} Runbook</strong>. Complete or discard the session to review another runbook.</span>
+        </div>
+      )}
+
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-50 flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-indigo-500" />
-              Pending Runbook Corrections
+              Pending {activeRunbookType === 'sms' ? 'SMS' : 'App'} Runbook Corrections
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              Review and apply AI-suggested updates to your Runbook based on recent corrections.
+              Review and apply AI-suggested updates to your {activeRunbookType === 'sms' ? 'SMS' : 'App'} Runbook based on recent corrections.
             </p>
           </div>
           <div className="flex items-center gap-2">
             <button 
               onClick={() => setIsModalOpen(true)}
-              className="relative flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-sm"
+              className="relative flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors shadow-sm cursor-pointer"
             >
               {hasActiveSession && (
                 <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" title="Active session" />
@@ -632,7 +668,7 @@ function RunbookReviewSettings() {
 
         {corrections.length === 0 ? (
           <div className="text-center py-12 text-slate-500 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-            No pending corrections to review.
+            No pending {activeRunbookType === 'sms' ? 'SMS' : 'App'} corrections to review.
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -662,6 +698,7 @@ function RunbookReviewSettings() {
         onClose={() => setIsModalOpen(false)}
         corrections={corrections}
         currentRunbook={currentRunbook}
+        runbookType={activeRunbookType}
       />
     </div>
   )

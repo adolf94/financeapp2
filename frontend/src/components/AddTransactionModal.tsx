@@ -90,6 +90,7 @@ function AddTransactionModalContent() {
     reclassifyMutation,
     skipLearning,
     setSkipLearning,
+    setPendingNewAccount,
   } = useAddTransaction()
 
   const queryClient = useQueryClient()
@@ -411,8 +412,28 @@ function AddTransactionModalContent() {
                         <Combobox
                           options={accountGroups
                             .slice()
-                            .sort((a, b) => a.name.localeCompare(b.name))
-                            .map((g) => ({ value: g.id, label: g.name }))}
+                            .sort((a, b) => {
+                              const typeOrder: Record<string, number> = {
+                                Asset: 1,
+                                Bank: 2,
+                                Cash: 3,
+                                CreditCard: 4,
+                                Investment: 5,
+                                Income: 6,
+                                Expense: 7,
+                                Liability: 8,
+                                Equity: 9,
+                              }
+                              const orderA = a.accountType ? (typeOrder[a.accountType] || 99) : 99
+                              const orderB = b.accountType ? (typeOrder[b.accountType] || 99) : 99
+                              if (orderA !== orderB) return orderA - orderB
+                              return a.name.localeCompare(b.name)
+                            })
+                            .map((g) => ({
+                              value: g.id,
+                              label: g.name,
+                              group: g.accountType,
+                            }))}
                           value={line.categoryId}
                           onChange={(val) => updateJournalLine(line.id, { categoryId: val })}
                           placeholder="Category..."
@@ -428,12 +449,23 @@ function AddTransactionModalContent() {
                           placeholder="Account..."
                           className="flex-1 text-sm"
                           disabled={!line.categoryId}
+                          onCreate={(val) => {
+                            const group = accountGroups.find((g) => g.id === line.categoryId)
+                            setPendingNewAccount({
+                              name: val,
+                              categoryId: line.categoryId,
+                              type: group?.accountType || 'Expense',
+                              splitId: line.id,
+                              description: '',
+                              tags: [],
+                            })
+                          }}
                         />
                       </div>
 
                       <div className="flex gap-2 items-center w-full">
-                        <div className="flex flex-col flex-1 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden focus-within:border-blue-600 bg-white dark:bg-slate-950">
-                          <div className="flex text-[10px] uppercase font-bold text-slate-400 bg-slate-100 dark:bg-slate-900">
+                        <div className="flex flex-col flex-1 border border-slate-200 dark:border-slate-800 rounded-lg focus-within:border-blue-600 bg-white dark:bg-slate-950">
+                          <div className="flex text-[10px] uppercase font-bold text-slate-400 bg-slate-100 dark:bg-slate-900 rounded-t-lg">
                             <button
                               type="button"
                               onClick={() => updateJournalLine(line.id, { type: 'Debit' })}

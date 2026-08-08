@@ -88,7 +88,6 @@ export default function CalculatorInput({ value, onChange, placeholder, classNam
             if (!isOpen) onChange(e.target.value)
           }}
           onKeyDown={onKeyDown}
-          onFocus={() => setIsOpen(true)}
           placeholder={placeholder}
           required={required}
           className={className || "w-full min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"}

@@ -792,6 +792,7 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
     try:
         body = req.get_json()
         corrections = body.get("corrections", [])
+        runbook_type = body.get("runbook_type", "app")
     except ValueError:
         return func.HttpResponse(json.dumps({"error": "Invalid JSON"}), status_code=400, mimetype="application/json")
         
@@ -800,9 +801,14 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
         from datetime import datetime, timezone
         accounts = await ingestion_service._finance_api_service.get_accounts_async(user_id)
         vendors = await ingestion_service._finance_api_service.get_vendors_async(user_id)
-        current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id)
+        runbook_id = "runbook-sms" if runbook_type == "sms" else "runbook"
+        current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
         if not current_runbook:
-            current_runbook = ingestion_service._ai_service.get_default_runbook_content()
+            if runbook_type == "sms":
+                sms_service = get_sms_ingestion_service()
+                current_runbook = await sms_service._get_or_bootstrap_sms_runbook(user_id)
+            else:
+                current_runbook = ingestion_service._ai_service.get_default_runbook_content()
             
         ai_response = await ingestion_service._ai_service.start_runbook_review_async(
             corrections=corrections,
@@ -816,6 +822,7 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
             "id": "runbook-review-session",
             "UserId": user_id,
             "corrections": corrections,
+            "runbook_type": runbook_type,
             "chat_history": [{"role": "ai", "text": ai_response.get("message", ""), "questions": ai_response.get("questions", [])}],
             "proposed_runbook": ai_response.get("proposed_runbook", ""),
             "account_description_updates": ai_response.get("account_description_updates", []),
@@ -862,9 +869,15 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
         # Fetch supporting data
         accounts = await ingestion_service._finance_api_service.get_accounts_async(user_id)
         vendors = await ingestion_service._finance_api_service.get_vendors_async(user_id)
-        current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id)
+        runbook_type = session.get("runbook_type", "app")
+        runbook_id = "runbook-sms" if runbook_type == "sms" else "runbook"
+        current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
         if not current_runbook:
-            current_runbook = ingestion_service._ai_service.get_default_runbook_content()
+            if runbook_type == "sms":
+                sms_service = get_sms_ingestion_service()
+                current_runbook = await sms_service._get_or_bootstrap_sms_runbook(user_id)
+            else:
+                current_runbook = ingestion_service._ai_service.get_default_runbook_content()
             
         ai_response = await ingestion_service._ai_service.chat_runbook_review_async(
             chat_history=chat_history,
@@ -960,7 +973,9 @@ async def ApproveRunbookReviewFunction(req: func.HttpRequest) -> func.HttpRespon
         correction_ids = [c.get("id") for c in corrections if c.get("id")]
 
         # Save updated runbook
-        await ingestion_service._finance_api_service.save_runbook_content_async(user_id, proposed_runbook)
+        runbook_type = session.get("runbook_type", "app")
+        runbook_id = "runbook-sms" if runbook_type == "sms" else "runbook"
+        await ingestion_service._finance_api_service.save_runbook_content_async(user_id, proposed_runbook, runbook_id=runbook_id)
         
         # Update account descriptions
         if account_updates:

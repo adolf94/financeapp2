@@ -4,7 +4,7 @@ import { useAddTransaction } from './AddTransactionContext'
 import { useCreateAccount, useGetAccountGroups, useGenerateAccountDescription } from '@/hooks/useAccounts'
 
 export default function InlineAccountCreateForm() {
-  const { pendingNewAccount, setPendingNewAccount, setSplits } = useAddTransaction()
+  const { pendingNewAccount, setPendingNewAccount, setSplits, setJournalLines } = useAddTransaction()
   const { data: accountGroups = [] } = useGetAccountGroups()
   
   const createAccountMutation = useCreateAccount()
@@ -44,6 +44,11 @@ export default function InlineAccountCreateForm() {
             setSplits((prev) =>
               prev.map((s) =>
                 s.id === pendingNewAccount.splitId ? { ...s, subCategoryId: data.id } : s
+              )
+            )
+            setJournalLines((prev) =>
+              prev.map((l) =>
+                l.id === pendingNewAccount.splitId ? { ...l, subCategoryId: data.id } : l
               )
             )
           }

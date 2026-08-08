@@ -15,6 +15,8 @@ class RunbookReviewSession(BaseModel):
     chat_history: List[ChatMessage] = Field(default_factory=list)
     proposed_runbook: str = ""
     account_description_updates: List[dict] = Field(default_factory=list)
+    vendor_updates: List[dict] = Field(default_factory=list)
+    runbook_type: str = "app"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     partition_key: str = "default"

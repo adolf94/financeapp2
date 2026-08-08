@@ -31,6 +31,7 @@ export type RunbookReviewSession = {
   proposed_runbook: string
   account_description_updates: AccountDescriptionUpdate[]
   vendor_updates: VendorUpdate[]
+  runbook_type?: 'app' | 'sms'
   created_at: string
   updated_at: string
   partition_key: string
@@ -38,11 +39,11 @@ export type RunbookReviewSession = {
 
 // ── Corrections ────────────────────────────────────────────────────────────
 
-export function useGetRunbookCorrections() {
+export function useGetRunbookCorrections(type: 'app' | 'sms' = 'app') {
   return useQuery({
-    queryKey: ['runbook_corrections'],
+    queryKey: ['runbook_corrections', type],
     queryFn: async () => {
-      const { data } = await ingesterClient.get<PendingIngestion[]>('/runbook/corrections')
+      const { data } = await ingesterClient.get<PendingIngestion[]>(`/runbook/corrections?type=${type}`)
       return data
     },
   })
@@ -76,8 +77,11 @@ export function useGetRunbookSession() {
 export function useStartRunbookReview() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (corrections: PendingIngestion[]) => {
-      const { data } = await ingesterClient.post<RunbookReviewSession>('/runbook/review/start', { corrections })
+    mutationFn: async ({ corrections, runbookType }: { corrections: PendingIngestion[], runbookType: 'app' | 'sms' }) => {
+      const { data } = await ingesterClient.post<RunbookReviewSession>('/runbook/review/start', {
+        corrections,
+        runbook_type: runbookType
+      })
       return data
     },
     onSuccess: (session) => {

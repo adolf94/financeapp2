@@ -4,6 +4,7 @@ import { ChevronDown, Plus } from 'lucide-react'
 export interface ComboboxOption {
   value: string
   label: string
+  group?: string
 }
 
 interface ComboboxProps {
@@ -91,8 +92,8 @@ export default function Combobox({
             placeholder={placeholder}
             value={displayValue}
             onChange={(e) => {
-              setSearch(e.target.value)
-              if (!isOpen) setIsOpen(true)
+               setSearch(e.target.value)
+               if (!isOpen) setIsOpen(true)
             }}
             disabled={disabled}
             aria-autocomplete="list"
@@ -108,21 +109,36 @@ export default function Combobox({
             <div className="p-3 text-sm text-slate-500 text-center">No options found.</div>
           )}
 
-          {filteredOptions.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${
-                opt.value === value ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-slate-900 dark:text-slate-100'
-              }`}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                handleSelect(opt.value)
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {(() => {
+            let lastGroup = ''
+            return filteredOptions.map((opt) => {
+              const showHeader = opt.group && opt.group !== lastGroup
+              if (showHeader) {
+                lastGroup = opt.group!
+              }
+              return (
+                <div key={opt.value}>
+                  {showHeader && (
+                    <div className="px-3 py-1.5 text-xs font-semibold text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-900/50 uppercase tracking-wider select-none border-b border-t first:border-t-0 border-slate-100 dark:border-slate-800">
+                      {opt.group}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${
+                      opt.value === value ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-slate-900 dark:text-slate-100'
+                    }`}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handleSelect(opt.value)
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                </div>
+              )
+            })
+          })()}
 
           {showCreate && (
             <button
