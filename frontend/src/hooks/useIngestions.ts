@@ -63,7 +63,27 @@ export function useGetPendingIngestions(status: string = 'Pending') {
     queryFn: async () => {
       // Changed to use python backend directly
       const response = await ingesterClient.get('/ingestions', { params: { status } })
-      return response.data
+      const data = response.data as PendingIngestion[]
+      return [...data].sort((a, b) => {
+        const rawA = a.raw_payload?.timestamp;
+        const rawB = b.raw_payload?.timestamp;
+        
+        const timeA = rawA
+          ? (typeof rawA === 'number' ? (rawA > 30000000000 ? rawA : rawA * 1000) : Date.parse(rawA))
+          : null;
+        const timeB = rawB
+          ? (typeof rawB === 'number' ? (rawB > 30000000000 ? rawB : rawB * 1000) : Date.parse(rawB))
+          : null;
+
+        const valA = (timeA && !isNaN(timeA))
+          ? timeA
+          : ((a.ai_parsed?.date ? Date.parse(a.ai_parsed.date) : null) || Date.parse(a.received_at));
+        const valB = (timeB && !isNaN(timeB))
+          ? timeB
+          : ((b.ai_parsed?.date ? Date.parse(b.ai_parsed.date) : null) || Date.parse(b.received_at));
+
+        return (valB || 0) - (valA || 0);
+      })
     }
   })
 }

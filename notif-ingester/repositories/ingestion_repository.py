@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional
+from datetime import datetime, timezone
 from azure.cosmos.aio import CosmosClient
 from models.pending_ingestion import PendingIngestion
 import os
@@ -50,14 +51,11 @@ class CosmosIngestionRepository(IIngestionRepository):
         container = await self._get_container()
         query = (
             "SELECT * FROM c "
-            "WHERE c.UserId = @user_id AND c.status = @status "
-            "OFFSET @skip LIMIT @top"
+            "WHERE c.UserId = @user_id AND c.status = @status"
         )
         parameters = [
             {"name": "@user_id", "value": user_id},
-            {"name": "@status", "value": status},
-            {"name": "@skip", "value": skip},
-            {"name": "@top", "value": top}
+            {"name": "@status", "value": status}
         ]
         items = container.query_items(
             query=query,
@@ -66,7 +64,39 @@ class CosmosIngestionRepository(IIngestionRepository):
         results = []
         async for item in items:
             results.append(PendingIngestion(**item))
-        return results
+
+        def get_sort_key(item: PendingIngestion) -> datetime:
+            val = item.raw_payload.get("timestamp")
+            if val is not None:
+                try:
+                    if isinstance(val, str) and val.isdigit():
+                        val = float(val)
+                    if isinstance(val, (int, float)):
+                        if val > 30000000000:
+                            return datetime.fromtimestamp(val / 1000, tz=timezone.utc)
+                        else:
+                            return datetime.fromtimestamp(val, tz=timezone.utc)
+                    elif isinstance(val, str):
+                        dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        return dt
+                except Exception:
+                    pass
+
+            if item.ai_parsed and item.ai_parsed.date:
+                dt = item.ai_parsed.date
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+
+            dt = item.received_at
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+
+        results.sort(key=get_sort_key, reverse=True)
+        return results[skip : skip + top]
 
     async def update_async(self, ingestion: PendingIngestion) -> None:
         container = await self._get_container()
