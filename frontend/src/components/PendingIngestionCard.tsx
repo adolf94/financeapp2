@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell, Mail, RefreshCw } from 'lucide-react'
+import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell, Mail } from 'lucide-react'
 import dayjs from 'dayjs'
 import { PendingIngestion } from '@/hooks/useIngestions'
 import { AccountGroup } from '@/hooks/useAccounts'
@@ -14,7 +14,6 @@ interface PendingIngestionCardProps {
   onEditConfirm: (ingestion: PendingIngestion) => void
   onUpdateVendor: (ingestionId: string, vendor: string) => Promise<void>
   onCreateSuggestedAccount: (data: any, ingestionId: string) => Promise<void>
-  onReclassify: (id: string) => void
 }
 
 export function hasMasks(name?: string | null): boolean {
@@ -36,8 +35,7 @@ export default function PendingIngestionCard({
   onDismiss,
   onEditConfirm,
   onUpdateVendor,
-  onCreateSuggestedAccount,
-  onReclassify
+  onCreateSuggestedAccount
 }: PendingIngestionCardProps) {
   const [editingVendor, setEditingVendor] = useState<string | null>(null)
   const [editingSuggestion, setEditingSuggestion] = useState<{ idx: number, data: { name: string, account_group: string, type: string, description: string, tagsInput: string } } | null>(null)
@@ -323,14 +321,7 @@ export default function PendingIngestionCard({
           <X className="w-4 h-4" strokeWidth={2} />
           Dismiss
         </button>
-        <button
-          onClick={() => onReclassify(ingestion.id)}
-          disabled={isProcessing}
-          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
-        >
-          <RefreshCw className="w-4 h-4 text-blue-500" strokeWidth={2} />
-          Refetch Ingestion
-        </button>
+
         <button
           onClick={() => onEditConfirm(ingestion)}
           disabled={isProcessing}
