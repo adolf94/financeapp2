@@ -12,6 +12,7 @@ interface PendingIngestionCardProps {
   onQuickConfirm: (ingestion: PendingIngestion) => void
   onDismiss: (id: string) => void
   onEditConfirm: (ingestion: PendingIngestion) => void
+  onOpenTransaction?: (transactionId: string) => void
   onUpdateVendor: (ingestionId: string, vendor: string) => Promise<void>
   onCreateSuggestedAccount: (data: any, ingestionId: string) => Promise<void>
 }
@@ -34,6 +35,7 @@ export default function PendingIngestionCard({
   onQuickConfirm,
   onDismiss,
   onEditConfirm,
+  onOpenTransaction,
   onUpdateVendor,
   onCreateSuggestedAccount
 }: PendingIngestionCardProps) {
@@ -307,39 +309,51 @@ export default function PendingIngestionCard({
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-2 justify-end items-center border-t border-slate-100 dark:border-slate-800/80 pt-3 flex-wrap">
-        {!ingestion.ai_parsed.vendor_matched && hasMasks(ingestion.ai_parsed.vendor) && (
-          <span className="text-[10px] text-amber-500 font-medium mr-auto">
-            Name contains masks (edit to enable Quick Confirm)
-          </span>
-        )}
-        <button
-          onClick={() => onDismiss(ingestion.id)}
-          disabled={isProcessing}
-          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 dark:hover:border-rose-800 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
-        >
-          <X className="w-4 h-4" strokeWidth={2} />
-          Dismiss
-        </button>
+      {ingestion.status !== 'AutoConfirmed' && ingestion.status !== 'Confirmed' && (
+        <div className="flex gap-2 justify-end items-center border-t border-slate-100 dark:border-slate-800/80 pt-3 flex-wrap">
+          {!ingestion.ai_parsed.vendor_matched && hasMasks(ingestion.ai_parsed.vendor) && (
+            <span className="text-[10px] text-amber-500 font-medium mr-auto">
+              Name contains masks (edit to enable Quick Confirm)
+            </span>
+          )}
+          <button
+            onClick={() => onDismiss(ingestion.id)}
+            disabled={isProcessing}
+            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 dark:hover:border-rose-800 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
+          >
+            <X className="w-4 h-4" strokeWidth={2} />
+            Dismiss
+          </button>
 
-        <button
-          onClick={() => onEditConfirm(ingestion)}
-          disabled={isProcessing}
-          className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
-        >
-          <Edit className="w-4 h-4" strokeWidth={2} />
-          Edit
-        </button>
-        <button
-          onClick={() => onQuickConfirm(ingestion)}
-          disabled={isProcessing || (!ingestion.ai_parsed.vendor_matched && hasMasks(ingestion.ai_parsed.vendor))}
-          title={!ingestion.ai_parsed.vendor_matched && hasMasks(ingestion.ai_parsed.vendor) ? "Quick Confirm disabled (vendor name contains masks)" : "Quick Confirm"}
-          className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
-        >
-          <Check className="w-4 h-4" strokeWidth={2.5} />
-          Confirm
-        </button>
-      </div>
+          <button
+            onClick={() => onEditConfirm(ingestion)}
+            disabled={isProcessing}
+            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
+          >
+            <Edit className="w-4 h-4" strokeWidth={2} />
+            Edit
+          </button>
+          <button
+            onClick={() => onQuickConfirm(ingestion)}
+            disabled={isProcessing || (!ingestion.ai_parsed.vendor_matched && hasMasks(ingestion.ai_parsed.vendor))}
+            title={!ingestion.ai_parsed.vendor_matched && hasMasks(ingestion.ai_parsed.vendor) ? "Quick Confirm disabled (vendor name contains masks)" : "Quick Confirm"}
+            className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
+          >
+            <Check className="w-4 h-4" strokeWidth={2.5} />
+            Confirm
+          </button>
+        </div>
+      )}
+      {(ingestion.status === 'AutoConfirmed' || ingestion.status === 'Confirmed') && ingestion.transaction_id && onOpenTransaction && (
+        <div className="flex gap-2 justify-end items-center border-t border-slate-100 dark:border-slate-800/80 pt-3 flex-wrap">
+          <button
+            onClick={() => onOpenTransaction(ingestion.transaction_id!)}
+            className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
+          >
+            View Transaction
+          </button>
+        </div>
+      )}
     </div>
   )
 }

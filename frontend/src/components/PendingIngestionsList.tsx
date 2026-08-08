@@ -6,11 +6,13 @@ import PendingIngestionCard from '@/components/PendingIngestionCard'
 
 interface PendingIngestionsListProps {
   filter: 'all' | 'sms' | 'app' | 'email'
+  viewMode?: string
   onEditConfirm: (ingestion: PendingIngestion) => void
+  onOpenTransaction?: (transactionId: string) => void
 }
 
-export default function PendingIngestionsList({ filter, onEditConfirm }: PendingIngestionsListProps) {
-  const { data: allIngestions = [], isLoading } = useGetPendingIngestions()
+export default function PendingIngestionsList({ filter, viewMode = 'Pending', onEditConfirm, onOpenTransaction }: PendingIngestionsListProps) {
+  const { data: allIngestions = [], isLoading } = useGetPendingIngestions(viewMode)
 
   const ingestionsWithTypes = allIngestions.map(i => {
     let type = i.notification_type
@@ -164,7 +166,7 @@ export default function PendingIngestionsList({ filter, onEditConfirm }: Pending
       <div className="flex items-center gap-2 px-1">
         <BellDot className="w-4 h-4 text-amber-500 animate-pulse" />
         <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-          Pending Ingested Notifications ({ingestions.length})
+          {viewMode === 'Pending' ? 'Pending' : viewMode === 'AutoConfirmed' ? 'Auto-Confirmed' : 'Confirmed'} Ingested Notifications ({ingestions.length})
         </h2>
       </div>
 
@@ -182,6 +184,7 @@ export default function PendingIngestionsList({ filter, onEditConfirm }: Pending
               onQuickConfirm={handleQuickConfirm}
               onDismiss={handleDismiss}
               onEditConfirm={onEditConfirm}
+              onOpenTransaction={onOpenTransaction}
               onUpdateVendor={handleUpdateVendor}
               onCreateSuggestedAccount={handleCreateSuggestedAccount}
             />

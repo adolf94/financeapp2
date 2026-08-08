@@ -42,6 +42,17 @@ export function useGetAccountTransactions(accountId: string) {
   })
 }
 
+export function useGetTransactionById(id?: string | null) {
+  return useQuery<Transaction>({
+    queryKey: ['transaction', id],
+    queryFn: async () => {
+      const response = await apiClient.get(`/transactions/${id}`)
+      return response.data
+    },
+    enabled: !!id
+  })
+}
+
 export function useCreateTransaction() {
   const queryClient = useQueryClient()
   return useMutation({
