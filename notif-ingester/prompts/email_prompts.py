@@ -62,5 +62,5 @@ Now classify the following Email transaction:
 Sender: {sender}
 Subject: {subject}
 Body:
-{raw_msg}
+{body}
 """

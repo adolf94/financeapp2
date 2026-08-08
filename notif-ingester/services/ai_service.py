@@ -596,10 +596,11 @@ Return ONLY valid JSON matching this schema:
 
         sender = hook.raw_payload.get("sender") or ""
         subject = hook.raw_payload.get("subject") or ""
+        email_body = hook.raw_payload.get("markdown_content") or hook.raw_payload.get("body") or hook.raw_msg
 
         prompt = EMAIL_CLASSIFICATION_PROMPT.format(
             runbook_content=runbook_content,
-            raw_msg=hook.raw_msg,
+            body=email_body,
             sender=sender,
             subject=subject,
             accounts=accounts_text,
