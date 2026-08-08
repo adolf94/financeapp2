@@ -54,7 +54,7 @@ export interface PendingIngestion {
   transaction_id?: string | null
   month_key: string
   partition_key: string
-  notification_type?: 'sms' | 'app' | 'unknown'
+  notification_type?: 'sms' | 'app' | 'email' | 'unknown'
 }
 
 export function useGetPendingIngestions(status: string = 'Pending') {
@@ -229,6 +229,19 @@ export function useGenerateAccountDescription() {
         context: context || ""
       })
       return response.data as { description: string }
+    }
+  })
+}
+
+export function useCheckEmails() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async () => {
+      const response = await ingesterClient.post('/email/check')
+      return response.data as { success: boolean; count: number }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
     }
   })
 }

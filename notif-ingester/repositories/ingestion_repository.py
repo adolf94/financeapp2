@@ -21,10 +21,11 @@ class IIngestionRepository(ABC):
     async def update_async(self, ingestion: PendingIngestion) -> None:
         pass
 
+from repositories.cosmos_client import get_cosmos_client
+
 class CosmosIngestionRepository(IIngestionRepository):
     def __init__(self):
-        self.endpoint = os.environ.get("CosmosConnectionString", "")
-        self.client = CosmosClient.from_connection_string(self.endpoint)
+        self.client = get_cosmos_client()
         self.db_name = os.environ.get("COSMOS_DB", "FinanceDb")
         self.container_name = "PendingIngestions"
 

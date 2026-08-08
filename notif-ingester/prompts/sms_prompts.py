@@ -84,11 +84,12 @@ Rules:
 
 SMS-Specific Rules:
 - "sent to" / "transferred to" patterns → likely Transfer or Expense
-- "received from" patterns → likely Income or Transfer
+- "received from" patterns → Transfer
 - If the SMS mentions a PERSON NAME as recipient → vendor_type = "Individual"
 - Masked card numbers (****1234) should be noted but don't prevent classification
-- SMS sender (the bank/telco name) is NOT the vendor — the recipient/payee is the vendor
-- For SMS bank transfers to another person: set vendor = recipient person name, vendor_type = Individual
+- SMS sender (the bank/telco name) is NOT the vendor — the recipient/payee is the vendor (Exception: if the SMS sender is a known merchant like "LAZADA", "GRAB", etc., it is the vendor).
+- For SMS bank transfers to another person: set vendor = recipient person name, vendor_type = Individual.
+- If the destination is a bank name (e.g., BPI, BDO, UnionBank, Metrobank, etc.) without any recipient person name, classify the transaction as a Transfer between the user's own accounts.
 - **Pre-matched Vendors**: "Vendor Matches Found" were matched by extracted account numbers — STRONGLY PRIORITIZE these.
 - **Account Number Uniqueness**: The same account number CANNOT appear in both recipient_account_number and sender_account_number. If a message contains only one account number, assign it to the most contextually appropriate field (recipient if money was sent, sender if money was received) and leave the other field empty.
 

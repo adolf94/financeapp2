@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useGetPendingIngestions, useConfirmIngestion, useRejectIngestion, useUpdateIngestionVendor, PendingIngestion } from '@/hooks/useIngestions'
+import { useGetPendingIngestions, useConfirmIngestion, useRejectIngestion, useUpdateIngestionVendor, useReclassifyIngestion, PendingIngestion } from '@/hooks/useIngestions'
 import { BellDot } from 'lucide-react'
 import { useGetAccounts, useCreateAccount, useGetAccountGroups, useCreateAccountGroup } from '@/hooks/useAccounts'
 import PendingIngestionCard from '@/components/PendingIngestionCard'
@@ -16,10 +16,20 @@ export default function PendingIngestionsList({ onEditConfirm }: PendingIngestio
   const confirmMutation = useConfirmIngestion()
   const rejectMutation = useRejectIngestion()
   const updateVendorMutation = useUpdateIngestionVendor()
+  const reclassifyMutation = useReclassifyIngestion()
   const createAccountMutation = useCreateAccount()
   const createGroupMutation = useCreateAccountGroup()
 
   const [processingIds, setProcessingIds] = useState<string[]>([])
+
+  const handleReclassify = (id: string) => {
+    setProcessingIds(prev => [...prev, id])
+    reclassifyMutation.mutate(id, {
+      onSettled: () => {
+        setProcessingIds(prev => prev.filter(x => x !== id))
+      }
+    })
+  }
 
   const getAccountName = (id?: string | null) => {
     if (!id) return 'Unassigned'
@@ -168,6 +178,7 @@ export default function PendingIngestionsList({ onEditConfirm }: PendingIngestio
               onEditConfirm={onEditConfirm}
               onUpdateVendor={handleUpdateVendor}
               onCreateSuggestedAccount={handleCreateSuggestedAccount}
+              onReclassify={handleReclassify}
             />
           )
         })}

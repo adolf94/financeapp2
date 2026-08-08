@@ -17,14 +17,11 @@ class IHookRepository(ABC):
     async def update_status_async(self, id: str, status: str, user_id: str) -> None:
         pass
 
+from repositories.cosmos_client import get_cosmos_client
+
 class CosmosHookRepository(IHookRepository):
     def __init__(self):
-        self.endpoint = os.environ.get("CosmosConnectionString", "")
-        # Parse endpoint from ConnectionString for cosmos client
-        conn_parts = dict(kv.split("=", 1) for kv in self.endpoint.split(";") if kv)
-        
-        # Or better, just use from_connection_string
-        self.client = CosmosClient.from_connection_string(self.endpoint)
+        self.client = get_cosmos_client()
         self.db_name = os.environ.get("COSMOS_DB", "FinanceDb")
         self.container_name = "PhoneHookMessages"
 
