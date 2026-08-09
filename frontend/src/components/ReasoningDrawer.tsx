@@ -8,6 +8,7 @@ interface ReasoningDrawerProps {
   isPending: boolean
   thinkingEventName?: string
   progressEventName?: string
+  finalContent?: string
 }
 
 export default function ReasoningDrawer({
@@ -16,7 +17,8 @@ export default function ReasoningDrawer({
   operationId,
   isPending,
   thinkingEventName = 'reclassifyThinking',
-  progressEventName = 'reclassifyProgress'
+  progressEventName = 'reclassifyProgress',
+  finalContent
 }: ReasoningDrawerProps) {
   const [thinkingText, setThinkingText] = useState('')
   const [contentText, setContentText] = useState('')
@@ -35,12 +37,20 @@ export default function ReasoningDrawer({
     }
   }, [operationId, isPending, enableReasoning])
 
+  // Fallback to HTTP response if streaming final content was disabled
+  useEffect(() => {
+    if (!isPending && finalContent && !contentText) {
+      setContentText(finalContent)
+      setActiveTab('output')
+    }
+  }, [isPending, finalContent, contentText])
+
   // Mark done when pending flips off (after we had some output)
   useEffect(() => {
-    if (!isPending && (thinkingText || contentText)) {
+    if (!isPending && (thinkingText || contentText || finalContent)) {
       setIsDone(true)
     }
-  }, [isPending, thinkingText, contentText])
+  }, [isPending, thinkingText, contentText, finalContent])
 
   // Listen to reclassifyThinking_{operationId}
   useEffect(() => {

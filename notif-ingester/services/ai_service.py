@@ -314,11 +314,16 @@ class AiService:
         global_enable = os.environ.get("ENABLE_REASONING", "false").lower() == "true"
         include_reasoning = include_reasoning and global_enable
 
+        # Globally enable/disable streaming final content via environment variable
+        stream_content_to_client = os.environ.get("STREAM_FINAL_CONTENT", "false").lower() == "true"
+
         debounce_delay = float(os.environ.get("THINKING_STREAM_DEBOUNCE_SECONDS", "0.0"))
         
         content_chunks: list[str] = []
         thinking_chunks: list[str] = []
+        content_publish_chunks: list[str] = []
         last_thinking_publish_time = time.time()
+        last_content_publish_time = time.time()
 
         async for chunk_type, text in provider.generate_stream(
             prompt=prompt,
@@ -355,11 +360,24 @@ class AiService:
             else:
                 # Accumulate final content for JSON parsing after the stream.
                 content_chunks.append(text)
-                if operation_id:
-                    args = [text, operation_id]
-                    await publish_signalr_message(
-                        "notificationHub", target, args, user_id=user_id, group_name=operation_id
-                    )
+                if operation_id and stream_content_to_client:
+                    if debounce_delay > 0:
+                        content_publish_chunks.append(text)
+                        current_time = time.time()
+                        if current_time - last_content_publish_time >= debounce_delay:
+                            accumulated_content = "".join(content_publish_chunks)
+                            content_publish_chunks = []
+                            last_content_publish_time = current_time
+                            
+                            args = [accumulated_content, operation_id]
+                            await publish_signalr_message(
+                                "notificationHub", target, args, user_id=user_id, group_name=operation_id
+                            )
+                    else:
+                        args = [text, operation_id]
+                        await publish_signalr_message(
+                            "notificationHub", target, args, user_id=user_id, group_name=operation_id
+                        )
 
         # Flush any remaining thinking chunks
         if stream_reasoning_to_client and debounce_delay > 0 and thinking_chunks:
@@ -368,6 +386,15 @@ class AiService:
                 args = [accumulated_thinking, operation_id]
                 await publish_signalr_message(
                     "notificationHub", "reclassifyThinking", args, user_id=user_id, group_name=operation_id
+                )
+
+        # Flush any remaining content chunks
+        if stream_content_to_client and debounce_delay > 0 and content_publish_chunks:
+            accumulated_content = "".join(content_publish_chunks)
+            if operation_id:
+                args = [accumulated_content, operation_id]
+                await publish_signalr_message(
+                    "notificationHub", target, args, user_id=user_id, group_name=operation_id
                 )
 
         if operation_id:

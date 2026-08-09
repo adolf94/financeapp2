@@ -364,6 +364,7 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
         isPending={isThinking}
         thinkingEventName="reclassifyThinking"
         progressEventName="chatProgress"
+        finalContent={chatReview.data?.proposed_runbook || startReview.data?.proposed_runbook || undefined}
       />
     </div>
   )
