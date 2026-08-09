@@ -37,12 +37,14 @@ export default function IngestionReviewPanel() {
     suggestedVendorTags,
     setSuggestedVendorTags,
     reclassifyMutation,
+    setIsDrawerOpen,
   } = useAddTransaction()
 
   const { data: dbVendors = [] } = useGetVendors()
   
   const createVendorMutation = useCreateVendor()
   const updateIngestionVendorMutation = useUpdateIngestionVendor()
+
 
   if (!ingestion) return null
 
@@ -80,11 +82,16 @@ export default function IngestionReviewPanel() {
 
       {isReviewOpen && (
         <div className="flex flex-col gap-2.5 animate-in fade-in slide-in-from-top-1">
-           <button
+          <button
             type="button"
-            onClick={() => setConfirmReclassifyOpen(true)}
-            disabled={reclassifyMutation.isPending}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors shadow-sm disabled:opacity-50 w-full focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
+            onClick={() => {
+              if (reclassifyMutation.isPending) {
+                setIsDrawerOpen(true)
+              } else {
+                setConfirmReclassifyOpen(true)
+              }
+            }}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors shadow-sm w-full focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:outline-none"
           >
             {reclassifyMutation.isPending ? (
               <>
@@ -92,7 +99,7 @@ export default function IngestionReviewPanel() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                Reclassifying...
+                Thinking... (Click to view)
               </>
             ) : (
               <>
@@ -101,6 +108,7 @@ export default function IngestionReviewPanel() {
               </>
             )}
           </button>
+
 
           <div className="p-3 bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800/60 rounded-xl">
             <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">

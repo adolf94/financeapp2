@@ -71,6 +71,8 @@ interface AddTransactionContextProps {
   setDate: (date: string) => void
   note: string
   setNote: (note: string) => void
+  referenceNumber: string
+  setReferenceNumber: (ref: string) => void
   userWhy: string
   setUserWhy: (why: string) => void
   skipLearning: boolean
@@ -99,6 +101,10 @@ interface AddTransactionContextProps {
   setIsReviewOpen: (open: boolean) => void
   confirmReclassifyOpen: boolean
   setConfirmReclassifyOpen: (open: boolean) => void
+  currentOperationId: string
+  setCurrentOperationId: (id: string) => void
+  isDrawerOpen: boolean
+  setIsDrawerOpen: (open: boolean) => void
 
   // Flashing
   isFlashing: boolean
@@ -153,8 +159,9 @@ export function AddTransactionProvider({
     { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit' },
   ])
   const [vendor, setVendor] = useState('')
-  const [date, setDate] = useState(dayjs().format('YYYY-MM-DDTHH:mm'))
+  const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'))
   const [note, setNote] = useState('')
+  const [referenceNumber, setReferenceNumber] = useState('')
   const [userWhy, setUserWhy] = useState('')
   const [skipLearning, setSkipLearning] = useState(false)
 
@@ -174,6 +181,8 @@ export function AddTransactionProvider({
   const [suggestedVendorTags, setSuggestedVendorTags] = useState('')
   const [isReviewOpen, setIsReviewOpen] = useState(true)
   const [confirmReclassifyOpen, setConfirmReclassifyOpen] = useState(false)
+  const [currentOperationId, setCurrentOperationId] = useState('')
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
 
   const [isFlashing, setIsFlashing] = useState(false)
   const prevIngestionRef = useRef(ingestion)
@@ -192,6 +201,7 @@ export function AddTransactionProvider({
     ])
     setVendor('')
     setNote('')
+    setReferenceNumber('')
     setUserWhy('')
     setSkipLearning(false)
     setDate(dayjs().format('YYYY-MM-DDTHH:mm'))
@@ -200,12 +210,30 @@ export function AddTransactionProvider({
     setMaxOccurrences('')
   }, [])
 
-  // Flash UI when AI re-runs and changes suggestions
+  // Flash UI and update form fields when AI re-runs and changes suggestions
   useEffect(() => {
     if (ingestion?.ai_parsed !== prevIngestionRef.current?.ai_parsed) {
       if (prevIngestionRef.current && ingestion) {
         setIsFlashing(true)
         setTimeout(() => setIsFlashing(false), 600)
+        
+        const parsed = ingestion.ai_parsed
+        if (parsed.transaction_type) {
+          const t = ['Income', 'Expense', 'Transfer'].includes(parsed.transaction_type) ? (parsed.transaction_type as any) : 'Expense'
+          setType(t)
+        }
+        if (parsed.amount) {
+          setTotalAmount(Math.abs(parsed.amount).toString())
+        }
+        if (parsed.vendor) {
+          setVendor(parsed.vendor)
+        }
+        if (parsed.summary || parsed.notes) {
+          setNote(parsed.summary || parsed.notes || '')
+        }
+        if (parsed.user_why) {
+          setUserWhy(parsed.user_why)
+        }
       }
       prevIngestionRef.current = ingestion
     }
@@ -251,10 +279,12 @@ export function AddTransactionProvider({
 
       if (initialData) {
         setMode(initialData.type === 'Journal' ? 'Advanced' : 'Simple')
-        setType(initialData.type)
-        setDate(dayjs(initialData.date).format('YYYY-MM-DDTHH:mm'))
-        setNote(initialData.note || '')
         setVendor(initialData.vendor || '')
+        setDate(initialData.date.split('T')[0])
+        setNote(initialData.note || '')
+        setReferenceNumber(initialData.referenceNumber || '')
+        setIsRecurring(!!initialData.scheduleId)
+        setType(initialData.type)
         setToAccountId('')
 
         if (initialData.type === 'Journal') {
@@ -355,6 +385,7 @@ export function AddTransactionProvider({
       entries,
       vendor,
       note,
+      referenceNumber,
       date: new Date(date).toISOString(),
     }
 
@@ -372,6 +403,7 @@ export function AddTransactionProvider({
                 amount: entries.filter((e) => e.amount > 0).reduce((sum, e) => sum + e.amount, 0),
                 transaction_type: 'Journal',
                 notes: note || null,
+                reference_number: referenceNumber || null,
                 user_why: userWhy || null,
                 date: dayjs(date).toISOString(),
               },
@@ -396,6 +428,7 @@ export function AddTransactionProvider({
           ])
           setVendor('')
           setNote('')
+          setReferenceNumber('')
         } else {
           onClose()
           if (!initialData?.id) resetForm()
@@ -546,6 +579,7 @@ export function AddTransactionProvider({
                 ? splits[0].subCategoryId
                 : sourceAccountId,
             notes: note || null,
+            reference_number: referenceNumber || null,
             user_why: userWhy || null,
             date: dayjs(date).toISOString(),
           },
@@ -561,19 +595,20 @@ export function AddTransactionProvider({
       return
     }
 
-    const transaction: Transaction = {
-      ...(initialData?.id ? { id: initialData.id } : {}),
-      type,
-      scheduleId: finalScheduleId,
-      entries,
-      vendor: type === 'Transfer' ? null : vendor,
-      note,
-      date: dayjs(date).toISOString(),
+    const newTx: Partial<Transaction> = {
+        ...(initialData?.id ? { id: initialData.id } : {}),
+        type,
+        scheduleId: finalScheduleId,
+        entries,
+        vendor: type === 'Transfer' ? null : vendor.trim() || undefined,
+        note: note.trim() || undefined,
+        referenceNumber: referenceNumber.trim() || undefined,
+        date: dayjs(date).format('YYYY-MM-DDTHH:mm:ss[Z]'),
     }
 
     const mutation = initialData?.id ? updateTxMutation : createTxMutation
 
-    mutation.mutate(transaction, {
+    mutation.mutate(newTx as Transaction, {
       onSuccess: () => {
         if (initialData?.id && ingestionId === undefined && ingestion) {
           const updatedUserConfirmed = {
@@ -594,6 +629,7 @@ export function AddTransactionProvider({
                 ? splits[0]?.subCategoryId || null
                 : sourceAccountId,
             notes: note || null,
+            reference_number: referenceNumber || null,
             user_why: userWhy || null,
             date: dayjs(date).toISOString(),
           }
@@ -619,6 +655,7 @@ export function AddTransactionProvider({
           ])
           setVendor('')
           setNote('')
+          setReferenceNumber('')
           setUserWhy('')
         } else {
           onClose()
@@ -656,6 +693,8 @@ export function AddTransactionProvider({
       setDate,
       note,
       setNote,
+      referenceNumber,
+      setReferenceNumber,
       userWhy,
       setUserWhy,
       isRecurring,
@@ -678,6 +717,10 @@ export function AddTransactionProvider({
       setIsReviewOpen,
       confirmReclassifyOpen,
       setConfirmReclassifyOpen,
+      currentOperationId,
+      setCurrentOperationId,
+      isDrawerOpen,
+      setIsDrawerOpen,
       isFlashing,
       resetForm,
       handleSubmit,
@@ -714,6 +757,8 @@ export function AddTransactionProvider({
       suggestedVendorTags,
       isReviewOpen,
       confirmReclassifyOpen,
+      currentOperationId,
+      isDrawerOpen,
       isFlashing,
       resetForm,
       handleSubmit,

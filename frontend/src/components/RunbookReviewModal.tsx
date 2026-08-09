@@ -18,7 +18,8 @@ import { RunbookAccountUpdatesPanel } from './RunbookReview/RunbookAccountUpdate
 import { RunbookVendorUpdatesPanel } from './RunbookReview/RunbookVendorUpdatesPanel'
 import { RunbookDocumentPanel } from './RunbookReview/RunbookDocumentPanel'
 import { RunbookEditorPanel } from './RunbookReview/RunbookEditorPanel'
-import { MessageSquare, FileEdit } from 'lucide-react'
+import { MessageSquare, FileEdit, Brain } from 'lucide-react'
+import ReasoningDrawer from './ReasoningDrawer'
 
 interface RunbookReviewModalProps {
   isOpen: boolean
@@ -39,6 +40,14 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
   // Local state for tracking vendor updates
   const [localVendorUpdates, setLocalVendorUpdates] = useState<VendorUpdate[]>([])
   const [ignoredVendorUpdates, setIgnoredVendorUpdates] = useState<Set<string>>(new Set())
+
+  const [streamReasoning, setStreamReasoning] = useState(true)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [currentOperationId, setCurrentOperationId] = useState('')
+
+  const [pendingAnswers, setPendingAnswers] = useState<Record<string, string>>({})
+  const [pendingAccountFeedback, setPendingAccountFeedback] = useState<Record<string, string>>({})
+  const [pendingVendorFeedback, setPendingVendorFeedback] = useState<Record<string, string>>({})
   
   const { data: session, isLoading: sessionLoading } = useGetRunbookSession()
   const { data: accounts } = useGetAccounts()
@@ -54,7 +63,10 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
   // On open: if no active session, kick off a new one (overwrite)
   useEffect(() => {
     if (isOpen && !sessionLoading && session === null && !startReview.isPending) {
-      startReview.mutate({ corrections, runbookType })
+      const opId = crypto.randomUUID()
+      setCurrentOperationId(opId)
+      
+      startReview.mutate({ corrections, runbookType, operationId: opId, streamReasoning })
     }
   }, [isOpen, sessionLoading, session, runbookType])
 
@@ -148,6 +160,28 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                 </button>
               </div>
             )}
+
+            {/* AI Reasoning Toggle & Button */}
+            <div className="flex items-center gap-3 ml-4 bg-neutral-900/50 p-1.5 rounded-lg border border-neutral-800">
+              <label className="flex items-center gap-2 cursor-pointer text-xs font-medium text-neutral-400 hover:text-neutral-200 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={streamReasoning}
+                  onChange={(e) => setStreamReasoning(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-neutral-700 bg-neutral-800 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-neutral-900"
+                />
+                Stream CoT
+              </label>
+              
+              <button
+                onClick={() => setIsDrawerOpen(true)}
+                className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors"
+                title="View AI Chain of Thought"
+              >
+                <Brain className="w-3.5 h-3.5" />
+                Thinking
+              </button>
+            </div>
           </div>
           <div className="flex items-center gap-2 self-end sm:self-auto">
             <button
@@ -191,8 +225,45 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                 <RunbookChatPanel
                   chatHistory={chatHistory}
                   isThinking={isThinking}
-                  onSendMessage={(text) => chatReview.mutate({ user_message: text })}
+                  onSendMessage={(text) => {
+                    const answers = Object.entries(pendingAnswers)
+                      .filter(([_, ans]) => ans.trim() !== '')
+                      .map(([key, ans]) => {
+                        const qIdx = parseInt(key.split('-')[1])
+                        return `[Question ${qIdx + 1}]: ${ans}`
+                      })
+                      .join('\n')
+
+                    const accFeedback = Object.entries(pendingAccountFeedback)
+                      .filter(([_, fb]) => fb !== null && fb.trim() !== '')
+                      .map(([id, fb]) => `- Regarding account '${accounts?.find(a => a.id === id)?.name || id}' description suggestion: ${fb}`)
+                      .join('\n')
+
+                    const venFeedback = Object.entries(pendingVendorFeedback)
+                      .filter(([_, fb]) => fb !== null && fb.trim() !== '')
+                      .map(([id, fb]) => `- Regarding vendor '${vendors?.find(v => v.id === id)?.name || id}' tag suggestion: ${fb}`)
+                      .join('\n')
+
+                    let fullMessage = text.trim() ? `[User Message]\n${text.trim()}\n\n` : ''
+                    if (answers) fullMessage += `[Answers to Clarifications]\n${answers}\n\n`
+                    if (accFeedback) fullMessage += `[Account Feedback]\n${accFeedback}\n\n`
+                    if (venFeedback) fullMessage += `[Vendor Feedback]\n${venFeedback}\n\n`
+
+                    fullMessage = fullMessage.trim()
+                    if (!fullMessage) return
+
+                    const opId = crypto.randomUUID()
+                    setCurrentOperationId(opId)
+                    
+                    chatReview.mutate({ user_message: fullMessage, operationId: opId, streamReasoning })
+
+                    setPendingAnswers({})
+                    setPendingAccountFeedback({})
+                    setPendingVendorFeedback({})
+                  }}
                   sessionActive={!!session}
+                  pendingAnswers={pendingAnswers}
+                  onAnswerChange={(key, val) => setPendingAnswers(prev => ({...prev, [key]: val}))}
                 />
               </div>
 
@@ -216,7 +287,15 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                         return next
                       })}
                       onUpdateChange={handleAccountUpdateChange}
-                      onSendFeedback={(_id, name, text) => chatReview.mutate({ user_message: `Regarding account '${name}' description suggestion: ${text}` })}
+                      pendingFeedback={pendingAccountFeedback}
+                      onFeedbackChange={(id, text) => {
+                        setPendingAccountFeedback(prev => {
+                          const next = { ...prev }
+                          if (text === null) delete next[id]
+                          else next[id] = text
+                          return next
+                        })
+                      }}
                       isThinking={isThinking}
                       getOldDescription={getOldDescription}
                       getOldTags={getOldTags}
@@ -233,7 +312,15 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                         return next
                       })}
                       onUpdateChange={handleVendorUpdateChange}
-                      onSendFeedback={(_id, name, text) => chatReview.mutate({ user_message: `Regarding vendor '${name}' tag suggestion: ${text}` })}
+                      pendingFeedback={pendingVendorFeedback}
+                      onFeedbackChange={(id, text) => {
+                        setPendingVendorFeedback(prev => {
+                          const next = { ...prev }
+                          if (text === null) delete next[id]
+                          else next[id] = text
+                          return next
+                        })
+                      }}
                       isThinking={isThinking}
                       getOldVendorTags={getOldVendorTags}
                       getVendorName={getVendorName}
@@ -269,6 +356,15 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
           )}
         </div>
       </div>
+
+      <ReasoningDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        operationId={currentOperationId}
+        isPending={isThinking}
+        thinkingEventName="reclassifyThinking"
+        progressEventName="chatProgress"
+      />
     </div>
   )
 }

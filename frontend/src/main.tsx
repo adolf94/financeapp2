@@ -21,7 +21,7 @@ const authConfig = window.authConfig ?? {
   authority: 'https://auth.adolfrey.com/api',
   clientId: 'finance-app2',
   redirectUri: "http://localhost:5173",
-  scope: 'openid profile email'
+  scope: 'openid profile email api://finance-app-api/user'
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

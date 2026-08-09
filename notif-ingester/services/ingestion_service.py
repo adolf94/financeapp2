@@ -90,9 +90,9 @@ class IngestionService:
             
         return clean_lookups
 
-    async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches) -> 'AiParsedData':
-        """Run AI classification. Override in subclasses to use a different prompt."""
-        return await self._ai_service.classify_async(hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches)
+    async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id: str = None, connection_id: str = None, stream_reasoning: bool = True) -> 'AiParsedData':
+        """Classify a webhook and extract data."""
+        return await self._ai_service.classify_async(hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning)
 
     async def _apply_vendor_matching(self, ai_parsed: 'AiParsedData', vendors: list, accounts: list, lookups: list, user_id: str) -> None:
         """Apply vendor matching logic in-place on ai_parsed. Shared between process_hook_async and reclassify_ingestion_async."""
@@ -220,7 +220,7 @@ class IngestionService:
         # 4. Classify via LLM with vendor match context
         logging.info("[process_hook_async] 4. Classifying via LLM with vendor context...")
         ai_parsed = await self._classify_hook_async(
-            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches
+            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, stream_reasoning=False
         )
 
         # 4.5 Automatically map vendor from lookups or string match
@@ -285,7 +285,7 @@ class IngestionService:
         # 7. Save
         return await self._repo.add_async(ingestion)
 
-    async def reclassify_ingestion_async(self, ingestion_id: str, user_id: str) -> PendingIngestion:
+    async def reclassify_ingestion_async(self, ingestion_id: str, user_id: str, operation_id: str = None, connection_id: str = None, stream_reasoning: bool = True) -> PendingIngestion:
         """Re-run AI classification on an existing PendingIngestion."""
         ingestion = await self._repo.get_by_id_async(ingestion_id, user_id)
         if not ingestion:
@@ -344,7 +344,7 @@ class IngestionService:
             raw_payload=ingestion.raw_payload,
             user_id=user_id
         )
-        ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches)
+        ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning)
 
         # 4.5 Automatically map vendor from lookups or string match
         lookups = self._build_lookups(ai_parsed, accounts)

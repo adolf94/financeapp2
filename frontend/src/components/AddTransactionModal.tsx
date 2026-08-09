@@ -18,6 +18,7 @@ import {
 import TransactionTypeTabs from './AddTransaction/TransactionTypeTabs'
 import InlineAccountCreateForm from './AddTransaction/InlineAccountCreateForm'
 import IngestionReviewPanel from './AddTransaction/IngestionReviewPanel'
+import ReasoningDrawer from './ReasoningDrawer'
 
 interface AddTransactionModalProps {
   isOpen: boolean
@@ -72,6 +73,8 @@ function AddTransactionModalContent() {
     setDate,
     note,
     setNote,
+    referenceNumber,
+    setReferenceNumber,
     userWhy,
     setUserWhy,
     isRecurring,
@@ -91,7 +94,13 @@ function AddTransactionModalContent() {
     skipLearning,
     setSkipLearning,
     setPendingNewAccount,
+    setCurrentOperationId,
+    currentOperationId,
+    isDrawerOpen,
+    setIsDrawerOpen,
   } = useAddTransaction()
+
+  const [streamReasoning, setStreamReasoning] = useState(false)
 
   const queryClient = useQueryClient()
   const { data: accounts = [] } = useGetAccounts()
@@ -190,13 +199,11 @@ function AddTransactionModalContent() {
       />
       {/* Bottom Sheet */}
       <div
-        className={`fixed bottom-0 left-0 right-0 w-full ${
-          ingestion ? 'md:max-w-3xl' : 'md:max-w-md'
-        } mx-auto bg-white dark:bg-slate-900 rounded-t-2xl z-55 shadow-2xl p-4 flex flex-col gap-4 border-t border-slate-200 dark:border-slate-800 animate-slide-up pb-safe max-h-[90vh] overflow-y-auto transition-all duration-500 ${
-          isFlashing
+        className={`fixed bottom-0 left-0 right-0 w-full ${ingestion ? 'md:max-w-3xl' : 'md:max-w-md'
+          } mx-auto bg-white dark:bg-slate-900 rounded-t-2xl z-55 shadow-2xl p-4 flex flex-col gap-4 border-t border-slate-200 dark:border-slate-800 animate-slide-up pb-safe max-h-[90vh] overflow-y-auto transition-all duration-500 ${isFlashing
             ? 'ring-4 ring-indigo-500/50 scale-[1.02] bg-indigo-50 dark:bg-indigo-950/20'
             : ''
-        }`}
+          }`}
       >
         <div className="flex justify-between items-center">
           <h2 className="text-lg font-bold text-slate-900 dark:text-slate-50">Log Transaction</h2>
@@ -215,12 +222,20 @@ function AddTransactionModalContent() {
             {ingestion && (
               <button
                 type="button"
-                onClick={() => reclassifyMutation.mutate(ingestion.id)}
+                onClick={() => {
+                  if (reclassifyMutation.isPending) {
+                    setIsDrawerOpen(true)
+                  } else {
+                    const opId = uuidv7()
+                    setCurrentOperationId(opId)
+                    // Drawer won't open automatically anymore
+                    reclassifyMutation.mutate({ id: ingestion.id, operationId: opId })
+                  }
+                }}
                 disabled={reclassifyMutation.isPending}
                 title="Re-run AI classification"
-                className={`p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 ${
-                  reclassifyMutation.isPending ? 'animate-spin' : ''
-                }`}
+                className={`p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 ${reclassifyMutation.isPending ? 'animate-spin' : ''
+                  }`}
               >
                 <RotateCcw className="w-4 h-4" strokeWidth={1.5} />
               </button>
@@ -469,22 +484,20 @@ function AddTransactionModalContent() {
                             <button
                               type="button"
                               onClick={() => updateJournalLine(line.id, { type: 'Debit' })}
-                              className={`flex-1 py-1 text-center transition-colors ${
-                                line.type === 'Debit'
+                              className={`flex-1 py-1 text-center transition-colors ${line.type === 'Debit'
                                   ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
                                   : 'hover:bg-slate-200/50 dark:hover:bg-slate-800'
-                              }`}
+                                }`}
                             >
                               Dr
                             </button>
                             <button
                               type="button"
                               onClick={() => updateJournalLine(line.id, { type: 'Credit' })}
-                              className={`flex-1 py-1 text-center transition-colors ${
-                                line.type === 'Credit'
+                              className={`flex-1 py-1 text-center transition-colors ${line.type === 'Credit'
                                   ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
                                   : 'hover:bg-slate-200/50 dark:hover:bg-slate-800'
-                              }`}
+                                }`}
                             >
                               Cr
                             </button>
@@ -627,6 +640,22 @@ function AddTransactionModalContent() {
                     rows={2}
                   />
                 </div>
+                <div className="flex flex-col gap-1">
+                  <label
+                    htmlFor="transaction-reference-input"
+                    className="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                  >
+                    Reference Number
+                  </label>
+                  <input
+                    id="transaction-reference-input"
+                    type="text"
+                    placeholder="Reference Number (optional)"
+                    value={referenceNumber}
+                    onChange={(e) => setReferenceNumber(e.target.value)}
+                    className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full"
+                  />
+                </div>
               </div>
 
               {ingestion && (
@@ -763,16 +792,44 @@ function AddTransactionModalContent() {
         <ConfirmationModal
           isOpen={confirmReclassifyOpen}
           title="Re-run AI Classification"
-          message="Are you sure you want to re-run AI classification on this ingestion? This will query the LLM and update suggestions for vendor, accounts, and splits."
           confirmLabel="Reclassify"
           confirmVariant="primary"
           onConfirm={() => {
             setConfirmReclassifyOpen(false)
-            reclassifyMutation.mutate(ingestion.id)
+            const opId = uuidv7()
+            setCurrentOperationId(opId)
+            // Drawer won't open automatically anymore
+            reclassifyMutation.mutate({ id: ingestion.id, operationId: opId, streamReasoning })
           }}
           onCancel={() => setConfirmReclassifyOpen(false)}
-        />
+        >
+          <div className="flex flex-col gap-4">
+            <p>
+              Are you sure you want to re-run AI classification on this ingestion? This will query the LLM and update suggestions for vendor, accounts, and splits.
+            </p>
+            <label className="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/50 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
+              <input
+                type="checkbox"
+                checked={streamReasoning}
+                onChange={e => setStreamReasoning(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 dark:border-slate-600 dark:bg-slate-700"
+              />
+              <div className="flex flex-col">
+                <span className="font-semibold text-slate-900 dark:text-slate-50">Stream AI Reasoning</span>
+              </div>
+            </label>
+          </div>
+        </ConfirmationModal>
       )}
+
+      <ReasoningDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        operationId={currentOperationId}
+        isPending={reclassifyMutation.isPending}
+        thinkingEventName="reclassifyThinking"
+        progressEventName="reclassifyProgress"
+      />
 
       {isEditVendorOpen && selectedVendorObj && (
         <EditVendorModal

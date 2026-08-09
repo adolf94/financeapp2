@@ -77,10 +77,14 @@ export function useGetRunbookSession() {
 export function useStartRunbookReview() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ corrections, runbookType }: { corrections: PendingIngestion[], runbookType: 'app' | 'sms' | 'email' }) => {
+    mutationFn: async ({ corrections, runbookType, operationId, streamReasoning = true }: { corrections: PendingIngestion[], runbookType: 'app' | 'sms' | 'email', operationId: string, streamReasoning?: boolean }) => {
+      const connId = (window as any).signalRConnectionId || ''
       const { data } = await ingesterClient.post<RunbookReviewSession>('/runbook/review/start', {
         corrections,
-        runbook_type: runbookType
+        runbook_type: runbookType,
+        operation_id: operationId,
+        connection_id: connId,
+        stream_reasoning: streamReasoning
       })
       return data
     },
@@ -96,8 +100,15 @@ export function useStartRunbookReview() {
 export function useChatRunbookReview() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (params: { user_message: string }) => {
-      const { data } = await ingesterClient.post<RunbookReviewSession>('/runbook/review/chat', params)
+    mutationFn: async (params: { user_message: string, operationId: string, streamReasoning?: boolean }) => {
+      const connId = (window as any).signalRConnectionId || ''
+      const payload = {
+        user_message: params.user_message,
+        operation_id: params.operationId,
+        connection_id: connId,
+        stream_reasoning: params.streamReasoning ?? true
+      }
+      const { data } = await ingesterClient.post<RunbookReviewSession>('/runbook/review/chat', payload)
       return data
     },
     onSuccess: (session) => {

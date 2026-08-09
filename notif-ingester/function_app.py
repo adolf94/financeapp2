@@ -20,40 +20,21 @@ from services.ingestion_service import IngestionService
 from services.sms_processing_service import SmsProcessingService
 from services.notification_type_detector import NotificationTypeDetector
 from services.email_fetching_service import check_and_save_emails_async
-from ar_auth.client import ArAuthClient
-from ar_auth.exceptions import TokenValidationError
+from ar_auth.azure import ArAuthAzureClient
 from typing import Optional, Tuple
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 # Shared auth client (caches JWKS)
-_auth_client = ArAuthClient(authority="https://auth.adolfrey.com/api")
+_auth_client = ArAuthAzureClient(authority="https://auth.adolfrey.com/api", client_id=os.environ.get("ArAuth:ClientId"))
 
 # Set to track notif_ids currently in-flight / being inserted to prevent duplicates
 _processing_notif_ids = set()
 
-def _require_auth(req: func.HttpRequest) -> Tuple[Optional[dict], Optional[func.HttpResponse]]:
-    """Validate Bearer JWT. Returns (payload, None) on success, (None, error_response) on failure."""
-    auth_header = req.headers.get("Authorization") or req.headers.get("authorization", "")
-    if not auth_header:
-        return None, func.HttpResponse(
-            json.dumps({"error": "authorization_header_missing"}),
-            status_code=401, mimetype="application/json"
-        )
-    parts = auth_header.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        return None, func.HttpResponse(
-            json.dumps({"error": "invalid_header", "description": "Expected: Bearer <token>"}),
-            status_code=401, mimetype="application/json"
-        )
-    try:
-        payload = _auth_client.verify_token(parts[1])
-        return payload, None
-    except TokenValidationError as e:
-        return None, func.HttpResponse(
-            json.dumps({"error": "invalid_token", "description": str(e)}),
-            status_code=401, mimetype="application/json"
-        )
+def _require_auth(req: func.HttpRequest, required_scopes: Optional[list] = None) -> Tuple[Optional[dict], Optional[func.HttpResponse]]:
+    """Validate Bearer JWT and optional scopes. Returns (payload, None) on success, (None, error_response) on failure."""
+
+    return _auth_client.validate(req, required_scopes=["user"])
 
 # Setup dependencies
 def get_hook_service():
@@ -193,6 +174,7 @@ async def ClassifyNotificationFunction(documents: func.DocumentList) -> None:
 
             # Route to the appropriate pipeline based on notification type
             notif_type = _type_detector.detect_type(hook_msg)
+            hook_msg.notification_type = notif_type
             logging.info(f"[ClassifyNotificationFunction] Routing {hook_msg.id} as '{notif_type}'")
 
             if notif_type == "sms":
@@ -300,6 +282,9 @@ async def ReclassifyIngestionFunction(req: func.HttpRequest) -> func.HttpRespons
 
     ingestion_id = req.route_params.get("ingestion_id")
     user_id = user.get("sub", "default")
+    operation_id = req.params.get("operationId")
+    connection_id = req.params.get("connectionId")
+    stream_reasoning = req.params.get("streamReasoning", "false").lower() == "true"
 
     ingestion_repo = CosmosIngestionRepository()
     try:
@@ -308,6 +293,14 @@ async def ReclassifyIngestionFunction(req: func.HttpRequest) -> func.HttpRespons
             return func.HttpResponse("Ingestion not found", status_code=404)
         
         notif_type = ingestion.notification_type
+        if not notif_type or notif_type == "unknown":
+            notif_type = _type_detector.detect_type_from_payload(
+                ingestion.raw_payload.get("action", ""), 
+                ingestion.raw_payload
+            )
+            # Update the ingestion so it remembers the correct type
+            ingestion.notification_type = notif_type
+            
         if notif_type == "sms":
             service = get_sms_ingestion_service()
         elif notif_type == "email":
@@ -315,7 +308,7 @@ async def ReclassifyIngestionFunction(req: func.HttpRequest) -> func.HttpRespons
         else:
             service = get_ingestion_service()
 
-        reclassified = await service.reclassify_ingestion_async(ingestion_id, user_id)
+        reclassified = await service.reclassify_ingestion_async(ingestion_id, user_id, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning)
         return func.HttpResponse(
             json.dumps(reclassified.model_dump(by_alias=True, mode="json")),
             status_code=200, mimetype="application/json"
@@ -824,6 +817,9 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
         body = req.get_json()
         corrections = body.get("corrections", [])
         runbook_type = body.get("runbook_type", "app")
+        operation_id = body.get("operation_id", None)
+        connection_id = body.get("connection_id", None)
+        stream_reasoning = body.get("stream_reasoning", True)
     except ValueError:
         return func.HttpResponse(json.dumps({"error": "Invalid JSON"}), status_code=400, mimetype="application/json")
         
@@ -849,12 +845,26 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
             else:
                 current_runbook = ingestion_service._ai_service.get_default_runbook_content()
             
-        ai_response = await ingestion_service._ai_service.start_runbook_review_async(
-            corrections=corrections,
-            accounts=accounts,
-            vendors=vendors,
-            current_runbook=current_runbook
-        )
+        if not corrections:
+            # Bypass calling the AI model entirely if there are no corrections
+            ai_response = {
+                "message": "Hi, how can I help you? I have loaded your current runbook.",
+                "questions": [],
+                "proposed_runbook": current_runbook,
+                "account_description_updates": [],
+                "vendor_updates": []
+            }
+        else:
+            ai_response = await ingestion_service._ai_service.start_runbook_review_async(
+                corrections=corrections,
+                accounts=accounts,
+                vendors=vendors,
+                current_runbook=current_runbook,
+                user_id=user_id,
+                operation_id=operation_id,
+                connection_id=connection_id,
+                stream_reasoning=stream_reasoning
+            )
 
         now = datetime.now(timezone.utc).isoformat()
         session = {
@@ -889,6 +899,9 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
     try:
         body = req.get_json()
         user_message = body.get("user_message", "")
+        operation_id = body.get("operation_id", None)
+        connection_id = body.get("connection_id", None)
+        stream_reasoning = body.get("stream_reasoning", True)
     except ValueError:
         return func.HttpResponse(json.dumps({"error": "Invalid JSON"}), status_code=400, mimetype="application/json")
         
@@ -927,7 +940,11 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
             corrections=session.get("corrections", []),
             accounts=accounts,
             vendors=vendors,
-            current_runbook=current_runbook
+            current_runbook=current_runbook,
+            user_id=user_id,
+            operation_id=operation_id,
+            connection_id=connection_id,
+            stream_reasoning=stream_reasoning
         )
 
         # Append AI reply and update session
@@ -1094,5 +1111,64 @@ def timer_trigger(myTimer: func.TimerRequest) -> None:
         logging.error(f"Error in email timer trigger: {ex}")
         
     logging.info('Python timer trigger function executed.')
+
+
+# ── Function 19: SignalRNegotiateFunction ─────────────────────────────────────
+@app.route(route="negotiate", methods=["POST"])
+def negotiate(req: func.HttpRequest) -> func.HttpResponse:
+    user, err = _require_auth(req)
+    if err: return err
+
+    user_id = user.get("sub", "default")
+    logging.info(f"Negotiating SignalR connection for user: {user_id}")
+
+    conn_str = os.environ.get("AzureSignalRConnectionString")
+    if not conn_str or ("mock" in conn_str.lower() and "localhost" not in conn_str):
+        # Mock connection info only if explicit mock placeholder (not local emulator)
+        response_payload = {
+            "url": "http://localhost:7072/client/?hub=notificationHub",
+            "accessToken": "mock-token"
+        }
+        return func.HttpResponse(json.dumps(response_payload), mimetype="application/json")
+
+    try:
+        from services.signalr_publisher import parse_connection_string
+        endpoint, access_key = parse_connection_string(conn_str)
+        if not endpoint or not access_key:
+            return func.HttpResponse("Invalid SignalR connection string", status_code=500)
+
+        if endpoint.endswith('/'):
+            endpoint = endpoint[:-1]
+
+        hub_name = "notificationHub"
+        client_url = f"{endpoint}/client/?hub={hub_name}"
+
+        import jwt
+        import time
+        payload = {
+            "aud": client_url,
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 3600,
+            "asrs.s.uid": user_id
+        }
+        access_token = jwt.encode(payload, access_key, algorithm="HS256")
+
+        # Async run the welcome announcement to this user group
+        try:
+            import asyncio
+            from services.signalr_publisher import publish_signalr_message
+            asyncio.run(publish_signalr_message(hub_name, "announcement", [f"Welcome back, {user.get('name', 'User')}! Secure connection established."], user_id=user_id))
+        except Exception as ex:
+            logging.error(f"Failed to announce connection to SignalR: {ex}")
+
+        response_payload = {
+            "url": client_url,
+            "accessToken": access_token
+        }
+        return func.HttpResponse(json.dumps(response_payload), mimetype="application/json")
+    except Exception as ex:
+        logging.error(f"Failed manual negotiate token generation: {ex}")
+        return func.HttpResponse(json.dumps({"error": str(ex)}), status_code=500, mimetype="application/json")
+
 
 

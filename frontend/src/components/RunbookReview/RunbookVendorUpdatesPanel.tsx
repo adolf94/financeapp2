@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Trash2, Edit2, MessageSquare, Send } from 'lucide-react'
+import { Check, Trash2, Edit2, MessageSquare } from 'lucide-react'
 import { VendorUpdate } from '@/hooks/useRunbookReview'
 
 interface RunbookVendorUpdatesPanelProps {
@@ -7,7 +7,8 @@ interface RunbookVendorUpdatesPanelProps {
   ignoredUpdates: Set<string>
   onToggleIgnore: (vendorId: string) => void
   onUpdateChange: (vendorId: string, newTags: string[]) => void
-  onSendFeedback: (vendorId: string, vendorName: string, text: string) => void
+  pendingFeedback: Record<string, string>
+  onFeedbackChange: (vendorId: string, text: string | null) => void
   isThinking: boolean
   getOldVendorTags: (id: string) => string[]
   getVendorName: (id: string) => string
@@ -18,16 +19,14 @@ export function RunbookVendorUpdatesPanel({
   ignoredUpdates,
   onToggleIgnore,
   onUpdateChange,
-  onSendFeedback,
+  pendingFeedback,
+  onFeedbackChange,
   isThinking,
   getOldVendorTags,
   getVendorName
 }: RunbookVendorUpdatesPanelProps) {
   const [editingVendorId, setEditingVendorId] = useState<string | null>(null)
   const [editVendorTagsText, setEditVendorTagsText] = useState('')
-  
-  const [commentingVendorId, setCommentingVendorId] = useState<string | null>(null)
-  const [commentVendorText, setCommentVendorText] = useState('')
 
   if (updates.length === 0) return null
 
@@ -43,7 +42,7 @@ export function RunbookVendorUpdatesPanel({
         {updates.map((update, i) => {
           const isIgnored = ignoredUpdates.has(update.vendor_id)
           const isEditing = editingVendorId === update.vendor_id
-          const isCommenting = commentingVendorId === update.vendor_id
+          const hasFeedback = pendingFeedback[update.vendor_id] !== undefined
           
           return (
             <div key={i} className={`bg-neutral-950 border border-neutral-800 rounded-lg p-4 transition-colors ${isIgnored ? 'opacity-50 grayscale' : ''}`}>
@@ -60,7 +59,7 @@ export function RunbookVendorUpdatesPanel({
                         onClick={() => {
                           setEditingVendorId(update.vendor_id)
                           setEditVendorTagsText(update.new_tags ? update.new_tags.join(', ') : '')
-                          setCommentingVendorId(null)
+                          onFeedbackChange(update.vendor_id, null)
                         }}
                         className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-md transition-colors"
                         title="Edit locally"
@@ -69,11 +68,10 @@ export function RunbookVendorUpdatesPanel({
                       </button>
                       <button 
                         onClick={() => {
-                          setCommentingVendorId(update.vendor_id)
-                          setCommentVendorText('')
+                          onFeedbackChange(update.vendor_id, '')
                           setEditingVendorId(null)
                         }}
-                        className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-md transition-colors"
+                        className={`p-1.5 rounded-md transition-colors ${hasFeedback ? 'text-indigo-400 bg-indigo-900/30' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
                         title="Comment / Feedback to AI"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
@@ -133,7 +131,7 @@ export function RunbookVendorUpdatesPanel({
                         </button>
                       </div>
                     </div>
-                  ) : isCommenting ? (
+                  ) : hasFeedback ? (
                     <div className="space-y-2 z-10 relative">
                       {update.new_tags && update.new_tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mb-2">
@@ -143,31 +141,22 @@ export function RunbookVendorUpdatesPanel({
                         </div>
                       )}
                       <textarea
-                        value={commentVendorText}
-                        onChange={e => setCommentVendorText(e.target.value)}
+                        value={pendingFeedback[update.vendor_id] || ''}
+                        onChange={e => onFeedbackChange(update.vendor_id, e.target.value)}
                         placeholder={`Feedback for AI about ${getVendorName(update.vendor_id)}...`}
                         className="w-full bg-indigo-950/30 border border-indigo-900/50 rounded-md p-2 text-sm text-indigo-300 focus:ring-1 focus:ring-indigo-500 outline-none resize-none h-16"
+                        disabled={isThinking}
                       />
-                      <div className="flex gap-2 justify-end">
+                      <div className="flex gap-2 justify-between items-center mt-1">
+                        <span className="text-[10px] text-indigo-400/70 italic">
+                          Feedback will be sent with your next chat message.
+                        </span>
                         <button 
-                          onClick={() => setCommentingVendorId(null)}
+                          onClick={() => onFeedbackChange(update.vendor_id, null)}
                           className="text-xs px-2 py-1 text-neutral-400 hover:text-white"
                           disabled={isThinking}
                         >
                           Cancel
-                        </button>
-                        <button 
-                          onClick={() => {
-                            if (commentVendorText.trim()) {
-                              onSendFeedback(update.vendor_id, getVendorName(update.vendor_id), commentVendorText)
-                            }
-                            setCommentingVendorId(null)
-                          }}
-                          disabled={isThinking || !commentVendorText.trim()}
-                          className="flex items-center gap-1 text-xs px-2 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                          <Send className="w-3 h-3" />
-                          Send to AI
                         </button>
                       </div>
                     </div>

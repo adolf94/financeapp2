@@ -7,48 +7,46 @@ interface RunbookChatPanelProps {
   isThinking: boolean
   onSendMessage: (text: string) => void
   sessionActive: boolean
+  pendingAnswers: Record<string, string>
+  onAnswerChange: (key: string, val: string) => void
 }
 
 export function RunbookChatPanel({
   chatHistory,
   isThinking,
   onSendMessage,
-  sessionActive
+  sessionActive,
+  pendingAnswers,
+  onAnswerChange
 }: RunbookChatPanelProps) {
   const [inputMsg, setInputMsg] = useState('')
-  const [questionAnswers, setQuestionAnswers] = useState<Record<string, string>>({})
   const chatEndRef = useRef<HTMLDivElement>(null)
+
+  const [streamedText, setStreamedText] = useState('')
+
+  useEffect(() => {
+    if (!isThinking) {
+      setStreamedText('')
+      return
+    }
+
+    const handleProgress = (e: Event) => {
+      const chunk = (e as CustomEvent).detail
+      setStreamedText(prev => prev + chunk)
+    }
+
+    window.addEventListener('chatProgress', handleProgress)
+    return () => window.removeEventListener('chatProgress', handleProgress)
+  }, [isThinking])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatHistory])
+  }, [chatHistory, streamedText])
 
   const handleSend = () => {
-    if (!inputMsg.trim() || isThinking) return
+    // We allow sending if there's an inputMsg OR if there are pending answers (parent will handle checking if any pending state exists)
     onSendMessage(inputMsg)
     setInputMsg('')
-  }
-
-  const handleSubmitAnswers = (msgIdx: number) => {
-    const answers = Object.entries(questionAnswers)
-      .filter(([key, answer]) => key.startsWith(`${msgIdx}-`) && answer.trim() !== '')
-      .map(([key, answer]) => {
-        const qIdx = parseInt(key.split('-')[1])
-        return `[Question ${qIdx + 1}]: ${answer}`
-      })
-      
-    if (answers.length === 0 || isThinking) return
-    
-    onSendMessage(answers.join('\n\n'))
-    
-    // Clear just these answers
-    setQuestionAnswers(prev => {
-      const next = { ...prev }
-      Object.keys(next).forEach(k => {
-        if (k.startsWith(`${msgIdx}-`)) delete next[k]
-      })
-      return next
-    })
   }
 
   return (
@@ -74,8 +72,8 @@ export function RunbookChatPanel({
                     <div key={key} className="space-y-2">
                       <p className="text-sm text-neutral-300">Q: {q}</p>
                       <textarea
-                        value={questionAnswers[key] || ''}
-                        onChange={e => setQuestionAnswers(prev => ({...prev, [key]: e.target.value}))}
+                        value={pendingAnswers[key] || ''}
+                        onChange={e => onAnswerChange(key, e.target.value)}
                         placeholder="Your answer..."
                         rows={2}
                         className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none resize-none"
@@ -84,24 +82,19 @@ export function RunbookChatPanel({
                     </div>
                   )
                 })}
-                <div className="flex justify-end pt-2">
-                  <button
-                    onClick={() => handleSubmitAnswers(i)}
-                    disabled={isThinking || Object.keys(questionAnswers).filter(k => k.startsWith(`${i}-`) && questionAnswers[k].trim() !== '').length === 0}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    Send Answers
-                  </button>
-                </div>
               </div>
             )}
           </div>
         ))}
         {isThinking && (
-          <div className="flex justify-start">
-            <div className="px-4 py-2 rounded-2xl bg-neutral-800 text-neutral-400 rounded-bl-none animate-pulse text-sm">
-              AI is thinking...
+          <div className="flex justify-start w-full">
+            <div className="px-4 py-3 rounded-2xl bg-neutral-800 text-neutral-200 rounded-bl-none max-w-[95%] text-sm whitespace-pre-wrap leading-relaxed">
+              {streamedText ? (
+                // Parse out or just show raw JSON/text since it's the stream
+                streamedText
+              ) : (
+                <span className="text-neutral-500 italic animate-pulse">AI is thinking...</span>
+              )}
             </div>
           </div>
         )}
@@ -125,7 +118,7 @@ export function RunbookChatPanel({
         />
         <button
           onClick={handleSend}
-          disabled={isThinking || !inputMsg.trim() || !sessionActive}
+          disabled={isThinking || !sessionActive}
           className="p-3 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors shrink-0 mb-[2px]"
         >
           <Send className="w-5 h-5" />

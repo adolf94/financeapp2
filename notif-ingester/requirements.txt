@@ -18,4 +18,4 @@ bleach
 bleach[css]
 tinycss2
 markdownify
-ar-auth-client @ git+https://github.com/adolf94/ar-oauth2.git#subdirectory=ar-auth-client-python
+ar-auth-python-client @ https://github.com/adolf94/ar-oauth2/releases/download/1.1.0/ar_auth_python_client-1.1.0.tar.gz

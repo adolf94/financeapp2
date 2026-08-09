@@ -19,6 +19,7 @@ namespace FinanceApp.Models
         public string? ScheduleId { get; set; }
         public DateTime Date { get; set; }
         public string Note { get; set; } = string.Empty;
+        public string? ReferenceNumber { get; set; }
         public string? Vendor { get; set; }
         
         [JsonConverter(typeof(JsonStringEnumConverter))]

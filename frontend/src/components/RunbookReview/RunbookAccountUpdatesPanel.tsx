@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Trash2, Edit2, MessageSquare, Send } from 'lucide-react'
+import { Check, Trash2, Edit2, MessageSquare } from 'lucide-react'
 import { AccountDescriptionUpdate } from '@/hooks/useRunbookReview'
 
 interface RunbookAccountUpdatesPanelProps {
@@ -7,7 +7,8 @@ interface RunbookAccountUpdatesPanelProps {
   ignoredUpdates: Set<string>
   onToggleIgnore: (accountId: string) => void
   onUpdateChange: (accountId: string, newDesc: string, newTags: string[]) => void
-  onSendFeedback: (accountId: string, accountName: string, text: string) => void
+  pendingFeedback: Record<string, string>
+  onFeedbackChange: (accountId: string, text: string | null) => void
   isThinking: boolean
   getOldDescription: (id: string) => string
   getOldTags: (id: string) => string[]
@@ -19,18 +20,18 @@ export function RunbookAccountUpdatesPanel({
   ignoredUpdates,
   onToggleIgnore,
   onUpdateChange,
-  onSendFeedback,
+  pendingFeedback,
+  onFeedbackChange,
   isThinking,
   getOldDescription,
   getOldTags,
   getAccountName
 }: RunbookAccountUpdatesPanelProps) {
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null)
+
+  
   const [editDescText, setEditDescText] = useState('')
   const [editTagsText, setEditTagsText] = useState('')
-  
-  const [commentingAccountId, setCommentingAccountId] = useState<string | null>(null)
-  const [commentText, setCommentText] = useState('')
 
   if (updates.length === 0) return null
 
@@ -46,7 +47,7 @@ export function RunbookAccountUpdatesPanel({
         {updates.map((update, i) => {
           const isIgnored = ignoredUpdates.has(update.account_id)
           const isEditing = editingAccountId === update.account_id
-          const isCommenting = commentingAccountId === update.account_id
+          const hasFeedback = pendingFeedback[update.account_id] !== undefined
           
           return (
             <div key={i} className={`bg-neutral-950 border border-neutral-800 rounded-lg p-4 transition-colors ${isIgnored ? 'opacity-50 grayscale' : ''}`}>
@@ -64,7 +65,7 @@ export function RunbookAccountUpdatesPanel({
                           setEditingAccountId(update.account_id)
                           setEditDescText(update.new_description)
                           setEditTagsText(update.new_tags ? update.new_tags.join(', ') : '')
-                          setCommentingAccountId(null)
+                          onFeedbackChange(update.account_id, null)
                         }}
                         className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-md transition-colors"
                         title="Edit locally"
@@ -73,11 +74,10 @@ export function RunbookAccountUpdatesPanel({
                       </button>
                       <button 
                         onClick={() => {
-                          setCommentingAccountId(update.account_id)
-                          setCommentText('')
+                          onFeedbackChange(update.account_id, '')
                           setEditingAccountId(null)
                         }}
-                        className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-md transition-colors"
+                        className={`p-1.5 rounded-md transition-colors ${hasFeedback ? 'text-indigo-400 bg-indigo-900/30' : 'text-neutral-400 hover:text-white hover:bg-neutral-800'}`}
                         title="Comment / Feedback to AI"
                       >
                         <MessageSquare className="w-3.5 h-3.5" />
@@ -143,7 +143,7 @@ export function RunbookAccountUpdatesPanel({
                         </button>
                       </div>
                     </div>
-                  ) : isCommenting ? (
+                  ) : hasFeedback ? (
                     <div className="space-y-2 z-10 relative">
                       <div className="text-sm text-green-400 mb-2">{update.new_description}</div>
                       {update.new_tags && update.new_tags.length > 0 && (
@@ -154,31 +154,22 @@ export function RunbookAccountUpdatesPanel({
                         </div>
                       )}
                       <textarea
-                        value={commentText}
-                        onChange={e => setCommentText(e.target.value)}
+                        value={pendingFeedback[update.account_id] || ''}
+                        onChange={e => onFeedbackChange(update.account_id, e.target.value)}
                         placeholder={`Feedback for AI about ${getAccountName(update.account_id)}...`}
                         className="w-full bg-indigo-950/30 border border-indigo-900/50 rounded-md p-2 text-sm text-indigo-300 focus:ring-1 focus:ring-indigo-500 outline-none resize-none h-16"
+                        disabled={isThinking}
                       />
-                      <div className="flex gap-2 justify-end">
+                      <div className="flex gap-2 justify-between items-center mt-1">
+                        <span className="text-[10px] text-indigo-400/70 italic">
+                          Feedback will be sent with your next chat message.
+                        </span>
                         <button 
-                          onClick={() => setCommentingAccountId(null)}
+                          onClick={() => onFeedbackChange(update.account_id, null)}
                           className="text-xs px-2 py-1 text-neutral-400 hover:text-white"
                           disabled={isThinking}
                         >
                           Cancel
-                        </button>
-                        <button 
-                          onClick={() => {
-                            if (commentText.trim()) {
-                              onSendFeedback(update.account_id, getAccountName(update.account_id), commentText)
-                            }
-                            setCommentingAccountId(null)
-                          }}
-                          disabled={isThinking || !commentText.trim()}
-                          className="flex items-center gap-1 text-xs px-2 py-1 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                          <Send className="w-3 h-3" />
-                          Send to AI
                         </button>
                       </div>
                     </div>

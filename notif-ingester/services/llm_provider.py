@@ -60,6 +60,23 @@ class LlmProvider(ABC):
     ) -> Tuple[str, Optional[int], Optional[int]]:
         """Send a prompt and return the raw text response, input tokens, and output tokens."""
 
+    @abstractmethod
+    async def generate_stream(
+        self,
+        prompt: str,
+        system: str | None = None,
+        json_mode: bool = False,
+        temperature: float = 0.2,
+        include_reasoning: bool = False,
+    ):
+        """Yield (chunk_type, text) tuples.
+        
+        chunk_type is one of:
+          - ``"thinking"`` – reasoning / CoT tokens (before final answer)
+          - ``"content"``  – final answer tokens
+        """
+
+
     async def embed(self, text: str) -> list[float]:
         """Return a vector embedding for *text*.
 
@@ -117,6 +134,29 @@ class GeminiProvider(LlmProvider):
             output_tokens = getattr(response.usage_metadata, "candidates_token_count", None)
 
         return response.text, input_tokens, output_tokens
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        system: str | None = None,
+        json_mode: bool = False,
+        temperature: float = 0.2,
+        include_reasoning: bool = False,
+    ):
+        config: dict = {"temperature": temperature}
+        if json_mode:
+            config["response_mime_type"] = "application/json"
+        if system:
+            config["system_instruction"] = system
+
+        response_stream = self.client.models.generate_content_stream(
+            model=self.model,
+            contents=prompt,
+            config=config,
+        )
+        for chunk in response_stream:
+            if chunk.text:
+                yield ("content", chunk.text)
 
     async def embed(self, text: str) -> list[float]:
         result = self.client.models.embed_content(
@@ -182,6 +222,66 @@ class OpenAICompatibleProvider(LlmProvider):
             output_tokens = getattr(response.usage, "completion_tokens", None)
 
         return response.choices[0].message.content, input_tokens, output_tokens
+
+    async def generate_stream(
+        self,
+        prompt: str,
+        system: str | None = None,
+        json_mode: bool = False,
+        temperature: float = 0.2,
+        include_reasoning: bool = False,
+    ):
+        messages: list[dict] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        kwargs: dict = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        # When reasoning is requested, skip json_mode — some models drop CoT
+        # with response_format=json_object. The caller must parse JSON from the
+        # accumulated content instead.
+        if json_mode and not include_reasoning:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        # Pass the reasoning parameter only for OpenRouter endpoints
+        is_openrouter = bool(self._base_url and "openrouter" in self._base_url)
+        if include_reasoning and is_openrouter:
+            kwargs["extra_body"] = {"reasoning": {"effort": "medium"}}
+
+        response_stream = await self.client.chat.completions.create(**kwargs)
+        async for chunk in response_stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+
+            # ── Reasoning / thinking tokens ────────────────────────────────
+            # OpenRouter surfaces these in delta.reasoning_details (list)
+            # and also as a plain string in delta.reasoning (legacy)
+            rd = getattr(delta, "reasoning_details", None)
+            if rd:
+                for item in rd:
+                    text = (
+                        item.get("text")
+                        or item.get("summary")
+                        if isinstance(item, dict)
+                        else getattr(item, "text", None) or getattr(item, "summary", None)
+                    ) or ""
+                    if text:
+                        yield ("thinking", text)
+
+            # Legacy single-field reasoning (some OpenRouter models)
+            legacy_reasoning = getattr(delta, "reasoning", None)
+            if legacy_reasoning and not rd:
+                yield ("thinking", legacy_reasoning)
+
+            # ── Final content tokens ───────────────────────────────────────
+            if delta.content:
+                yield ("content", delta.content)
 
     async def embed(self, text: str) -> list[float]:
         response = await self.client.embeddings.create(

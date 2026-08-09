@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@adolf94/ar-auth-client": "^1.2.3",
+    "@microsoft/signalr": "^10.0.11",
     "@monaco-editor/react": "^4.7.0",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "^1.170.18",

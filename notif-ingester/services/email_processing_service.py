@@ -54,11 +54,14 @@ class EmailProcessingService(IngestionService):
         accounts,
         runbook_content,
         vendors,
-        vendor_matches
+        vendor_matches,
+        operation_id: str = None,
+        connection_id: str = None,
+        stream_reasoning: bool = True
     ) -> AiParsedData:
         """Use the Email-specific classification prompt."""
         return await self._ai_service.classify_email_async(
-            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches
+            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning
         )
 
     def get_default_email_runbook_content(self) -> str:

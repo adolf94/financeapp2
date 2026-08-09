@@ -284,7 +284,114 @@ class AiService:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(md_content)
         except Exception as e:
+            yaml_header = ""  # Unused, keeps compiler happy
             logging.warning("PROMPT_DEBUG file fallback failed: %s", e)
+
+    async def _generate_stream_to_signalr(
+        self,
+        provider,
+        prompt: str,
+        system: str | None = None,
+        json_mode: bool = False,
+        target: str = "reclassifyProgress",
+        operation_id: str = None,
+        user_id: str = None,
+        include_reasoning: bool = True,
+        stream_reasoning_to_client: bool = True,
+        connection_id: str = None,
+    ) -> str:
+        from services.signalr_publisher import publish_signalr_message, add_user_to_group, remove_user_from_group, add_connection_to_group, remove_connection_from_group
+        import time
+        
+        # Add user/connection to the operation group if provided
+        if operation_id:
+            if connection_id:
+                await add_connection_to_group("notificationHub", connection_id, operation_id)
+            elif user_id:
+                await add_user_to_group("notificationHub", user_id, operation_id)
+        
+        # Globally enable/disable reasoning via environment variable
+        global_enable = os.environ.get("ENABLE_REASONING", "false").lower() == "true"
+        include_reasoning = include_reasoning and global_enable
+
+        debounce_delay = float(os.environ.get("THINKING_STREAM_DEBOUNCE_SECONDS", "0.0"))
+        
+        content_chunks: list[str] = []
+        thinking_chunks: list[str] = []
+        last_thinking_publish_time = time.time()
+
+        async for chunk_type, text in provider.generate_stream(
+            prompt=prompt,
+            system=system,
+            # When reasoning is requested, suppress json_mode — many models
+            # drop CoT when response_format=json_object is active.
+            # We parse JSON from the accumulated content chunks afterwards.
+            json_mode=json_mode and not include_reasoning,
+            include_reasoning=include_reasoning,
+        ):
+            if chunk_type == "thinking":
+                # Publish CoT tokens to a dedicated target so the UI can
+                # display them in a separate section from the final JSON.
+                if stream_reasoning_to_client:
+                    if debounce_delay > 0:
+                        thinking_chunks.append(text)
+                        current_time = time.time()
+                        if current_time - last_thinking_publish_time >= debounce_delay:
+                            accumulated_thinking = "".join(thinking_chunks)
+                            thinking_chunks = []
+                            last_thinking_publish_time = current_time
+                            
+                            if operation_id:
+                                args = [accumulated_thinking, operation_id]
+                                await publish_signalr_message(
+                                    "notificationHub", "reclassifyThinking", args, user_id=user_id, group_name=operation_id
+                                )
+                    else:
+                        if operation_id:
+                            args = [text, operation_id]
+                            await publish_signalr_message(
+                                "notificationHub", "reclassifyThinking", args, user_id=user_id, group_name=operation_id
+                            )
+            else:
+                # Accumulate final content for JSON parsing after the stream.
+                content_chunks.append(text)
+                if operation_id:
+                    args = [text, operation_id]
+                    await publish_signalr_message(
+                        "notificationHub", target, args, user_id=user_id, group_name=operation_id
+                    )
+
+        # Flush any remaining thinking chunks
+        if stream_reasoning_to_client and debounce_delay > 0 and thinking_chunks:
+            accumulated_thinking = "".join(thinking_chunks)
+            if operation_id:
+                args = [accumulated_thinking, operation_id]
+                await publish_signalr_message(
+                    "notificationHub", "reclassifyThinking", args, user_id=user_id, group_name=operation_id
+                )
+
+        if operation_id:
+            if connection_id:
+                await remove_connection_from_group("notificationHub", connection_id, operation_id)
+            elif user_id:
+                await remove_user_from_group("notificationHub", user_id, operation_id)
+
+        return "".join(content_chunks)
+        
+    def _extract_json(self, text: str) -> dict:
+        """Extract and parse JSON from the LLM response, stripping markdown blocks if present."""
+        text = text.strip()
+        if not text:
+            raise ValueError("Empty response text")
+            
+        import re
+        # Try to find a JSON block in markdown
+        match = re.search(r'```(?:json)?(.*?)```', text, re.DOTALL)
+        if match:
+            text = match.group(1).strip()
+            
+        return json.loads(text)
+
 
     def _build_context(self, similar_vectors: List[Tuple[TransactionVector, float]]) -> str:
         if not similar_vectors:
@@ -467,7 +574,10 @@ Return ONLY valid JSON matching this schema:
         accounts: list[dict],
         runbook_content: str,
         vendors: list[dict] | list[str] = None,
-        vendor_matches: list[dict] = None
+        vendor_matches: list[dict] = None,
+        operation_id: str = None,
+        connection_id: str = None,
+        stream_reasoning_to_client: bool = True
     ) -> AiParsedData:
         
         context = self._build_context(similar_vectors)
@@ -494,11 +604,19 @@ Return ONLY valid JSON matching this schema:
 
         system_instruction = "You are a personal finance assistant. Classify the notification as a financial transaction."
 
-        response_text, in_tok, out_tok = await self.classification_provider.generate(
+        response_text = await self._generate_stream_to_signalr(
+            self.classification_provider,
             prompt=prompt,
             system=system_instruction,
             json_mode=True,
+            include_reasoning=True,
+            target="reclassifyProgress",
+            operation_id=operation_id,
+            user_id=hook.user_id,
+            connection_id=connection_id,
+            stream_reasoning_to_client=stream_reasoning_to_client
         )
+        in_tok, out_tok = None, None
 
         await self._debug_log(
             "classify",
@@ -511,7 +629,7 @@ Return ONLY valid JSON matching this schema:
             notification_type="app",
         )
 
-        data = json.loads(response_text)
+        data = self._extract_json(response_text)
         
         # Fallback for application field
         if not data.get("application"):
@@ -526,7 +644,10 @@ Return ONLY valid JSON matching this schema:
         accounts: list[dict],
         runbook_content: str,
         vendors: list[dict] | list[str] = None,
-        vendor_matches: list[dict] = None
+        vendor_matches: list[dict] = None,
+        operation_id: str = None,
+        connection_id: str = None,
+        stream_reasoning_to_client: bool = True
     ) -> AiParsedData:
         """Classify using SMS-specific prompt (tailored for SMS banking messages)."""
         context = self._build_context(similar_vectors)
@@ -555,11 +676,19 @@ Return ONLY valid JSON matching this schema:
 
         system_instruction = "You are a personal finance assistant. Classify the SMS banking notification as a financial transaction. Pay special attention to transfer patterns, masked account numbers, and person-to-person payment indicators."
 
-        response_text, in_tok, out_tok = await self.classification_provider.generate(
+        response_text = await self._generate_stream_to_signalr(
+            self.classification_provider,
             prompt=prompt,
             system=system_instruction,
             json_mode=True,
+            include_reasoning=True,
+            target="reclassifyProgress",
+            operation_id=operation_id,
+            user_id=hook.user_id,
+            connection_id=connection_id,
+            stream_reasoning_to_client=stream_reasoning_to_client
         )
+        in_tok, out_tok = None, None
 
         await self._debug_log(
             "classify",
@@ -572,7 +701,7 @@ Return ONLY valid JSON matching this schema:
             notification_type="sms",
         )
 
-        data = json.loads(response_text)
+        data = self._extract_json(response_text)
 
         if not data.get("application"):
             data["application"] = app_name
@@ -586,7 +715,10 @@ Return ONLY valid JSON matching this schema:
         accounts: list[dict],
         runbook_content: str,
         vendors: list[dict] | list[str] = None,
-        vendor_matches: list[dict] = None
+        vendor_matches: list[dict] = None,
+        operation_id: str = None,
+        connection_id: str = None,
+        stream_reasoning_to_client: bool = True
     ) -> AiParsedData:
         """Classify using Email-specific prompt (tailored for email receipts/statements)."""
         context = self._build_context(similar_vectors)
@@ -610,11 +742,19 @@ Return ONLY valid JSON matching this schema:
 
         system_instruction = "You are a personal finance assistant. Classify the Email notification as a financial transaction. Pay special attention to invoice tables, vendor names, and credit/debit account assignments."
 
-        response_text, in_tok, out_tok = await self.classification_provider.generate(
+        response_text = await self._generate_stream_to_signalr(
+            self.classification_provider,
             prompt=prompt,
             system=system_instruction,
             json_mode=True,
+            include_reasoning=True,
+            target="reclassifyProgress",
+            operation_id=operation_id,
+            user_id=hook.user_id,
+            connection_id=connection_id,
+            stream_reasoning_to_client=stream_reasoning_to_client
         )
+        in_tok, out_tok = None, None
 
         await self._debug_log(
             "classify",
@@ -627,7 +767,7 @@ Return ONLY valid JSON matching this schema:
             notification_type="email",
         )
 
-        data = json.loads(response_text)
+        data = self._extract_json(response_text)
 
         if not data.get("application"):
             # Use sender email/domain or fallback
@@ -670,7 +810,7 @@ Return ONLY valid JSON matching this schema:
             json_mode=True,
         )
         try:
-            parsed_data = json.loads(response_text)
+            parsed_data = self._extract_json(response_text)
         except Exception as e:
             logging.error(f"Failed to parse summarize_email_async JSON: {e}")
             parsed_data = {
@@ -697,7 +837,11 @@ Return ONLY valid JSON matching this schema:
         corrections: list[dict],
         accounts: list[dict],
         vendors: list[dict],
-        current_runbook: str
+        current_runbook: str,
+        user_id: str = None,
+        operation_id: str = None,
+        connection_id: str = None,
+        stream_reasoning: bool = True
     ) -> dict:
         
         if corrections:
@@ -723,14 +867,22 @@ Return ONLY valid JSON matching this schema:
             corrections_section=corrections_section
         )
 
-        response_text, in_tok, out_tok = await self.reasoning_provider.generate(
+        response_text = await self._generate_stream_to_signalr(
+            self.reasoning_provider,
             prompt=prompt,
+            include_reasoning=stream_reasoning,
             json_mode=True,
+            target="chatProgress",
+            user_id=user_id,
+            operation_id=operation_id,
+            connection_id=connection_id,
+            stream_reasoning_to_client=stream_reasoning
         )
 
+        in_tok, out_tok = None, None
         await self._debug_log("review_start", self.reasoning_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
 
-        return json.loads(response_text)
+        return self._extract_json(response_text)
 
     async def chat_runbook_review_async(
         self,
@@ -742,7 +894,11 @@ Return ONLY valid JSON matching this schema:
         corrections: list[dict],
         accounts: list[dict],
         vendors: list[dict],
-        current_runbook: str
+        current_runbook: str,
+        user_id: str = None,
+        operation_id: str = None,
+        connection_id: str = None,
+        stream_reasoning: bool = True
     ) -> dict:
         
         if corrections:
@@ -776,11 +932,19 @@ Return ONLY valid JSON matching this schema:
             user_message=user_message
         )
 
-        response_text, in_tok, out_tok = await self.reasoning_provider.generate(
+        response_text = await self._generate_stream_to_signalr(
+            self.reasoning_provider,
             prompt=prompt,
+            include_reasoning=stream_reasoning,
             json_mode=True,
+            target="chatProgress",
+            user_id=user_id,
+            operation_id=operation_id,
+            connection_id=connection_id,
+            stream_reasoning_to_client=stream_reasoning
         )
+        in_tok, out_tok = None, None
 
         await self._debug_log("review_chat", self.reasoning_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
 
-        return json.loads(response_text)
+        return self._extract_json(response_text)

@@ -11,6 +11,7 @@ class Transaction(BaseModel):
     schedule_id: Optional[str] = Field(default=None, alias="ScheduleId")
     date: datetime = Field(alias="Date")
     note: str = Field(alias="Note")
+    reference_number: Optional[str] = Field(default=None, alias="ReferenceNumber")
     vendor: Optional[str] = Field(default=None, alias="Vendor")
     transaction_type: TransactionType = Field(alias="Type")
     entries: List[LedgerEntry] = Field(default_factory=list, alias="Entries")

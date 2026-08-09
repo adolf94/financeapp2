@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useLocation } from '@tanstack/react-router'
 import { LayoutDashboard, ArrowLeftRight, Wallet, Settings, Plus, LogOut, Inbox } from 'lucide-react'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import { useAuth } from '@adolf94/ar-auth-client'
+import { useSignalR } from '@/hooks/useSignalR'
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -14,6 +15,10 @@ const navItems = [
 
 export default function AppLayout() {
   const { isAuthenticated, isLoading, login, logout, user } = useAuth()
+  
+  // Connect to SignalR connection announcements when authenticated
+  useSignalR(!isLoading && isAuthenticated)
+
   const navigate = useNavigate()
   const location = useLocation()
   const currentPath = location.pathname

@@ -159,12 +159,20 @@ export function useRejectIngestion() {
 export function useReclassifyIngestion() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, operationId, streamReasoning }: { id: string; operationId: string; streamReasoning?: boolean }) => {
       // Goes directly to Python ingester (JWT Bearer, no .NET proxy)
-      const response = await ingesterClient.post(`/ingestions/${id}/reclassify`)
+      const connId = (window as any).signalRConnectionId || ''
+      const response = await ingesterClient.post(`/ingestions/${id}/reclassify?operationId=${operationId}&connectionId=${connId}&streamReasoning=${!!streamReasoning}`)
       return response.data as PendingIngestion
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      // Update specific ingestion cache if modal is opened from transactions view
+      queryClient.setQueryData(['ingestion', variables.id], data)
+      // Update pending ingestions list cache
+      queryClient.setQueriesData<PendingIngestion[]>({ queryKey: ['pendingIngestions'] }, (old) => {
+        if (!old) return old
+        return old.map((ing) => (ing.id === variables.id ? data : ing))
+      })
       queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
     }
   })

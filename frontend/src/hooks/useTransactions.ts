@@ -13,6 +13,7 @@ export interface Transaction {
   vendor?: string | null
   date: string
   note?: string
+  referenceNumber?: string | null
   type: 'Income' | 'Expense' | 'Transfer' | 'Journal'
   entries: LedgerEntry[]
   isAutoConfirmed?: boolean
