@@ -38,13 +38,13 @@ async def publish_signalr_message(hub_name: str, target: str, arguments: list, u
             
         if group_name:
             url = f"{endpoint}/api/v1/hubs/{hub_name}/groups/{group_name}"
-            post_url = f"{url}/:send"
+            post_url = url
         elif user_id:
             url = f"{endpoint}/api/v1/hubs/{hub_name}/users/{user_id}"
             post_url = url
         else:
             url = f"{endpoint}/api/v1/hubs/{hub_name}"
-            post_url = f"{url}/:send"
+            post_url = url
             
         token = generate_jwt_token(url, access_key)
         
