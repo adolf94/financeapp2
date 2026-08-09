@@ -19,14 +19,14 @@ from services.finance_api_service import FinanceApiService
 from services.ingestion_service import IngestionService
 from services.sms_processing_service import SmsProcessingService
 from services.notification_type_detector import NotificationTypeDetector
-from services.email_fetching_service import check_and_save_emails_async
+from services.email_fetching_service import check_and_save_emails_asyncss
 from ar_auth.azure import ArAuthAzureClient
 from typing import Optional, Tuple
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 # Shared auth client (caches JWKS)
-_auth_client = ArAuthAzureClient(authority="https://auth.adolfrey.com/api", client_id=os.environ.get("ArAuth:ClientId"))
+_auth_client = ArAuthAzureClient(authority="https://auth.adolfrey.com/api", client_id=os.environ.get("ArAuth__ClientId"))
 
 # Set to track notif_ids currently in-flight / being inserted to prevent duplicates
 _processing_notif_ids = set()
