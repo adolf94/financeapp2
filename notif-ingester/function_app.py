@@ -19,7 +19,7 @@ from services.finance_api_service import FinanceApiService
 from services.ingestion_service import IngestionService
 from services.sms_processing_service import SmsProcessingService
 from services.notification_type_detector import NotificationTypeDetector
-from services.email_fetching_service import check_and_save_emails_asyncss
+from services.email_fetching_service import check_and_save_emails_async
 from ar_auth.azure import ArAuthAzureClient
 from typing import Optional, Tuple
 
