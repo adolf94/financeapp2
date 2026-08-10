@@ -149,21 +149,21 @@ class FinanceApiService:
             logging.warning(f"Error fetching vendors: {e}")
             return []
 
-    async def search_vendors_by_lookups_async(self, user_id: str, lookups: list[str]) -> str | None:
+    async def search_vendors_by_lookups_async(self, user_id: str, lookups: list[str]) -> tuple[str | None, list[str]]:
         if not self.client or not lookups:
-            return None
+            return None, []
             
         db = self.client.get_database_client(self.db_name)
         try:
             lookup_container = db.get_container_client("VendorLookups")
             lookup_values = [loc.lower().strip() for loc in lookups if loc and isinstance(loc, str) and loc.strip()]
             if not lookup_values:
-                return None
+                return None, []
                 
             parameters = [{"name": f"@p{i}", "value": val} for i, val in enumerate(lookup_values)]
             param_names = ", ".join(p["name"] for p in parameters)
             
-            query = f"SELECT c.VendorId, c.Hits FROM c WHERE c.LookupValue IN ({param_names})"
+            query = f"SELECT c.VendorId, c.Hits, c.LookupValue FROM c WHERE c.LookupValue IN ({param_names})"
             items = lookup_container.query_items(
                 query=query,
                 parameters=parameters,
@@ -172,25 +172,32 @@ class FinanceApiService:
             
             vendor_hits = {}
             total_hits = 0
+            vendor_lookups = {}
             
             async for item in items:
                 v_id = item.get("VendorId")
                 hits = item.get("Hits", 1)
+                l_val = item.get("LookupValue")
                 vendor_hits[v_id] = vendor_hits.get(v_id, 0) + hits
                 total_hits += hits
+                if v_id not in vendor_lookups:
+                    vendor_lookups[v_id] = []
+                vendor_lookups[v_id].append(l_val)
                 
             vendor_id = None
+            matched_lookups = []
             if vendor_hits and total_hits > 0:
                 # Find top vendor
                 top_vendor_id, top_hits = max(vendor_hits.items(), key=lambda x: x[1])
                 if top_hits / total_hits > 0.51:
                     vendor_id = top_vendor_id
+                    matched_lookups = vendor_lookups.get(vendor_id, [])
                 
             if vendor_id:
                 vendor_container = db.get_container_client("Vendors")
                 try:
                     vendor = await vendor_container.read_item(item=vendor_id, partition_key=user_id)
-                    return vendor.get("Name")
+                    return vendor.get("Name"), matched_lookups
                 except Exception:
                     pass
             
@@ -204,12 +211,14 @@ class FinanceApiService:
                 max_item_count=1
             )
             async for item in items_name:
-                return item.get("Name")
+                matched_name = item.get("Name")
+                matched_input = [l for l in lookups if l.lower().strip() == matched_name.lower().strip()]
+                return matched_name, matched_input if matched_input else [matched_name]
                 
         except Exception as e:
             import logging
             logging.warning(f"Error searching vendors by lookups: {e}")
-        return None
+        return None, []
 
     async def search_all_vendor_matches_by_lookups_async(self, user_id: str, lookups: list[str]) -> list[dict]:
         """
@@ -387,15 +396,25 @@ class FinanceApiService:
         
         # 1. Create the main Transaction document (EF Core format)
         tx_date = parsed.date or ingestion.received_at or datetime.now(timezone.utc)
+        vendor_lookups = []
+        if parsed.vendor:
+            if parsed.vendor.lookups:
+                vendor_lookups.extend(parsed.vendor.lookups)
+            if parsed.vendor.new_lookups:
+                vendor_lookups.extend(parsed.vendor.new_lookups)
+        vendor_lookups = list(set([l for l in vendor_lookups if l]))
+
         tx_doc = {
             "id": tx_id,
             "UserId": ingestion.user_id,
             "Date": tx_date.isoformat(),
-            "Vendor": parsed.vendor,
+            "Vendor": parsed.vendor.name if parsed.vendor else None,
             "Type": tx_type,
             "Note": parsed.notes or "",
             "IsAutoConfirmed": parsed.is_auto_confirmed if parsed.is_auto_confirmed is not None else False,
             "IngestionId": ingestion.id,
+            "MatchedVendorLookups": vendor_lookups,
+            "NewVendorLookups": [],
             "$type": "Transaction"
         }
         
@@ -444,11 +463,11 @@ class FinanceApiService:
         if parsed.recipient_account_number: lookups.append(parsed.recipient_account_number)
         if parsed.sender_account_name: lookups.append(parsed.sender_account_name)
         if parsed.sender_account_number: lookups.append(parsed.sender_account_number)
-        if parsed.vendor: lookups.append(parsed.vendor)
+        if parsed.vendor and parsed.vendor.name: lookups.append(parsed.vendor.name)
         if parsed.application: lookups.append(parsed.application)
         
-        if parsed.vendor:
-            await self.ensure_vendor_and_lookups_async(ingestion.user_id, parsed.vendor, lookups, parsed.vendor_type)
+        if parsed.vendor and parsed.vendor.name:
+            await self.ensure_vendor_and_lookups_async(ingestion.user_id, parsed.vendor.name, lookups, parsed.vendor.type)
             
         return tx_doc
 

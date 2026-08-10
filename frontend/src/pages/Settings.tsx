@@ -494,7 +494,7 @@ function NotificationLogSettings() {
 
   const mappedIngestionTransaction = confirmingIngestion ? {
     type: confirmingIngestion.ai_parsed.transaction_type === 'Income' ? 'Income' : 'Expense',
-    vendor: confirmingIngestion.ai_parsed.vendor || '',
+    vendor: confirmingIngestion.ai_parsed.vendor?.name || '',
     note: confirmingIngestion.ai_parsed.summary || confirmingIngestion.ai_parsed.notes || '',
     date: confirmingIngestion.received_at,
     entries: [

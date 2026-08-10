@@ -46,8 +46,8 @@ export default function PendingIngestionCard({
   const similarity = ingestion.similarity_score ?? 0.0
   const isHighConfidence = confidence >= 0.85 || similarity >= 0.90
 
-  const suggestedVendor = ingestion.ai_parsed.suggested_vendor
-  const suggestedType = suggestedVendor?.type
+  const suggestedVendor = ingestion.ai_parsed.vendor?.is_recommendation ? ingestion.ai_parsed.vendor : null
+  const suggestedType = ingestion.ai_parsed.vendor?.type
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
 
@@ -169,8 +169,8 @@ export default function PendingIngestionCard({
       {/* Proposed transaction details */}
       <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl text-xs border border-slate-100 dark:border-slate-800/60">
         <div className="flex flex-col gap-0.5">
-          <span className={`uppercase font-semibold text-[10px] ${ingestion.ai_parsed.vendor_matched ? 'text-slate-400' : 'text-amber-500'}`}>
-            {ingestion.ai_parsed.vendor_matched ? 'Vendor' : 'Suggested Vendor'}
+          <span className={`uppercase font-semibold text-[10px] ${ingestion.ai_parsed.vendor?.matched ? 'text-slate-400' : 'text-amber-500'}`}>
+            {ingestion.ai_parsed.vendor?.matched ? 'Vendor' : 'Suggested Vendor'}
           </span>
           {editingVendor !== null ? (
             <div className="flex items-center gap-1 mt-1">
@@ -200,25 +200,28 @@ export default function PendingIngestionCard({
             </div>
           ) : (
             <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2 group flex-wrap">
+              <div className="flex items-center gap-2 group flex-wrap animate-fade-in">
                 <span className="text-slate-700 dark:text-slate-350 font-medium truncate">
-                  {ingestion.ai_parsed.vendor || 'Unknown Vendor'}
+                  {ingestion.ai_parsed.vendor?.name || 'Unknown Vendor'}
                 </span>
-                {!ingestion.ai_parsed.vendor_matched && suggestedType === 'Individual' && (
+                {!ingestion.ai_parsed.vendor?.matched && suggestedType === 'Individual' && (
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold" title="Individual">(I)</span>
                 )}
-                {!ingestion.ai_parsed.vendor_matched && suggestedType === 'Business' && (
+                {!ingestion.ai_parsed.vendor?.matched && suggestedType === 'Business' && (
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold" title="Business">(B)</span>
                 )}
+                
+
+
                 <button
-                  onClick={() => setEditingVendor(ingestion.ai_parsed.vendor || '')}
+                  onClick={() => setEditingVendor(ingestion.ai_parsed.vendor?.name || '')}
                   className="text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Edit Vendor"
                 >
                   <Edit className="w-3.5 h-3.5" />
                 </button>
               </div>
-              {!ingestion.ai_parsed.vendor_matched && suggestedVendor?.tags && suggestedVendor.tags.length > 0 && (
+              {!ingestion.ai_parsed.vendor?.matched && suggestedVendor?.tags && suggestedVendor.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {suggestedVendor.tags.map((tag: string) => (
                     <span key={tag} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-md text-[9px] font-medium">
@@ -383,11 +386,11 @@ export default function PendingIngestionCard({
           </div>
         )}
       </div>
-
+ 
       {/* Action buttons */}
       {ingestion.status !== 'AutoConfirmed' && ingestion.status !== 'Confirmed' && (
         <div className="flex gap-2 justify-end items-center border-t border-slate-100 dark:border-slate-800/80 pt-3 flex-wrap">
-          {!ingestion.ai_parsed.vendor_matched && hasMasks(ingestion.ai_parsed.vendor) && (
+          {!ingestion.ai_parsed.vendor?.matched && hasMasks(ingestion.ai_parsed.vendor?.name) && (
             <span className="text-[10px] text-amber-500 font-medium mr-auto">
               Name contains masks (edit to enable Quick Confirm)
             </span>
@@ -400,7 +403,7 @@ export default function PendingIngestionCard({
             <X className="w-4 h-4" strokeWidth={2} />
             Dismiss
           </button>
-
+ 
           <button
             onClick={() => onEditConfirm(ingestion)}
             disabled={isProcessing}
@@ -411,8 +414,8 @@ export default function PendingIngestionCard({
           </button>
           <button
             onClick={() => onQuickConfirm(ingestion)}
-            disabled={isProcessing || (!ingestion.ai_parsed.vendor_matched && hasMasks(ingestion.ai_parsed.vendor))}
-            title={!ingestion.ai_parsed.vendor_matched && hasMasks(ingestion.ai_parsed.vendor) ? "Quick Confirm disabled (vendor name contains masks)" : "Quick Confirm"}
+            disabled={isProcessing || (!ingestion.ai_parsed.vendor?.matched && hasMasks(ingestion.ai_parsed.vendor?.name))}
+            title={!ingestion.ai_parsed.vendor?.matched && hasMasks(ingestion.ai_parsed.vendor?.name) ? "Quick Confirm disabled (vendor name contains masks)" : "Quick Confirm"}
             className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-sm disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
           >
             <Check className="w-4 h-4" strokeWidth={2.5} />

@@ -185,7 +185,7 @@ namespace FinanceApp.Functions
                 Id = Guid.CreateVersion7().ToString(),
                 UserId = userId,
                 Date = aiData.Date ?? DateTime.UtcNow,
-                Vendor = aiData.Vendor,
+                Vendor = aiData.Vendor?.Name,
                 Type = Enum.TryParse<TransactionType>(aiData.TransactionType, true, out var typeEnum) ? typeEnum : TransactionType.Expense,
                 Note = aiData.Notes,
                 Entries = new List<LedgerEntry>
@@ -206,7 +206,12 @@ namespace FinanceApp.Functions
                     }
                 },
                 IsAutoConfirmed = aiData.IsAutoConfirmed ?? false,
-                IngestionId = aiData.IngestionId
+                IngestionId = aiData.IngestionId,
+                MatchedVendorLookups = (aiData.Vendor?.Lookups ?? new List<string>())
+                    .Concat(aiData.Vendor?.NewLookups ?? new List<string>())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+                NewVendorLookups = new List<string>()
             };
 
             try
@@ -218,12 +223,18 @@ namespace FinanceApp.Functions
                 if (!string.IsNullOrWhiteSpace(aiData.RecipientAccountNumber)) lookups.Add(aiData.RecipientAccountNumber);
                 if (!string.IsNullOrWhiteSpace(aiData.SenderAccountName)) lookups.Add(aiData.SenderAccountName);
                 if (!string.IsNullOrWhiteSpace(aiData.SenderAccountNumber)) lookups.Add(aiData.SenderAccountNumber);
-                if (!string.IsNullOrWhiteSpace(aiData.Vendor)) lookups.Add(aiData.Vendor);
+                if (aiData.Vendor != null && !string.IsNullOrWhiteSpace(aiData.Vendor.Name)) lookups.Add(aiData.Vendor.Name);
                 if (!string.IsNullOrWhiteSpace(aiData.Application)) lookups.Add(aiData.Application);
 
-                if (!string.IsNullOrWhiteSpace(aiData.Vendor))
+                // Add all confirm-payload lookups to the upsert list
+                if (transaction.MatchedVendorLookups != null)
                 {
-                    await _vendorService.EnsureVendorAndLookupsAsync(userId, aiData.Vendor, lookups);
+                    lookups.AddRange(transaction.MatchedVendorLookups);
+                }
+
+                if (aiData.Vendor != null && !string.IsNullOrWhiteSpace(aiData.Vendor.Name))
+                {
+                    await _vendorService.EnsureVendorAndLookupsAsync(userId, aiData.Vendor.Name, lookups.Distinct(StringComparer.OrdinalIgnoreCase).ToList());
                 }
 
                 return new OkObjectResult(createdTx);

@@ -8,7 +8,7 @@ namespace FinanceApp.Models
     public class AiParsedData
     {
         [JsonPropertyName("vendor")]
-        public string? Vendor { get; set; }
+        public AiVendorInfo? Vendor { get; set; }
 
         [JsonPropertyName("amount")]
         public decimal? Amount { get; set; }
@@ -67,29 +67,32 @@ namespace FinanceApp.Models
         [JsonPropertyName("ingestion_id")]
         public string? IngestionId { get; set; }
 
-        [JsonPropertyName("vendor_matched")]
-        public bool? VendorMatched { get; set; }
-
         [JsonPropertyName("date")]
         public DateTime? Date { get; set; }
-
-        [JsonPropertyName("suggested_vendor")]
-        public SuggestedVendor? SuggestedVendor { get; set; }
     }
 
-    public class SuggestedVendor
+    public class AiVendorInfo
     {
         [JsonPropertyName("name")]
         public string? Name { get; set; }
 
-        [JsonPropertyName("tags")]
-        public List<string>? Tags { get; set; }
-
         [JsonPropertyName("type")]
         public string? Type { get; set; }
 
-        [JsonPropertyName("is_created")]
-        public bool? IsCreated { get; set; }
+        [JsonPropertyName("matched")]
+        public bool? Matched { get; set; }
+
+        [JsonPropertyName("is_recommendation")]
+        public bool? IsRecommendation { get; set; }
+
+        [JsonPropertyName("lookups")]
+        public List<string> Lookups { get; set; } = new();
+
+        [JsonPropertyName("new_lookups")]
+        public List<string> NewLookups { get; set; } = new();
+
+        [JsonPropertyName("tags")]
+        public List<string>? Tags { get; set; }
     }
 
     public class SuggestedAccountCreation

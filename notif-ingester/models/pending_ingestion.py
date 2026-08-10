@@ -10,10 +10,21 @@ class SuggestedVendor(BaseModel):
     type: Optional[Literal["Individual", "Business", "Internal"]] = None
     is_created: Optional[bool] = False
 
+class AiVendorInfo(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None # "Individual", "Business", "Internal"
+    matched: Optional[bool] = False
+    is_recommendation: Optional[bool] = False
+    lookups: List[str] = Field(default_factory=list)
+    new_lookups: List[str] = Field(default_factory=list, alias="NewLookups")
+    tags: Optional[List[str]] = None
+
+    class Config:
+        populate_by_name = True
+
 class AiParsedData(BaseModel):
     is_financial: Optional[bool] = True
-    vendor: Optional[str] = None
-    vendor_type: Optional[str] = None
+    vendor: Optional[AiVendorInfo] = None
     amount: Optional[float] = None
     transaction_type: Optional[str] = None
     debit_account_id: Optional[str] = None
@@ -30,11 +41,9 @@ class AiParsedData(BaseModel):
     application: Optional[str] = None
     why: Optional[str] = None
     user_why: Optional[str] = None
-    vendor_matched: Optional[bool] = False
     is_auto_confirmed: Optional[bool] = False
     ingestion_id: Optional[str] = None
     date: Optional[datetime] = None
-    suggested_vendor: Optional[SuggestedVendor] = None
 
 class SuggestedAccountCreation(BaseModel):
     type: Optional[str] = None

@@ -56,13 +56,13 @@ export default function IngestionReviewPanel() {
       ? suggestedVendorTags.split(',').map((t) => t.trim()).filter(Boolean)
       : []
     createVendorMutation.mutate(
-      { name: ingestion.ai_parsed.vendor!, type: suggestedVendorType, tags },
+      { name: ingestion.ai_parsed.vendor?.name!, type: suggestedVendorType, tags },
       {
         onSuccess: () => {
-          setVendor(ingestion.ai_parsed.vendor!)
+          setVendor(ingestion.ai_parsed.vendor?.name!)
           updateIngestionVendorMutation.mutate({
             id: ingestion.id,
-            vendor: ingestion.ai_parsed.vendor!,
+            vendor: ingestion.ai_parsed.vendor?.name!,
           })
         },
       }
@@ -221,11 +221,11 @@ export default function IngestionReviewPanel() {
             )}
           </div>
 
-          {ingestion.ai_parsed.vendor &&
+          {ingestion.ai_parsed.vendor?.name &&
             ingestionId &&
-            !ingestion.ai_parsed.vendor_matched &&
+            !ingestion.ai_parsed.vendor?.matched &&
             !dbVendors.some(
-              (v) => v.name.toLowerCase() === ingestion.ai_parsed.vendor?.toLowerCase()
+              (v) => v.name.toLowerCase() === ingestion.ai_parsed.vendor?.name?.toLowerCase()
             ) && (
               <div
                 key={`${ingestion.id}-suggested-vendor`}
@@ -236,22 +236,22 @@ export default function IngestionReviewPanel() {
                     <Sparkles className="w-3.5 h-3.5" strokeWidth={2} /> Suggested Vendor
                   </span>
                   <span className="text-slate-800 dark:text-slate-250 font-bold text-xs flex items-center gap-1.5 flex-wrap">
-                    {ingestion.ai_parsed.vendor}
-                    {ingestion.ai_parsed.suggested_vendor?.type === 'Individual' && (
+                    {ingestion.ai_parsed.vendor.name}
+                    {ingestion.ai_parsed.vendor?.type === 'Individual' && (
                       <span className="text-[10px] text-slate-500 font-bold" title="Individual">
                         (I)
                       </span>
                     )}
-                    {ingestion.ai_parsed.suggested_vendor?.type === 'Business' && (
+                    {ingestion.ai_parsed.vendor?.type === 'Business' && (
                       <span className="text-[10px] text-slate-500 font-bold" title="Business">
                         (B)
                       </span>
                     )}
                   </span>
-                  {ingestion.ai_parsed.suggested_vendor?.tags &&
-                    ingestion.ai_parsed.suggested_vendor.tags.length > 0 && (
+                  {ingestion.ai_parsed.vendor?.tags &&
+                    ingestion.ai_parsed.vendor.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
-                        {ingestion.ai_parsed.suggested_vendor.tags.map((tag) => (
+                        {ingestion.ai_parsed.vendor.tags.map((tag) => (
                           <span
                             key={tag}
                             className="px-1.5 py-0.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md text-[10px] font-bold shadow-sm border border-slate-200 dark:border-slate-700"
@@ -263,7 +263,7 @@ export default function IngestionReviewPanel() {
                     )}
                 </div>
                 <div className="flex flex-col gap-2 mt-0.5">
-                  {hasMasks(ingestion.ai_parsed.vendor) ? (
+                  {hasMasks(ingestion.ai_parsed.vendor.name) ? (
                     <span className="text-[10px] text-amber-500 font-medium">
                       Name contains masks (please edit via form Vendor dropdown to add a clean vendor
                       name)

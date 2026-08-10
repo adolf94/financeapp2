@@ -2,9 +2,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import apiClient from '@/lib/apiClient'
 import ingesterClient from '@/lib/ingesterClient'
 
+export interface AiVendorInfo {
+  name?: string | null
+  type?: string | null
+  matched?: boolean | null
+  is_recommendation?: boolean | null
+  lookups?: string[]
+  new_lookups?: string[]
+  NewLookups?: string[]
+  tags?: string[] | null
+}
+
 export interface AiParsedData {
   is_financial?: boolean | null
-  vendor?: string | null
+  vendor?: AiVendorInfo | null
   amount?: number | null
   transaction_type?: string | null
   category?: string | null
@@ -30,14 +41,7 @@ export interface AiParsedData {
   application?: string | null
   why?: string | null
   user_why?: string | null
-  vendor_matched?: boolean | null
   is_auto_confirmed?: boolean | null
-  suggested_vendor?: {
-    name: string
-    tags: string[]
-    type: 'Individual' | 'Business' | 'Internal'
-    is_created?: boolean | null
-  } | null
 }
 
 export interface PendingIngestion {

@@ -42,7 +42,7 @@ export default function PendingIngestions() {
       type: ['Income', 'Expense', 'Transfer'].includes(confirmingIngestion.ai_parsed.transaction_type || '')
         ? confirmingIngestion.ai_parsed.transaction_type
         : 'Expense',
-      vendor: confirmingIngestion.ai_parsed.vendor || '',
+      vendor: confirmingIngestion.ai_parsed.vendor?.name || '',
       note: confirmingIngestion.ai_parsed.summary || confirmingIngestion.ai_parsed.notes || '',
       date: resolvedDate,
       referenceNumber: confirmingIngestion.ai_parsed.reference_number || '',

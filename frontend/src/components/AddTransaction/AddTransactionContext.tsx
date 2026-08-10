@@ -67,6 +67,10 @@ interface AddTransactionContextProps {
   setJournalLines: (lines: JournalLine[] | ((prev: JournalLine[]) => JournalLine[])) => void
   vendor: string
   setVendor: (vendor: string) => void
+  selectedLookups: string[]
+  setSelectedLookups: (lookups: string[] | ((prev: string[]) => string[])) => void
+  selectedNewLookups: string[]
+  setSelectedNewLookups: (newLookups: string[] | ((prev: string[]) => string[])) => void
   date: string
   setDate: (date: string) => void
   note: string
@@ -159,6 +163,8 @@ export function AddTransactionProvider({
     { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit' },
   ])
   const [vendor, setVendor] = useState('')
+  const [selectedLookups, setSelectedLookups] = useState<string[]>([])
+  const [selectedNewLookups, setSelectedNewLookups] = useState<string[]>([])
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'))
   const [note, setNote] = useState('')
   const [referenceNumber, setReferenceNumber] = useState('')
@@ -226,7 +232,7 @@ export function AddTransactionProvider({
           setTotalAmount(Math.abs(parsed.amount).toString())
         }
         if (parsed.vendor) {
-          setVendor(parsed.vendor)
+          setVendor(parsed.vendor.name || '')
         }
         if (parsed.summary || parsed.notes) {
           setNote(parsed.summary || parsed.notes || '')
@@ -248,25 +254,35 @@ export function AddTransactionProvider({
   }, [ingestion])
 
   useEffect(() => {
+    if (!isOpen) return
     setCreatedSuggestions(new Set())
     setEditingSuggestion(null)
-  }, [ingestion?.id])
+    if (ingestion?.ai_parsed?.vendor) {
+      setVendor(ingestion.ai_parsed.vendor.name || '')
+      setSelectedLookups(ingestion.ai_parsed.vendor.lookups || [])
+      setSelectedNewLookups(ingestion.ai_parsed.vendor.new_lookups || ingestion.ai_parsed.vendor.NewLookups || [])
+    } else {
+      setVendor('')
+      setSelectedLookups([])
+      setSelectedNewLookups([])
+    }
+  }, [isOpen, ingestion?.id, ingestion?.ai_parsed?.vendor])
 
   useEffect(() => {
-    if (ingestion?.ai_parsed?.suggested_vendor) {
-      const type = ingestion.ai_parsed.suggested_vendor.type
+    if (ingestion?.ai_parsed?.vendor?.is_recommendation) {
+      const type = ingestion.ai_parsed.vendor.type
       if (type === 'Individual' || type === 'Business') {
         setSuggestedVendorType(type)
       } else {
         setSuggestedVendorType('Business')
       }
-      const tags = ingestion.ai_parsed.suggested_vendor.tags || []
+      const tags = ingestion.ai_parsed.vendor.tags || []
       setSuggestedVendorTags(tags.join(', '))
     } else {
       setSuggestedVendorType('Business')
       setSuggestedVendorTags('')
     }
-  }, [ingestion?.id, ingestion?.ai_parsed?.suggested_vendor])
+  }, [ingestion?.id, ingestion?.ai_parsed?.vendor])
 
   const accountsRef = useRef(accounts)
   useEffect(() => {
@@ -342,7 +358,12 @@ export function AddTransactionProvider({
           }
         }
       } else {
-        if (justOpened) resetForm()
+        if (justOpened) {
+          resetForm()
+          if (ingestion?.ai_parsed?.vendor) {
+            setVendor(ingestion.ai_parsed.vendor.name || '')
+          }
+        }
       }
       if (justOpened) {
         setUserWhy(ingestion?.user_confirmed?.user_why || '')
@@ -407,7 +428,12 @@ export function AddTransactionProvider({
               transactionId: data.id,
               skipLearning: skipLearning,
               userConfirmed: {
-                vendor: vendor || null,
+                vendor: vendor ? {
+                  name: vendor,
+                  matched: ingestion?.ai_parsed?.vendor?.name === vendor ? ingestion.ai_parsed.vendor.matched : false,
+                  lookups: selectedLookups,
+                  new_lookups: selectedNewLookups
+                } : null,
                 amount: entries.filter((e) => e.amount > 0).reduce((sum, e) => sum + e.amount, 0),
                 transaction_type: 'Journal',
                 notes: note || null,
@@ -571,7 +597,12 @@ export function AddTransactionProvider({
           id: ingestionId,
           skipLearning: skipLearning,
           userConfirmed: {
-            vendor: vendor || null,
+            vendor: type === 'Transfer' ? null : (vendor ? {
+              name: vendor,
+              matched: ingestion?.ai_parsed?.vendor?.name === vendor ? ingestion.ai_parsed.vendor.matched : false,
+              lookups: selectedLookups,
+              new_lookups: selectedNewLookups
+            } : null),
             amount: parsedTotal,
             transaction_type: type,
             debit_account_id:
@@ -621,7 +652,12 @@ export function AddTransactionProvider({
         if (initialData?.id && ingestionId === undefined && ingestion) {
           const updatedUserConfirmed = {
             ...(ingestion.user_confirmed || {}),
-            vendor: type === 'Transfer' ? null : vendor || null,
+            vendor: type === 'Transfer' ? null : (vendor ? {
+              name: vendor,
+              matched: ingestion?.ai_parsed?.vendor?.name === vendor ? ingestion.ai_parsed.vendor.matched : false,
+              lookups: selectedLookups,
+              new_lookups: selectedNewLookups
+            } : null),
             amount: parsedTotal,
             transaction_type: type,
             debit_account_id:
@@ -697,6 +733,10 @@ export function AddTransactionProvider({
       setJournalLines,
       vendor,
       setVendor,
+      selectedLookups,
+      setSelectedLookups,
+      selectedNewLookups,
+      setSelectedNewLookups,
       date,
       setDate,
       note,
@@ -752,6 +792,8 @@ export function AddTransactionProvider({
       splits,
       journalLines,
       vendor,
+      selectedLookups,
+      selectedNewLookups,
       date,
       note,
       userWhy,

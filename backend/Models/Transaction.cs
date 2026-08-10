@@ -28,5 +28,7 @@ namespace FinanceApp.Models
         public List<LedgerEntry> Entries { get; set; } = new();
         public bool IsAutoConfirmed { get; set; } = false;
         public string? IngestionId { get; set; }
+        public List<string> MatchedVendorLookups { get; set; } = new();
+        public List<string> NewVendorLookups { get; set; } = new();
     }
 }

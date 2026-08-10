@@ -70,6 +70,10 @@ function AddTransactionModalContent() {
     setJournalLines,
     vendor,
     setVendor,
+    selectedLookups,
+    setSelectedLookups,
+    selectedNewLookups,
+    setSelectedNewLookups,
     date,
     setDate,
     note,
@@ -610,8 +614,35 @@ function AddTransactionModalContent() {
                       }
                     )
                   }}
-                  placeholder="Select Vendor / Payer (optional)..."
+                  placeholder="Select or type vendor..."
+                  className="w-full"
                 />
+                {ingestion && (selectedLookups.length > 0 || selectedNewLookups.length > 0) && (
+                  <div className="flex flex-wrap gap-1.5 mt-1.5 animate-fade-in">
+                    {selectedLookups.map((l, i) => (
+                      <span
+                        key={`matched-${i}`}
+                        onClick={() => setSelectedLookups(prev => prev.filter(x => x !== l))}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-900/40 px-2 py-0.5 rounded-full shadow-sm cursor-pointer hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-450 dark:hover:border-rose-800 transition-colors"
+                        title="Click to exclude matched lookup"
+                      >
+                        {l}
+                        <X className="w-2.5 h-2.5" />
+                      </span>
+                    ))}
+                    {selectedNewLookups.map((l, i) => (
+                        <span
+                          key={`suggested-${i}`}
+                          onClick={() => setSelectedNewLookups(prev => prev.filter(x => x !== l))}
+                          className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40 px-2 py-0.5 rounded-full shadow-sm cursor-pointer hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 dark:hover:border-rose-800 transition-colors"
+                          title="Click to exclude suggested lookup"
+                        >
+                          {l}
+                          <X className="w-2.5 h-2.5" />
+                        </span>
+                      ))}
+                    </div>
+                  )}
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <div className="flex flex-col gap-1">

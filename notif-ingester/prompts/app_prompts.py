@@ -9,13 +9,14 @@ You are a personal finance assistant.
 Apply the rules below to classify the transaction. Return ONLY valid JSON matching this schema:
 {{
   "is_financial":true,
-  "vendor": string,
-  "vendor_type": "Individual"|"Business"|"Internal" (Individual means a person/friend/relative, Business means a merchant/store/app/company, Internal means a transfer/adjustment/movement between the user's own accounts/assets or the user's own name),
-  "suggested_vendor": {{
-    "name": "string (suggested name of the vendor, e.g. Starbucks, McDonald's)",
-    "tags": ["string (2-4 concise lowercase tags describing what the vendor *does*, e.g. 'coffee', 'cafe', 'food'. Do NOT include the vendor name, country, bank name, or vendor type as tags. Tags must be unique to this vendor's activity and not redundant with each other.)"],
-    "type": "Individual"|"Business"|"Internal"
-  }} (or null if there is a match in the Existing Vendors list),
+  "vendor": {{
+    "name": "string (name of the vendor, e.g. Starbucks, McDonald's)",
+    "type": "Individual"|"Business"|"Internal" (Individual means a person/friend/relative, Business means a merchant/store/app/company, Internal means a transfer/adjustment/movement between the user's own accounts/assets or the user's own name),
+    "matched": boolean (true if it matched an existing vendor or vendor lookup, false otherwise),
+    "is_recommendation": boolean (true if this is a newly suggested/recommended vendor that does not exist in the database, false otherwise),
+    "lookups": ["string"] (the specific strings from the 'Vendor Matches Found' list that mapped to this vendor, or proposed lookup strings extracted from the notification text that should be linked/associated to this vendor if it is a suggestion/recommendation),
+    "tags": ["string"] (2-4 concise lowercase tags describing what the vendor *does* if is_recommendation is true, or empty array if it exists. Do NOT include the vendor name, country, bank name, or vendor type as tags.)
+  }},
   "amount": number (positive),
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
   "debit_account_id": string (account id from the list above),
@@ -43,8 +44,8 @@ Rules:
 
 
 - **Pre-matched Vendors**: You are provided with "Vendor Matches Found" - these vendors were matched based on extracted account numbers/names from the notification text. **STRONGLY PRIORITIZE THESE MATCHES** in your classification. Check their tags to understand what they're for. If a vendor match has high hit counts, it's very likely correct.
-- **Vendor Matching**: You are also provided with a list of "Existing Vendors" with their tags. Check if any of these match the transaction vendor. If a vendor from the "Vendor Matches Found" list also appears in "Existing Vendors", that's a strong confirmation.
-- **Suggested Vendor**: If the transaction vendor matches one of the "Existing Vendors" (either by exact name or was found in "Vendor Matches Found"), set `suggested_vendor` to null. If there is NO match in the existing vendors or vendor matches, you MUST provide a `suggested_vendor` object with proposed name, tags, and type. The type must strictly be one of "Individual", "Business", or "Internal". When suggesting tags, consider the vendor's purpose and existing vendor tags to maintain consistency.
+- **Vendor Matching**: You are also provided with a list of "Existing Vendors" with their tags. Check if any of these match the transaction vendor. If a vendor from the "Vendor Matches Found" list also appears in "Existing Vendors", that's a strong confirmation. Set `vendor.matched = true`, `vendor.is_recommendation = false`, and map `vendor.lookups` to the matching strings.
+- **Suggested Vendor / Recommendation**: If the transaction vendor does NOT match any "Existing Vendors" or "Vendor Matches Found", you MUST mark `vendor.is_recommendation = true`, `vendor.matched = false`, and provide suggestions for `vendor.tags` (2-4 concise lowercase tags describing the vendor's activity). Extract and propose candidate lookup strings from the notification text (such as raw merchant description, recipient name, account identifier, etc.) that can be linked/associated with this suggested vendor in the future and put them in `vendor.lookups`.
 - **Account IDs**: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`. CRITICAL: Never invent or guess account IDs. If you are not 100% certain an account ID exists in the provided list, set it to null.
 - **Suggested Account Creation**: Focus ONLY on the functional, financial purpose of the account.
 - **Account Number Uniqueness**: The same account number CANNOT appear in both recipient_account_number and sender_account_number. If a notification contains only one account number, assign it to the most contextually appropriate field (recipient if money was sent out, sender if money was received) and leave the other field empty.

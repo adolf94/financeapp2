@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 from models.phone_hook import PhoneHookMessage
+from models.pending_ingestion import AiVendorInfo
 from repositories.hook_repository import CosmosHookRepository
 from repositories.ingestion_repository import CosmosIngestionRepository
 from repositories.vector_repository import CosmosVectorRepository
@@ -104,7 +105,16 @@ _type_detector = NotificationTypeDetector()
 def validate_api_key(req: func.HttpRequest) -> bool:
     expected_key = os.environ.get("API_KEY")
     provided_key = req.headers.get("x-api-key")
-    return bool(expected_key and provided_key and expected_key == provided_key)
+    if expected_key and provided_key and expected_key == provided_key:
+        return True
+
+    # Allow Bearer token with scope "notif_ingestion"
+    payload, err = _auth_client.validate(req, required_scopes=["notif_ingestion"])
+    if payload is not None and not err:
+        return True
+
+    return False
+
 
 # ── Function 1: PhoneHookFunction ──────────────────────────────────────────
 @app.route(route="phone_hook", methods=["POST"])
@@ -409,9 +419,11 @@ async def PatchIngestionVendorFunction(req: func.HttpRequest) -> func.HttpRespon
         if not ingestion:
             return func.HttpResponse("Ingestion not found", status_code=404)
             
-        ingestion.ai_parsed.vendor = new_vendor
-        ingestion.ai_parsed.vendor_matched = True
-        ingestion.ai_parsed.suggested_vendor = None
+        if not ingestion.ai_parsed.vendor:
+            ingestion.ai_parsed.vendor = AiVendorInfo()
+        ingestion.ai_parsed.vendor.name = new_vendor
+        ingestion.ai_parsed.vendor.matched = True
+        ingestion.ai_parsed.vendor.is_recommendation = False
         
         await ingestion_service.ingestion_repo.update_async(ingestion)
         
