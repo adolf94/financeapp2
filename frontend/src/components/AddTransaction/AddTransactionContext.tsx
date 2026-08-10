@@ -234,6 +234,14 @@ export function AddTransactionProvider({
         if (parsed.user_why) {
           setUserWhy(parsed.user_why)
         }
+        if (parsed.date) {
+          setDate(dayjs(parsed.date).format('YYYY-MM-DDTHH:mm'))
+        } else if (ingestion.received_at) {
+          setDate(dayjs(ingestion.received_at).format('YYYY-MM-DDTHH:mm'))
+        }
+        if (parsed.reference_number !== undefined) {
+          setReferenceNumber(parsed.reference_number || '')
+        }
       }
       prevIngestionRef.current = ingestion
     }
@@ -280,7 +288,7 @@ export function AddTransactionProvider({
       if (initialData) {
         setMode(initialData.type === 'Journal' ? 'Advanced' : 'Simple')
         setVendor(initialData.vendor || '')
-        setDate(initialData.date.split('T')[0])
+        setDate(dayjs(initialData.date).format('YYYY-MM-DDTHH:mm'))
         setNote(initialData.note || '')
         setReferenceNumber(initialData.referenceNumber || '')
         setIsRecurring(!!initialData.scheduleId)

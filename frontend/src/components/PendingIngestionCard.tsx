@@ -49,6 +49,8 @@ export default function PendingIngestionCard({
   const suggestedVendor = ingestion.ai_parsed.suggested_vendor
   const suggestedType = suggestedVendor?.type
 
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col gap-3 shadow-sm hover:shadow transition-shadow relative overflow-hidden">
       {/* Top Accent line representing AI Match level */}
@@ -71,7 +73,7 @@ export default function PendingIngestionCard({
               </span>
             )}
             {ingestion.notification_type === 'email' && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-cyan-300 border border-emerald-200 dark:border-emerald-700/50">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700/50">
                 <Mail className="w-2.5 h-2.5" />
                 Email
               </span>
@@ -83,9 +85,28 @@ export default function PendingIngestionCard({
               </span>
             )}
           </div>
-          <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-            "{ingestion.raw_msg}"
-          </p>
+          {ingestion.notification_type === 'email' ? (
+            <div className="flex flex-col gap-1 mt-1">
+              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+                Email Summary
+              </span>
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-200 italic leading-snug">
+                "{ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ingestion.raw_msg}"
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsPreviewOpen(true)}
+                className="self-start mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-350 border border-emerald-200/60 dark:border-emerald-900/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/60 transition-all cursor-pointer shadow-sm"
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Preview Email
+              </button>
+            </div>
+          ) : (
+            <p className="text-sm font-medium text-slate-800 dark:text-slate-200 mt-1">
+              "{ingestion.raw_msg}"
+            </p>
+          )}
         </div>
         <div className="text-right">
           <span className="text-lg font-bold text-slate-900 dark:text-slate-50">
@@ -97,6 +118,53 @@ export default function PendingIngestionCard({
           </div>
         </div>
       </div>
+
+      {isPreviewOpen && (
+        <div className="fixed inset-0 bg-black/60 z-55 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 animate-scale-up">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 rounded-t-2xl">
+              <div className="flex-1 min-w-0 pr-4">
+                <h3 className="font-bold text-slate-950 dark:text-white text-base truncate">
+                  {ingestion.raw_payload?.subject || ingestion.raw_payload?.Subject || ingestion.raw_payload?.notif_title || 'Email Preview'}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
+                  From: {ingestion.raw_payload?.from || ingestion.raw_payload?.From || ingestion.raw_payload?.sender || 'Unknown'}
+                </p>
+              </div>
+              <button 
+                onClick={() => setIsPreviewOpen(false)} 
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 bg-white dark:bg-slate-950 text-sm min-h-[300px]">
+              {(() => {
+                const html = ingestion.raw_payload?.html_content || ingestion.raw_payload?.html || ingestion.raw_payload?.body_html
+                const markdown = ingestion.raw_payload?.markdown_content || ingestion.raw_payload?.markdown || ingestion.raw_payload?.body_markdown
+                const plainText = ingestion.raw_payload?.raw_msg || ingestion.raw_payload?.body || ingestion.raw_payload?.text || ingestion.raw_payload?.content || ingestion.raw_payload?.text_content || ingestion.raw_msg
+
+                if (html) {
+                  return (
+                    <iframe
+                      srcDoc={html}
+                      title="Email Body"
+                      className="w-full h-[55vh] border border-slate-150 dark:border-slate-800 bg-white rounded-xl shadow-inner"
+                      sandbox="allow-same-origin"
+                    />
+                  )
+                }
+                
+                return (
+                  <pre className="whitespace-pre-wrap font-sans text-slate-800 dark:text-slate-200 p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-150 dark:border-slate-800">
+                    {markdown || plainText}
+                  </pre>
+                )
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Proposed transaction details */}
       <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl text-xs border border-slate-100 dark:border-slate-800/60">

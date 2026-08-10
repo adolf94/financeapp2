@@ -22,13 +22,30 @@ export default function PendingIngestions() {
   }, [pendingIngestions, confirmingIngestionId])
 
   const mappedIngestionTransaction = useMemo(() => {
-    return confirmingIngestion ? {
+    if (!confirmingIngestion) return null
+
+    let resolvedDate = confirmingIngestion.ai_parsed.date
+    if (!resolvedDate && confirmingIngestion.raw_payload?.timestamp) {
+      const ts = confirmingIngestion.raw_payload.timestamp
+      if (typeof ts === 'number') {
+        const ms = ts > 30000000000 ? ts : ts * 1000
+        resolvedDate = new Date(ms).toISOString()
+      } else {
+        resolvedDate = ts
+      }
+    }
+    if (!resolvedDate) {
+      resolvedDate = confirmingIngestion.received_at
+    }
+
+    return {
       type: ['Income', 'Expense', 'Transfer'].includes(confirmingIngestion.ai_parsed.transaction_type || '')
         ? confirmingIngestion.ai_parsed.transaction_type
         : 'Expense',
       vendor: confirmingIngestion.ai_parsed.vendor || '',
       note: confirmingIngestion.ai_parsed.summary || confirmingIngestion.ai_parsed.notes || '',
-      date: confirmingIngestion.received_at,
+      date: resolvedDate,
+      referenceNumber: confirmingIngestion.ai_parsed.reference_number || '',
       entries: [
         {
           accountId: confirmingIngestion.ai_parsed.debit_account_id || '',
@@ -39,7 +56,7 @@ export default function PendingIngestions() {
           amount: -(confirmingIngestion.ai_parsed.amount || 0)
         }
       ]
-    } as Transaction : null
+    } as Transaction
   }, [confirmingIngestion])
 
   const handleCheckEmails = async () => {

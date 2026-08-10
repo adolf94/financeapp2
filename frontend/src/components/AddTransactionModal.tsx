@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { RefreshCw, RotateCcw, X, Trash2, Plus } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
+import { uuidv7 } from 'uuidv7'
 import { useGetAccounts, useGetAccountGroups } from '@/hooks/useAccounts'
 import { useGetVendors, useCreateVendor } from '@/hooks/useVendors'
 import { useGetIngestionById, useUpdateIngestionVendor } from '@/hooks/useIngestions'
@@ -178,13 +179,7 @@ function AddTransactionModalContent() {
     setJournalLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l)))
   }
 
-  const uuidv7 = () => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-      const r = (Math.random() * 16) | 0,
-        v = c === 'x' ? r : (r & 0x3) | 0x8
-      return v.toString(16)
-    })
-  }
+
 
   const selectedVendorObj = useMemo(() => {
     return dbVendors.find((v) => v.name.toLowerCase() === vendor.toLowerCase())
@@ -401,6 +396,17 @@ function AddTransactionModalContent() {
                                 placeholder="Select Sub-Category..."
                                 className="flex-1"
                                 disabled={!split.categoryId}
+                                onCreate={(val) => {
+                                  const group = accountGroups.find((g) => g.id === split.categoryId)
+                                  setPendingNewAccount({
+                                    name: val,
+                                    categoryId: split.categoryId,
+                                    type: group?.accountType || 'Expense',
+                                    splitId: split.id,
+                                    description: '',
+                                    tags: [],
+                                  })
+                                }}
                               />
                             </div>
                           </div>
