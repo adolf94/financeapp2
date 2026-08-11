@@ -19,3 +19,4 @@ __pycache__
 local.settings.json
 notif-ingester/debug_prompts
 local-nuget
+settings.local.json
