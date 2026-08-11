@@ -405,7 +405,14 @@ class IngestionService:
     async def embed_and_learn_async(self, ingestion: PendingIngestion) -> None:
         parsed = ingestion.user_confirmed if ingestion.user_confirmed else ingestion.ai_parsed.model_dump()
         
-        vendor = parsed.get("vendor", "")
+        vendor_val = parsed.get("vendor", "")
+        if isinstance(vendor_val, dict):
+            vendor = vendor_val.get("name") or ""
+        elif hasattr(vendor_val, "name"):
+            vendor = getattr(vendor_val, "name") or ""
+        else:
+            vendor = str(vendor_val) if vendor_val else ""
+            
         category = parsed.get("category", "")
         tx_type = parsed.get("transaction_type", "")
         
@@ -435,7 +442,7 @@ class IngestionService:
         ]
         
         # Filter out empty strings and join
-        embed_text = " ".join([d for d in details if d and str(d).strip()])
+        embed_text = " ".join([str(d).strip() for d in details if d and str(d).strip()])
         
         embedding = await self._embedding_service.embed_async(embed_text)
         
