@@ -37,6 +37,42 @@ def _require_auth(req: func.HttpRequest, required_scopes: Optional[list] = None)
 
     return _auth_client.validate(req, required_scopes=["user"])
 
+def validate_api_key(req: func.HttpRequest) -> Tuple[any, Optional[func.HttpResponse]]:
+    expected_key = os.environ.get("API_KEY")
+    provided_key = req.headers.get("x-api-key")
+    if provided_key:
+        if expected_key and expected_key == provided_key:
+            logging.info("API key is valid")
+            return None, None
+        else:
+            logging.warning("API key is invalid")
+            return None, func.HttpResponse(
+                json.dumps({"error": "invalid_key", "description": "API key is invalid"}),
+                status_code=401,
+                mimetype="application/json",
+                headers={"WWW-Authenticate": 'ApiKey error="invalid_key", error_description="API key is invalid"'}
+            )
+    else:
+        logging.warning("API key is not provided")
+    
+    # Allow Bearer token with scope "notif_ingestion"
+    payload, err = _auth_client.validate(req, required_scopes=["notif_ingestion"])
+    if payload is not None and not err:
+        logging.info(f"Bearer token is valid")
+        return payload, None
+    else:
+        logging.warning(f"Bearer token is invalid: {err.get_body()}")
+        if err:
+            headers = dict(err.headers) if err.headers else {}
+            return None, err
+
+    return None, func.HttpResponse(
+        json.dumps({"error": "unauthorized", "description": "API key or Bearer token is required"}),
+        status_code=401,
+        mimetype="application/json",
+        headers={"WWW-Authenticate": "ApiKey, Bearer"}
+    )
+
 # Setup dependencies
 def get_hook_service():
     repo = CosmosHookRepository()
@@ -102,31 +138,29 @@ def get_email_ingestion_service():
 
 _type_detector = NotificationTypeDetector()
 
-def validate_api_key(req: func.HttpRequest) -> bool:
-    expected_key = os.environ.get("API_KEY")
-    provided_key = req.headers.get("x-api-key")
-    if expected_key and provided_key and expected_key == provided_key:
-        return True
+@app.route(route="health", methods=["GET", "POST", "PUT", "PATCH"])
+async def HealthFunction(req: func.HttpRequest) -> func.HttpResponse:
+    if req.params.get("auth", "false").lower() == "true":
+        user, err_resp = validate_api_key(req)
+        if err_resp:
+            return err_resp
 
-    # Allow Bearer token with scope "notif_ingestion"
-    payload, err = _auth_client.validate(req, required_scopes=["notif_ingestion"])
-    if payload is not None and not err:
-        return True
-
-    return False
+    
+    return func.HttpResponse("OK", status_code=200)
 
 
 # ── Function 1: PhoneHookFunction ──────────────────────────────────────────
 @app.route(route="phone_hook", methods=["POST"])
 async def PhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
-    if not validate_api_key(req):
-        return func.HttpResponse(json.dumps({"message": "Unauthorized"}), status_code=401, mimetype="application/json")
+    user, err_resp = validate_api_key(req)
+    if err_resp:
+        return err_resp
         
     try:
         body = req.get_json()
     except ValueError:
         return func.HttpResponse(json.dumps({"message": "Invalid JSON"}), status_code=400, mimetype="application/json")
-        
+    body["userId"] = user.get("sub", "default")
     notif_id = body.get("notif_id")
     added_to_processing = False
     

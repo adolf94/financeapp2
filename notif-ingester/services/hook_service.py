@@ -56,7 +56,7 @@ class HookService:
             raw_msg = "Unknown notification"
 
         hook_msg = PhoneHookMessage(
-            user_id="3575cfa0-ec94-40d2-8b25-ee9f0f135027",
+            user_id=body.get("userId","default"),
             action=action,
             raw_payload=body,
             raw_msg=raw_msg,
