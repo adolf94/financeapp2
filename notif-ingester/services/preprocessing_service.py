@@ -18,6 +18,7 @@ class ExtractedAccountInfo:
     account_names: List[str]
     application: str
     potential_vendor_names: List[str]
+    currency: str = "PHP"
 
 
 class PreprocessingService:
@@ -25,7 +26,7 @@ class PreprocessingService:
     
     # AI prompt for extracting account/vendor information
     EXTRACTION_PROMPT = """
-    You are a financial data extraction assistant. Extract ALL account identifiers, vendor names, and transaction details from this notification text.
+    You are a financial data extraction assistant. Extract ALL account identifiers, vendor names, transaction details, and currency from this notification text.
     
     Notification: {raw_msg}
     
@@ -33,6 +34,7 @@ class PreprocessingService:
     1. **Account Numbers**: Any account/card/wallet numbers mentioned (e.g., "1234", "****5678", "0917****")
     2. **Account Names**: Any account holder/merchant/person names mentioned (e.g., "John Doe", "Merchant Name")
     3. **Potential Vendor Names**: Any store/merchant/business names mentioned
+    4. **Currency**: The 3-letter currency code of the transaction (e.g., PHP, USD, SGD). Default to 'PHP' if no currency is explicitly mentioned or if it is ambiguous.
     
     CRITICAL FILTERING RULES:
     - If this appears to be a FUND TRANSFER between accounts (e.g., bank transfer, e-wallet transfer, payment to another person):
@@ -43,7 +45,8 @@ class PreprocessingService:
     {{
       "account_numbers": ["string"],
       "account_names": ["string"],
-      "potential_vendor_names": ["string"]
+      "potential_vendor_names": ["string"],
+      "currency": "string"
     }}
     """
     
@@ -62,7 +65,8 @@ class PreprocessingService:
             response_text, in_tok, out_tok = await self.extraction_provider.generate(
                 prompt=prompt,
                 json_mode=True,
-                temperature=0.1
+                temperature=0.1,
+                thinking_budget=0
             )
             
             data = json.loads(response_text)
@@ -74,7 +78,8 @@ class PreprocessingService:
             return {
                 "account_numbers": [],
                 "account_names": [],
-                "potential_vendor_names": []
+                "potential_vendor_names": [],
+                "currency": "PHP"
             }
         finally:
             if self._prompt_debug:
@@ -173,5 +178,6 @@ class PreprocessingService:
             account_numbers=extracted_data.get("account_numbers", []),
             account_names=extracted_data.get("account_names", []),
             application=application,
-            potential_vendor_names=extracted_data.get("potential_vendor_names", [])
+            potential_vendor_names=extracted_data.get("potential_vendor_names", []),
+            currency=extracted_data.get("currency", "PHP") or "PHP"
         )

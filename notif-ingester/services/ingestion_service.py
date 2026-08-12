@@ -1,6 +1,7 @@
 import os
 import logging
 import re
+from typing import Optional
 from models.phone_hook import PhoneHookMessage
 from models.pending_ingestion import PendingIngestion
 from models.transaction_vector import TransactionVector
@@ -28,6 +29,22 @@ class IngestionService:
         self._finance_api_service = finance_api_service
         self._preprocessing_service = PreprocessingService(debug_repo=ai_service._debug_repo)
         self._auto_confirm_threshold = float(os.environ.get("AUTO_CONFIRM_THRESHOLD", "0.92"))
+
+    async def _fetch_exchange_rate(self, from_curr: str, to_curr: str) -> Optional[str]:
+        import aiohttp
+        url = f"https://api.frankfurter.dev/v1/latest?from={from_curr}&to={to_curr}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=10) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        rates = data.get("rates", {})
+                        rate = rates.get(to_curr) * 0.004
+                        if rate is not None:
+                            return f"Exchange Rate: 1 {from_curr} = {rate} {to_curr}"
+        except Exception as e:
+            logging.error(f"Failed to fetch exchange rate from {from_curr} to {to_curr}: {e}")
+        return None
 
     def _get_runbook_id(self) -> str:
         """Return the CosmosDB Settings id for this pipeline's runbook. Override in subclasses."""
@@ -90,9 +107,9 @@ class IngestionService:
             
         return clean_lookups
 
-    async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id: str = None, connection_id: str = None, stream_reasoning: bool = True) -> 'AiParsedData':
+    async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id: str = None, connection_id: str = None, stream_reasoning: bool = True, exchange_rate_info: str = "") -> 'AiParsedData':
         """Classify a webhook and extract data."""
-        return await self._ai_service.classify_async(hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning)
+        return await self._ai_service.classify_async(hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info)
 
     async def _apply_vendor_matching(self, ai_parsed: 'AiParsedData', vendors: list, accounts: list, lookups: list, user_id: str) -> None:
         """Apply vendor matching logic in-place on ai_parsed. Shared between process_hook_async and reclassify_ingestion_async."""
@@ -209,7 +226,8 @@ class IngestionService:
                 account_numbers=extracted_info_dict.get("account_numbers", []),
                 account_names=extracted_info_dict.get("account_names", []),
                 application=self._preprocessing_service.extract_application(hook),
-                potential_vendor_names=extracted_info_dict.get("potential_vendor_names", [])
+                potential_vendor_names=extracted_info_dict.get("potential_vendor_names", []),
+                currency=extracted_info_dict.get("currency", "PHP") or "PHP"
             )
         else:
             extracted_info = await self._preprocessing_service.process_hook(hook)
@@ -226,10 +244,16 @@ class IngestionService:
             hook.user_id, pre_lookups
         )
         
+        exchange_rate_info = ""
+        if extracted_info.currency and extracted_info.currency.upper().strip() != "PHP":
+            rate_str = await self._fetch_exchange_rate(extracted_info.currency.upper().strip(), "PHP")
+            if rate_str:
+                exchange_rate_info = f"\n{rate_str}\n"
+
         # 4. Classify via LLM with vendor match context
         logging.info("[process_hook_async] 4. Classifying via LLM with vendor context...")
         ai_parsed = await self._classify_hook_async(
-            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, stream_reasoning=False
+            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, stream_reasoning=False, exchange_rate_info=exchange_rate_info
         )
 
         # 4.5 Automatically map vendor from lookups or string match
@@ -346,6 +370,12 @@ class IngestionService:
             user_id, pre_lookups
         )
 
+        exchange_rate_info = ""
+        if extracted_info.currency and extracted_info.currency.upper().strip() != "PHP":
+            rate_str = await self._fetch_exchange_rate(extracted_info.currency.upper().strip(), "PHP")
+            if rate_str:
+                exchange_rate_info = f"\n{rate_str}\n"
+
         # 4. Re-classify via LLM
         # Build a minimal hook-like object for classification
         from types import SimpleNamespace
@@ -354,7 +384,7 @@ class IngestionService:
             raw_payload=ingestion.raw_payload,
             user_id=user_id
         )
-        ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning)
+        ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning, exchange_rate_info=exchange_rate_info)
 
         # 4.5 Automatically map vendor from lookups or string match
         lookups = self._build_lookups(ai_parsed, accounts)

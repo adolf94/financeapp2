@@ -30,13 +30,48 @@ export function RunbookChatPanel({
       return
     }
 
+    // Token simulation for chat progress
+    let chatBuffer = ''
+    let chatBufferTimeout: NodeJS.Timeout | null = null
+
+    const processChatBuffer = (currentDebounce: number) => {
+      if (chatBuffer.length > 0) {
+        const totalDurationMs = currentDebounce > 0 ? currentDebounce * 1000 : 200
+        const chunkSize = Math.min(8, chatBuffer.length) // Average 4 characters per token
+        const delay = Math.max(5, Math.min(200, totalDurationMs * (chunkSize / chatBuffer.length)))
+
+        const chunk = chatBuffer.substring(0, chunkSize)
+        setStreamedText(prev => prev + chunk)
+        chatBuffer = chatBuffer.substring(chunkSize)
+
+        if (chatBuffer.length > 0) {
+          chatBufferTimeout = setTimeout(() => processChatBuffer(currentDebounce), delay)
+        } else {
+          chatBufferTimeout = null
+        }
+      } else {
+        chatBufferTimeout = null
+      }
+    }
+
     const handleProgress = (e: Event) => {
-      const chunk = (e as CustomEvent).detail
-      setStreamedText(prev => prev + chunk)
+      const detail = (e as CustomEvent).detail
+      const chunk = typeof detail === 'string' ? detail : detail.chunk
+      const debounceDelay = typeof detail === 'string' ? 0 : (detail.debounceDelay || 0)
+
+      chatBuffer += chunk
+
+      // Start processing if not already running
+      if (!chatBufferTimeout) {
+        processChatBuffer(debounceDelay)
+      }
     }
 
     window.addEventListener('chatProgress', handleProgress)
-    return () => window.removeEventListener('chatProgress', handleProgress)
+    return () => {
+      window.removeEventListener('chatProgress', handleProgress)
+      if (chatBufferTimeout) clearTimeout(chatBufferTimeout)
+    }
   }, [isThinking])
 
   useEffect(() => {
@@ -55,11 +90,10 @@ export function RunbookChatPanel({
         {chatHistory.map((msg, i) => (
           <div key={i} className={`flex flex-col space-y-2 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
             <div
-              className={`px-4 py-3 rounded-2xl max-w-[95%] text-sm whitespace-pre-wrap leading-relaxed ${
-                msg.role === 'user'
-                  ? 'bg-indigo-600 text-white rounded-br-none'
-                  : 'bg-neutral-800 text-neutral-200 rounded-bl-none'
-              }`}
+              className={`px-4 py-3 rounded-2xl max-w-[95%] text-sm whitespace-pre-wrap leading-relaxed ${msg.role === 'user'
+                ? 'bg-indigo-600 text-white rounded-br-none'
+                : 'bg-neutral-800 text-neutral-200 rounded-bl-none'
+                }`}
             >
               {msg.text}
             </div>
