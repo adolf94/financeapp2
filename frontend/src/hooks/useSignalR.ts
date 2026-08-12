@@ -80,7 +80,7 @@ export const useSignalR = (enabled: boolean = true) => {
       window.dispatchEvent(new CustomEvent(`reclassifyThinking_${operationId}`, { detail: { chunk, debounceDelay } }))
     })
 
-    connection.on('chatProgress', (chunk: string, operationId?: string, debounceDelay?: number) => {
+    connection.on('chatProgress', (chunk: string, _operationId?: string, debounceDelay?: number) => {
       window.dispatchEvent(new CustomEvent('chatProgress', { detail: { chunk, debounceDelay } }))
     })
 

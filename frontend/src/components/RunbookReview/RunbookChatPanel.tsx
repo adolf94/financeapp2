@@ -32,7 +32,7 @@ export function RunbookChatPanel({
 
     // Token simulation for chat progress
     let chatBuffer = ''
-    let chatBufferTimeout: NodeJS.Timeout | null = null
+    let chatBufferTimeout: ReturnType<typeof setTimeout> | null = null
 
     const processChatBuffer = (currentDebounce: number) => {
       if (chatBuffer.length > 0) {

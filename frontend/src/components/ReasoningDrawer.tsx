@@ -58,7 +58,7 @@ export default function ReasoningDrawer({
 
     // Token simulation state
     let buffer = ''
-    let bufferTimeout: NodeJS.Timeout | null = null
+    let bufferTimeout: ReturnType<typeof setTimeout> | null = null
 
     const processBuffer = (currentDebounce: number) => {
       if (buffer.length > 0) {
@@ -107,7 +107,7 @@ export default function ReasoningDrawer({
 
     // Token simulation state for output
     let outputBuffer = ''
-    let outputBufferTimeout: NodeJS.Timeout | null = null
+    let outputBufferTimeout: ReturnType<typeof setTimeout> | null = null
 
     const processOutputBuffer = (currentDebounce: number) => {
       if (outputBuffer.length > 0) {
