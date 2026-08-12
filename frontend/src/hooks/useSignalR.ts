@@ -72,16 +72,16 @@ export const useSignalR = (enabled: boolean = true) => {
       })
     })
 
-    connection.on('reclassifyProgress', (chunk: string, operationId: string) => {
-      window.dispatchEvent(new CustomEvent(`reclassifyProgress_${operationId}`, { detail: chunk }))
+    connection.on('reclassifyProgress', (chunk: string, operationId: string, debounceDelay?: number) => {
+      window.dispatchEvent(new CustomEvent(`reclassifyProgress_${operationId}`, { detail: { chunk, debounceDelay } }))
     })
 
-    connection.on('reclassifyThinking', (chunk: string, operationId: string) => {
-      window.dispatchEvent(new CustomEvent(`reclassifyThinking_${operationId}`, { detail: chunk }))
+    connection.on('reclassifyThinking', (chunk: string, operationId: string, debounceDelay?: number) => {
+      window.dispatchEvent(new CustomEvent(`reclassifyThinking_${operationId}`, { detail: { chunk, debounceDelay } }))
     })
 
-    connection.on('chatProgress', (chunk: string) => {
-      window.dispatchEvent(new CustomEvent('chatProgress', { detail: chunk }))
+    connection.on('chatProgress', (chunk: string, operationId?: string, debounceDelay?: number) => {
+      window.dispatchEvent(new CustomEvent('chatProgress', { detail: { chunk, debounceDelay } }))
     })
 
     connection.start()

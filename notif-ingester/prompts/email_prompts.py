@@ -16,13 +16,13 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
     "lookups": ["string"] (the specific strings from the 'Vendor Matches Found' list that mapped to this vendor, or proposed lookup strings extracted from the notification text that should be linked/associated to this vendor if it is a suggestion/recommendation),
     "tags": ["string"] (2-4 concise lowercase tags describing the vendor if is_recommendation is true, or empty array if it exists. Do NOT include vendor name, country, bank name, or vendor type as tags.)
   }},
-  "amount": number (positive),
+  "amount": number (positive) - in PHP,
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
   "debit_account_id": string (account id from the list above),
   "credit_account_id": string (account id from the list above),
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string (2-4 concise lowercase tags complementary to vendor tags)"]}}],
   "notes": string,
-  "summary": string (A concise, human-readable summary or description of this transaction based on the email context),
+  "summary": string (A concise, human-readable summary or description of this transaction based on the email context. 
   "confidence": number (0.0-1.0),
   "recipient_account_number": string,
   "recipient_account_name": string,
@@ -48,6 +48,7 @@ Email-Specific Rules:
 - Pay close attention to HTML tables converted to Markdown, which represent line items or transaction details.
 - Bank statement emails are often Transfers.
 - Merchant receipts (e.g., Shopee, Lazada) are usually Expenses.
+{conversion_instructions}
 
 User Email Runbook (Explicit Rules):
 {runbook_content}
@@ -64,7 +65,7 @@ Vendor Matches Found:
 ==================================================
 Now classify the following Email transaction:
 ==================================================
-Sender: {sender}
+{exchange_rate_info}Sender: {sender}
 Subject: {subject}
 Body:
 {body}

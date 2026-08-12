@@ -347,13 +347,13 @@ class AiService:
                             last_thinking_publish_time = current_time
                             
                             if operation_id:
-                                args = [accumulated_thinking, operation_id]
+                                args = [accumulated_thinking, operation_id, debounce_delay]
                                 await publish_signalr_message(
                                     "notificationHub", "reclassifyThinking", args, user_id=user_id, group_name=operation_id
                                 )
                     else:
                         if operation_id:
-                            args = [text, operation_id]
+                            args = [text, operation_id, debounce_delay]
                             await publish_signalr_message(
                                 "notificationHub", "reclassifyThinking", args, user_id=user_id, group_name=operation_id
                             )
@@ -369,12 +369,12 @@ class AiService:
                             content_publish_chunks = []
                             last_content_publish_time = current_time
                             
-                            args = [accumulated_content, operation_id]
+                            args = [accumulated_content, operation_id, debounce_delay]
                             await publish_signalr_message(
                                 "notificationHub", target, args, user_id=user_id, group_name=operation_id
                             )
                     else:
-                        args = [text, operation_id]
+                        args = [text, operation_id, debounce_delay]
                         await publish_signalr_message(
                             "notificationHub", target, args, user_id=user_id, group_name=operation_id
                         )
@@ -383,7 +383,7 @@ class AiService:
         if stream_reasoning_to_client and debounce_delay > 0 and thinking_chunks:
             accumulated_thinking = "".join(thinking_chunks)
             if operation_id:
-                args = [accumulated_thinking, operation_id]
+                args = [accumulated_thinking, operation_id, debounce_delay]
                 await publish_signalr_message(
                     "notificationHub", "reclassifyThinking", args, user_id=user_id, group_name=operation_id
                 )
@@ -392,7 +392,7 @@ class AiService:
         if stream_content_to_client and debounce_delay > 0 and content_publish_chunks:
             accumulated_content = "".join(content_publish_chunks)
             if operation_id:
-                args = [accumulated_content, operation_id]
+                args = [accumulated_content, operation_id, debounce_delay]
                 await publish_signalr_message(
                     "notificationHub", target, args, user_id=user_id, group_name=operation_id
                 )
@@ -575,6 +575,7 @@ Return ONLY valid JSON matching this schema:
             response_text, in_tok, out_tok = await self.classification_provider.generate(
                 prompt=prompt,
                 json_mode=True,
+                thinking_budget=0,
             )
 
             await self._debug_log(
@@ -604,7 +605,8 @@ Return ONLY valid JSON matching this schema:
         vendor_matches: list[dict] = None,
         operation_id: str = None,
         connection_id: str = None,
-        stream_reasoning_to_client: bool = True
+        stream_reasoning_to_client: bool = True,
+        exchange_rate_info: str = ""
     ) -> AiParsedData:
         
         context = self._build_context(similar_vectors)
@@ -618,6 +620,13 @@ Return ONLY valid JSON matching this schema:
         # Resolve a clean app name from the hook data
         app_name = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_rcv_sender") or hook.raw_payload.get("sms_sender") or ""
 
+        conversion_instructions = ""
+        if exchange_rate_info:
+            conversion_instructions = """
+- **Currency Conversion**: Since this transaction is in a currency other than PHP, use the provided exchange rate to convert the transaction amount to PHP (i.e. `Amount in PHP = Foreign Amount * Exchange Rate`). Return this converted PHP amount in the `amount` field, and explain the conversion calculation in the `why` field.
+- **Foreign Transaction Summary**: In the `summary` field, include the original transaction amount and its currency (e.g. "Paid 10.00 USD (converted to PHP)...").
+"""
+
         prompt = CLASSIFICATION_PROMPT.format(
             runbook_content=runbook_content,
             raw_msg=hook.raw_msg,
@@ -626,7 +635,9 @@ Return ONLY valid JSON matching this schema:
             similar_context=context,
             accounts=accounts_text,
             vendors=vendors_text,
-            vendor_matches=vendor_matches_text
+            vendor_matches=vendor_matches_text,
+            exchange_rate_info=exchange_rate_info,
+            conversion_instructions=conversion_instructions
         )
 
         system_instruction = "You are a personal finance assistant. Classify the notification as a financial transaction."
@@ -636,7 +647,7 @@ Return ONLY valid JSON matching this schema:
             prompt=prompt,
             system=system_instruction,
             json_mode=True,
-            include_reasoning=True,
+            include_reasoning=False,
             target="reclassifyProgress",
             operation_id=operation_id,
             user_id=hook.user_id,
@@ -674,7 +685,8 @@ Return ONLY valid JSON matching this schema:
         vendor_matches: list[dict] = None,
         operation_id: str = None,
         connection_id: str = None,
-        stream_reasoning_to_client: bool = True
+        stream_reasoning_to_client: bool = True,
+        exchange_rate_info: str = ""
     ) -> AiParsedData:
         """Classify using SMS-specific prompt (tailored for SMS banking messages)."""
         context = self._build_context(similar_vectors)
@@ -690,6 +702,13 @@ Return ONLY valid JSON matching this schema:
             or ""
         )
 
+        conversion_instructions = ""
+        if exchange_rate_info:
+            conversion_instructions = """
+- **Currency Conversion**: Since this transaction is in a currency other than PHP, use the provided exchange rate to convert the transaction amount to PHP (i.e. `Amount in PHP = Foreign Amount * Exchange Rate`). Return this converted PHP amount in the `amount` field, and explain the conversion calculation in the `why` field.
+- **Foreign Transaction Summary**: In the `summary` field, include the original transaction amount and its currency (e.g. "Paid 10.00 USD (converted to PHP)...").
+"""
+
         prompt = SMS_CLASSIFICATION_PROMPT.format(
             runbook_content=runbook_content,
             raw_msg=hook.raw_msg,
@@ -698,7 +717,9 @@ Return ONLY valid JSON matching this schema:
             similar_context=context,
             accounts=accounts_text,
             vendors=vendors_text,
-            vendor_matches=vendor_matches_text
+            vendor_matches=vendor_matches_text,
+            exchange_rate_info=exchange_rate_info,
+            conversion_instructions=conversion_instructions
         )
 
         system_instruction = "You are a personal finance assistant. Classify the SMS banking notification as a financial transaction. Pay special attention to transfer patterns, masked account numbers, and person-to-person payment indicators."
@@ -745,7 +766,8 @@ Return ONLY valid JSON matching this schema:
         vendor_matches: list[dict] = None,
         operation_id: str = None,
         connection_id: str = None,
-        stream_reasoning_to_client: bool = True
+        stream_reasoning_to_client: bool = True,
+        exchange_rate_info: str = ""
     ) -> AiParsedData:
         """Classify using Email-specific prompt (tailored for email receipts/statements)."""
         context = self._build_context(similar_vectors)
@@ -757,6 +779,13 @@ Return ONLY valid JSON matching this schema:
         subject = hook.raw_payload.get("subject") or ""
         email_body = hook.raw_payload.get("markdown_content") or hook.raw_payload.get("body") or hook.raw_msg
 
+        conversion_instructions = ""
+        if exchange_rate_info:
+            conversion_instructions = """
+- **Currency Conversion**: Since this transaction is in a currency other than PHP, use the provided exchange rate to convert the transaction amount to PHP (i.e. `Amount in PHP = Foreign Amount * Exchange Rate`). Return this converted PHP amount in the `amount` field, and explain the conversion calculation in the `why` field.
+- **Foreign Transaction Summary**: In the `summary` field, include the original transaction amount and its currency (e.g. "Paid 10.00 USD (converted to PHP)...").
+"""
+
         prompt = EMAIL_CLASSIFICATION_PROMPT.format(
             runbook_content=runbook_content,
             body=email_body,
@@ -764,7 +793,9 @@ Return ONLY valid JSON matching this schema:
             subject=subject,
             accounts=accounts_text,
             vendors=vendors_text,
-            vendor_matches=vendor_matches_text
+            vendor_matches=vendor_matches_text,
+            exchange_rate_info=exchange_rate_info,
+            conversion_instructions=conversion_instructions
         )
 
         system_instruction = "You are a personal finance assistant. Classify the Email notification as a financial transaction. Pay special attention to invoice tables, vendor names, and credit/debit account assignments."

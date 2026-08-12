@@ -52,29 +52,104 @@ export default function ReasoningDrawer({
     }
   }, [isPending, thinkingText, contentText, finalContent])
 
-  // Listen to reclassifyThinking_{operationId}
+  // Listen to reclassifyThinking_{operationId} with token simulation
   useEffect(() => {
     if (!operationId) return
-    const handler = (e: Event) => {
-      setThinkingText(prev => prev + (e as CustomEvent<string>).detail)
+
+    // Token simulation state
+    let buffer = ''
+    let bufferTimeout: NodeJS.Timeout | null = null
+
+    const processBuffer = (currentDebounce: number) => {
+      if (buffer.length > 0) {
+        const totalDurationMs = currentDebounce > 0 ? currentDebounce * 1000 : 200
+        const chunkSize = Math.min(8, buffer.length) // Average 4 characters per token
+        const delay = Math.max(5, Math.min(200, totalDurationMs * (chunkSize / buffer.length)))
+
+        const chunk = buffer.substring(0, chunkSize)
+        setThinkingText(prev => prev + chunk)
+        buffer = buffer.substring(chunkSize)
+
+        // Continue processing if there's more in the buffer
+        if (buffer.length > 0) {
+          bufferTimeout = setTimeout(() => processBuffer(currentDebounce), delay)
+        } else {
+          bufferTimeout = null
+        }
+      } else {
+        bufferTimeout = null
+      }
     }
+
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      const chunk = typeof detail === 'string' ? detail : detail.chunk
+      const debounceDelay = typeof detail === 'string' ? 0 : (detail.debounceDelay || 0)
+      buffer += chunk
+
+      // Start processing if not already running
+      if (!bufferTimeout) {
+        processBuffer(debounceDelay)
+      }
+    }
+
     const name = `${thinkingEventName}_${operationId}`
     window.addEventListener(name, handler)
-    return () => window.removeEventListener(name, handler)
+    return () => {
+      window.removeEventListener(name, handler)
+      if (bufferTimeout) clearTimeout(bufferTimeout)
+    }
   }, [operationId])
 
-  // Listen to reclassifyProgress_{operationId} (final content)
+  // Listen to reclassifyProgress_{operationId} (final content) with token simulation
   useEffect(() => {
     if (!operationId) return
-    const handler = (e: Event) => {
-      const chunk = (e as CustomEvent<string>).detail
-      setContentText(prev => prev + chunk)
-      // Auto-switch to output tab when content starts arriving
-      setActiveTab('output')
+
+    // Token simulation state for output
+    let outputBuffer = ''
+    let outputBufferTimeout: NodeJS.Timeout | null = null
+
+    const processOutputBuffer = (currentDebounce: number) => {
+      if (outputBuffer.length > 0) {
+        const totalDurationMs = currentDebounce > 0 ? currentDebounce * 1000 : 200
+        const chunkSize = Math.min(4, outputBuffer.length) // Average 4 characters per token
+        const delay = Math.max(5, Math.min(200, totalDurationMs * (chunkSize / outputBuffer.length)))
+
+        const chunk = outputBuffer.substring(0, chunkSize)
+        setContentText(prev => prev + chunk)
+        outputBuffer = outputBuffer.substring(chunkSize)
+
+        // Continue processing if there's more in the buffer
+        if (outputBuffer.length > 0) {
+          outputBufferTimeout = setTimeout(() => processOutputBuffer(currentDebounce), delay)
+        } else {
+          outputBufferTimeout = null
+          // Auto-switch to output tab when content starts arriving
+          setActiveTab('output')
+        }
+      } else {
+        outputBufferTimeout = null
+      }
     }
+
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      const chunk = typeof detail === 'string' ? detail : detail.chunk
+      const debounceDelay = typeof detail === 'string' ? 0 : (detail.debounceDelay || 0)
+      outputBuffer += chunk
+
+      // Start processing if not already running
+      if (!outputBufferTimeout) {
+        processOutputBuffer(debounceDelay)
+      }
+    }
+
     const name = `${progressEventName}_${operationId}`
     window.addEventListener(name, handler)
-    return () => window.removeEventListener(name, handler)
+    return () => {
+      window.removeEventListener(name, handler)
+      if (outputBufferTimeout) clearTimeout(outputBufferTimeout)
+    }
   }, [operationId])
 
   // Auto-scroll
@@ -91,11 +166,11 @@ export default function ReasoningDrawer({
     ? hasContent
       ? 'Writing answer...'
       : hasThinking
-      ? 'Reasoning...'
-      : 'Initializing...'
+        ? 'Reasoning...'
+        : 'Initializing...'
     : isDone
-    ? 'Classification complete'
-    : 'Waiting for reclassification...'
+      ? 'Classification complete'
+      : 'Waiting for reclassification...'
 
   const displayText = activeTab === 'thinking' ? thinkingText : contentText
   const isActiveStreaming = isPending && (activeTab === 'thinking' ? !hasContent : hasContent)
@@ -109,16 +184,15 @@ export default function ReasoningDrawer({
 
   const copyText = () => {
     const txt = activeTab === 'thinking' ? thinkingText : contentText
-    navigator.clipboard.writeText(txt).catch(() => {})
+    navigator.clipboard.writeText(txt).catch(() => { })
   }
 
   return (
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 z-[60] bg-black/30 backdrop-blur-[2px] transition-opacity duration-300 ${
-          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
+        className={`fixed inset-0 z-[60] bg-black/30 backdrop-blur-[2px] transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
         onClick={handleClose}
         aria-hidden="true"
       />
@@ -181,11 +255,10 @@ export default function ReasoningDrawer({
             <button
               type="button"
               onClick={() => setActiveTab('thinking')}
-              className={`relative flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-t-md transition-colors ${
-                activeTab === 'thinking'
-                  ? 'text-indigo-300 bg-indigo-500/10'
-                  : 'text-slate-500 hover:text-slate-300'
-              }`}
+              className={`relative flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-t-md transition-colors ${activeTab === 'thinking'
+                ? 'text-indigo-300 bg-indigo-500/10'
+                : 'text-slate-500 hover:text-slate-300'
+                }`}
             >
               <Brain className="w-3 h-3" strokeWidth={1.5} />
               Reasoning
@@ -205,11 +278,10 @@ export default function ReasoningDrawer({
           <button
             type="button"
             onClick={() => setActiveTab('output')}
-            className={`relative flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-t-md transition-colors ${
-              activeTab === 'output'
-                ? 'text-amber-300 bg-amber-500/10'
-                : 'text-slate-500 hover:text-slate-300'
-            }`}
+            className={`relative flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold rounded-t-md transition-colors ${activeTab === 'output'
+              ? 'text-amber-300 bg-amber-500/10'
+              : 'text-slate-500 hover:text-slate-300'
+              }`}
           >
             <FileJson className="w-3 h-3" strokeWidth={1.5} />
             Output
@@ -261,16 +333,14 @@ export default function ReasoningDrawer({
           {/* Stream content */}
           {displayText && (
             <div
-              className={`whitespace-pre-wrap break-words ${
-                activeTab === 'thinking' ? 'text-slate-300' : 'text-amber-100/90'
-              }`}
+              className={`whitespace-pre-wrap break-words ${activeTab === 'thinking' ? 'text-slate-300' : 'text-amber-100/90'
+                }`}
             >
               {displayText}
               {isActiveStreaming && (
                 <span
-                  className={`inline-block w-[2px] h-[1em] align-middle ml-0.5 animate-[blink_1s_step-end_infinite] ${
-                    activeTab === 'thinking' ? 'bg-indigo-400' : 'bg-amber-400'
-                  }`}
+                  className={`inline-block w-[2px] h-[1em] align-middle ml-0.5 animate-[blink_1s_step-end_infinite] ${activeTab === 'thinking' ? 'bg-indigo-400' : 'bg-amber-400'
+                    }`}
                   aria-hidden="true"
                 />
               )}
@@ -284,8 +354,8 @@ export default function ReasoningDrawer({
                 {activeTab === 'thinking'
                   ? 'No reasoning tokens — model did not emit CoT for this request.'
                   : isPending
-                  ? 'Waiting for final output...'
-                  : 'No output captured.'}
+                    ? 'Waiting for final output...'
+                    : 'No output captured.'}
               </span>
             </div>
           )}
@@ -303,8 +373,8 @@ export default function ReasoningDrawer({
                   ? `${thinkingText.length.toLocaleString()} reasoning chars`
                   : 'No reasoning'
                 : hasContent
-                ? `${contentText.length.toLocaleString()} output chars`
-                : 'No output yet'}
+                  ? `${contentText.length.toLocaleString()} output chars`
+                  : 'No output yet'}
             </span>
           </div>
           {displayText && (

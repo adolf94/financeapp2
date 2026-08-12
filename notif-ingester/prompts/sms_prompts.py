@@ -60,13 +60,13 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
     "lookups": ["string"] (the specific strings from the 'Vendor Matches Found' list that mapped to this vendor, or proposed lookup strings extracted from the notification text that should be linked/associated to this vendor if it is a suggestion/recommendation),
     "tags": ["string"] (2-4 concise lowercase tags describing the vendor if is_recommendation is true, or empty array if it exists. Do NOT include vendor name, country, bank name, or vendor type as tags.)
   }},
-  "amount": number (positive),
+  "amount": number (positive) - in PHP,
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
   "debit_account_id": string,
   "credit_account_id": string,
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string"]}}],
   "notes": string,
-  "summary": string,
+  "summary": string (A concise summary.),
   "confidence": number (0.0-1.0),
   "recipient_account_number": string,
   "recipient_account_name": string,
@@ -95,6 +95,7 @@ SMS-Specific Rules:
 - **Pre-matched Vendors**: "Vendor Matches Found" were matched by extracted account numbers — STRONGLY PRIORITIZE these. If there is a match, set `vendor.matched = true`, `vendor.is_recommendation = false`, and map `vendor.lookups` to the matching strings.
 - **Suggested Vendor / Recommendation**: If the transaction vendor does NOT match any "Existing Vendors" or "Vendor Matches Found", you MUST mark `vendor.is_recommendation = true`, `vendor.matched = false`, and provide suggestions for `vendor.tags` (2-4 concise lowercase tags describing the vendor's activity). Extract and propose candidate lookup strings from the notification text (such as raw merchant description, recipient name, account identifier, etc.) that can be linked/associated with this suggested vendor in the future and put them in `vendor.lookups`.
 - **Account Number Uniqueness**: The same account number CANNOT appear in both recipient_account_number and sender_account_number. If a message contains only one account number, assign it to the most contextually appropriate field (recipient if money was sent, sender if money was received) and leave the other field empty.
+{conversion_instructions}
 
 User SMS Runbook (Explicit Rules):
 {runbook_content}
@@ -112,7 +113,7 @@ Vendor Matches Found (via account number/name lookup):
 Now classify the following SMS transaction:
 ==================================================
 
-SMS from {app_name}: {raw_msg}
+{exchange_rate_info}SMS from {app_name}: {raw_msg}
 Full payload: {raw_payload}
 
 Similar past transactions (for context):

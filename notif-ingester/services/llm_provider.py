@@ -57,6 +57,7 @@ class LlmProvider(ABC):
         system: str | None = None,
         json_mode: bool = False,
         temperature: float = 0.2,
+        thinking_budget: Optional[int] = None,
     ) -> Tuple[str, Optional[int], Optional[int]]:
         """Send a prompt and return the raw text response, input tokens, and output tokens."""
 
@@ -114,12 +115,17 @@ class GeminiProvider(LlmProvider):
         system: str | None = None,
         json_mode: bool = False,
         temperature: float = 0.2,
+        thinking_budget: Optional[int] = None,
     ) -> Tuple[str, Optional[int], Optional[int]]:
         config: dict = {"temperature": temperature}
         if json_mode:
             config["response_mime_type"] = "application/json"
         if system:
             config["system_instruction"] = system
+        if thinking_budget is not None:
+            config["thinking_config"] = self._genai_types.ThinkingConfig(
+                thinking_budget=thinking_budget
+            )
 
         response = self.client.models.generate_content(
             model=self.model,
@@ -148,6 +154,10 @@ class GeminiProvider(LlmProvider):
             config["response_mime_type"] = "application/json"
         if system:
             config["system_instruction"] = system
+        if not include_reasoning:
+            config["thinking_config"] = self._genai_types.ThinkingConfig(
+                thinking_budget=0
+            )
 
         response_stream = self.client.models.generate_content_stream(
             model=self.model,
@@ -199,6 +209,7 @@ class OpenAICompatibleProvider(LlmProvider):
         system: str | None = None,
         json_mode: bool = False,
         temperature: float = 0.2,
+        thinking_budget: Optional[int] = None,
     ) -> Tuple[str, Optional[int], Optional[int]]:
         messages: list[dict] = []
         if system:
@@ -212,6 +223,14 @@ class OpenAICompatibleProvider(LlmProvider):
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+
+        if thinking_budget is not None and thinking_budget > 0:
+            is_openrouter = bool(self._base_url and "openrouter" in self._base_url)
+            effort = "medium"
+            if is_openrouter:
+                kwargs["extra_body"] = {"reasoning": {"effort": effort}}
+            else:
+                kwargs["reasoning_effort"] = effort
 
         response = await self.client.chat.completions.create(**kwargs)
         

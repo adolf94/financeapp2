@@ -17,7 +17,7 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
     "lookups": ["string"] (the specific strings from the 'Vendor Matches Found' list that mapped to this vendor, or proposed lookup strings extracted from the notification text that should be linked/associated to this vendor if it is a suggestion/recommendation),
     "tags": ["string"] (2-4 concise lowercase tags describing what the vendor *does* if is_recommendation is true, or empty array if it exists. Do NOT include the vendor name, country, bank name, or vendor type as tags.)
   }},
-  "amount": number (positive),
+  "amount": number (positive) - in PHP,
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
   "debit_account_id": string (account id from the list above),
   "credit_account_id": string (account id from the list above),
@@ -50,6 +50,7 @@ Rules:
 - **Suggested Account Creation**: Focus ONLY on the functional, financial purpose of the account.
 - **Account Number Uniqueness**: The same account number CANNOT appear in both recipient_account_number and sender_account_number. If a notification contains only one account number, assign it to the most contextually appropriate field (recipient if money was sent out, sender if money was received) and leave the other field empty.
 - **Explanation field ('why')**: Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names. Write enough detail that the user can clearly identify what drove each classification decision. Mention if vendor matches influenced your decision.
+{conversion_instructions}
 
 User Runbook (Explicit Rules):
 {runbook_content}
@@ -67,7 +68,7 @@ Vendor Matches Found (via account number/name lookup):
 Now, classify the following specific notification transaction:
 ==================================================
 
-Notification: {raw_msg}
+{exchange_rate_info}Notification: {raw_msg}
 Source App / Sender: {app_name}
 Full payload: {raw_payload}
 
