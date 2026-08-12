@@ -39,7 +39,7 @@ class IngestionService:
                     if response.status == 200:
                         data = await response.json()
                         rates = data.get("rates", {})
-                        rate = rates.get(to_curr) * 0.004
+                        rate = rates.get(to_curr) * 1.004
                         if rate is not None:
                             return f"Exchange Rate: 1 {from_curr} = {rate} {to_curr}"
         except Exception as e:
