@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-
-const API_BASE_URL = 'http://localhost:7198/api' // Matches backend Functions default port
+import apiClient from '@/lib/apiClient'
 
 export type Frequency = 'Daily' | 'Weekly' | 'Monthly' | 'Yearly'
 
@@ -32,28 +31,22 @@ export interface RecurringTransaction {
   occurrences?: RecurringTransactionOccurrence[]
 }
 
-export const useGetRecurringTransactions = () => {
-  return useQuery({
+export function useGetRecurringTransactions() {
+  return useQuery<RecurringTransaction[]>({
     queryKey: ['recurringTransactions'],
-    queryFn: async (): Promise<RecurringTransaction[]> => {
-      const res = await fetch(`${API_BASE_URL}/recurring-transactions`)
-      if (!res.ok) throw new Error('Failed to fetch recurring transactions')
-      return res.json()
+    queryFn: async () => {
+      const response = await apiClient.get('/recurring-transactions')
+      return response.data
     }
   })
 }
 
-export const useCreateRecurringTransaction = () => {
+export function useCreateRecurringTransaction() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (tx: RecurringTransaction) => {
-      const res = await fetch(`${API_BASE_URL}/recurring-transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tx)
-      })
-      if (!res.ok) throw new Error('Failed to create recurring transaction')
-      return res.json()
+      const response = await apiClient.post('/recurring-transactions', tx)
+      return response.data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recurringTransactions'] })
@@ -61,17 +54,12 @@ export const useCreateRecurringTransaction = () => {
   })
 }
 
-export const useUpdateRecurringTransaction = () => {
+export function useUpdateRecurringTransaction() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (tx: RecurringTransaction) => {
-      const res = await fetch(`${API_BASE_URL}/recurring-transactions/${tx.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(tx)
-      })
-      if (!res.ok) throw new Error('Failed to update recurring transaction')
-      return res.json()
+      const response = await apiClient.put(`/recurring-transactions/${tx.id}`, tx)
+      return response.data
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recurringTransactions'] })
@@ -79,14 +67,11 @@ export const useUpdateRecurringTransaction = () => {
   })
 }
 
-export const useDeleteRecurringTransaction = () => {
+export function useDeleteRecurringTransaction() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`${API_BASE_URL}/recurring-transactions/${id}`, {
-        method: 'DELETE'
-      })
-      if (!res.ok) throw new Error('Failed to delete recurring transaction')
+      await apiClient.delete(`/recurring-transactions/${id}`)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recurringTransactions'] })
