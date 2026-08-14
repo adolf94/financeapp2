@@ -71,7 +71,7 @@ export default function IngestionReviewPanel() {
 
   return (
     <div className="md:col-span-5 flex flex-col gap-3 md:sticky md:top-0 bg-slate-100 dark:bg-slate-800/60 p-3 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
-      <div className="flex justify-between items-center w-full font-bold text-slate-800 dark:text-slate-250 uppercase tracking-wider text-[11px]">
+      <div className="flex justify-between items-center w-full font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[11px]">
         <div className="flex items-center gap-1.5">
           <span>Notification Review</span>
           {ingestion.notification_type === 'sms' && (
@@ -148,7 +148,7 @@ export default function IngestionReviewPanel() {
                   Preview Email
                 </button>
               </div>
-              <p className="text-slate-800 dark:text-slate-250 italic font-semibold text-xs leading-snug">
+              <p className="text-slate-800 dark:text-slate-200 italic font-semibold text-xs leading-snug">
                 "{ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ingestion.raw_msg}"
               </p>
             </div>
@@ -157,7 +157,7 @@ export default function IngestionReviewPanel() {
               <span className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
                 SMS Message
               </span>
-              <p className="text-slate-800 dark:text-slate-250 italic font-semibold text-xs leading-snug">
+              <p className="text-slate-800 dark:text-slate-200 italic font-semibold text-xs leading-snug">
                 "{ingestion.raw_msg}"
               </p>
             </div>
@@ -166,7 +166,7 @@ export default function IngestionReviewPanel() {
               <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
                 App Notification
               </span>
-              <p className="text-slate-800 dark:text-slate-250 italic font-semibold text-xs leading-snug">
+              <p className="text-slate-800 dark:text-slate-200 italic font-semibold text-xs leading-snug">
                 "{ingestion.raw_msg}"
               </p>
             </div>
@@ -178,7 +178,7 @@ export default function IngestionReviewPanel() {
               <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 Source App
               </span>
-              <p className="text-slate-800 dark:text-slate-250 font-bold text-xs mt-0.5 truncate">
+              <p className="text-slate-800 dark:text-slate-200 font-bold text-xs mt-0.5 truncate">
                 {getIngestionAppName(ingestion)}
               </p>
             </div>
@@ -187,7 +187,7 @@ export default function IngestionReviewPanel() {
                 <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   Sender Acc
                 </span>
-                <p className="text-slate-800 dark:text-slate-250 font-bold text-xs mt-0.5 truncate">
+                <p className="text-slate-800 dark:text-slate-200 font-bold text-xs mt-0.5 truncate">
                   {ingestion.ai_parsed.sender_account_name || 'N/A'}
                   {ingestion.ai_parsed.sender_account_number
                     ? ` (${ingestion.ai_parsed.sender_account_number})`
@@ -200,7 +200,7 @@ export default function IngestionReviewPanel() {
                 <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   Ref No.
                 </span>
-                <p className="text-slate-800 dark:text-slate-250 font-bold text-xs mt-0.5 truncate">
+                <p className="text-slate-800 dark:text-slate-200 font-bold text-xs mt-0.5 truncate">
                   {ingestion.ai_parsed.reference_number}
                 </p>
               </div>
@@ -211,7 +211,7 @@ export default function IngestionReviewPanel() {
                 <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   Recipient Acc
                 </span>
-                <p className="text-slate-800 dark:text-slate-250 font-bold text-xs mt-0.5 truncate">
+                <p className="text-slate-800 dark:text-slate-200 font-bold text-xs mt-0.5 truncate">
                   {ingestion.ai_parsed.recipient_account_name || 'N/A'}
                   {ingestion.ai_parsed.recipient_account_number
                     ? ` (${ingestion.ai_parsed.recipient_account_number})`
@@ -235,7 +235,7 @@ export default function IngestionReviewPanel() {
                   <span className="text-blue-600 dark:text-blue-400 uppercase tracking-wider font-bold text-[9px] flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5" strokeWidth={2} /> Suggested Vendor
                   </span>
-                  <span className="text-slate-800 dark:text-slate-250 font-bold text-xs flex items-center gap-1.5 flex-wrap">
+                  <span className="text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 flex-wrap">
                     {ingestion.ai_parsed.vendor.name}
                     {ingestion.ai_parsed.vendor?.type === 'Individual' && (
                       <span className="text-[10px] text-slate-500 font-bold" title="Individual">
@@ -321,7 +321,7 @@ export default function IngestionReviewPanel() {
               <span className="text-[9px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
                 AI Reasoning
               </span>
-              <p className="text-slate-800 dark:text-slate-250 mt-0.5 leading-snug text-xs font-medium">
+              <p className="text-slate-800 dark:text-slate-200 mt-0.5 leading-snug text-xs font-medium">
                 {ingestion.ai_parsed.why}
               </p>
             </div>

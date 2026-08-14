@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Plus, Trash2, Tag, Store, Bell, X, Edit, History, Sparkles, BookOpen } from 'lucide-react'
+import { Plus, Trash2, Tag, Store, Bell, X, Edit, History, Sparkles, BookOpen, SunMoon, Sun, Moon, Monitor } from 'lucide-react'
+import { useTheme } from '@/hooks/useTheme'
 import dayjs from 'dayjs'
 import ConfirmationModal from '@/components/ui/ConfirmationModal'
 import AddTransactionModal from '@/components/AddTransactionModal'
@@ -32,7 +33,7 @@ import { useQuery } from '@tanstack/react-query'
 import ingesterClient from '@/lib/ingesterClient'
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'categories' | 'vendors' | 'notifications' | 'historicalLogs' | 'runbook'>('categories')
+  const [activeTab, setActiveTab] = useState<'general' | 'categories' | 'vendors' | 'notifications' | 'historicalLogs' | 'runbook'>('general')
 
   return (
     <div className="flex flex-col min-h-full bg-slate-50 dark:bg-slate-950">
@@ -42,6 +43,18 @@ export default function Settings() {
       </div>
 
       <div className="flex px-4 pt-4 gap-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar">
+        <button
+          onClick={() => setActiveTab('general')}
+          className={`pb-3 px-4 font-semibold text-sm whitespace-nowrap transition-colors border-b-2 ${
+            activeTab === 'general'
+              ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <SunMoon className="w-4 h-4" /> General
+          </div>
+        </button>
         <button
           onClick={() => setActiveTab('categories')}
           className={`pb-3 px-4 font-semibold text-sm whitespace-nowrap transition-colors border-b-2 ${
@@ -105,11 +118,71 @@ export default function Settings() {
       </div>
 
       <div className="p-4">
+        {activeTab === 'general' && <GeneralSettings />}
         {activeTab === 'categories' && <CategoriesSettings />}
         {activeTab === 'vendors' && <VendorsSettings />}
         {activeTab === 'notifications' && <NotificationLogSettings />}
         {activeTab === 'historicalLogs' && <HistoricalLogsSettings />}
         {activeTab === 'runbook' && <RunbookReviewSettings />}
+      </div>
+    </div>
+  )
+}
+
+function GeneralSettings() {
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <div className="flex flex-col gap-6 max-w-2xl">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+        <h2 className="text-lg font-bold text-slate-900 dark:text-slate-50 flex items-center gap-2 mb-2">
+          <SunMoon className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          Appearance Preferences
+        </h2>
+        <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+          Customize the visual theme of the application to match your style or synchronize it with your device settings.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <button
+            onClick={() => setTheme('light')}
+            className={`flex flex-col items-center justify-center p-5 rounded-xl border text-center transition-all cursor-pointer hover:shadow-md active:scale-95 ${
+              theme === 'light'
+                ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 ring-1 ring-blue-600'
+                : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+            }`}
+          >
+            <Sun className="w-8 h-8 mb-3" />
+            <span className="font-bold text-sm">Light Mode</span>
+            <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Always bright visual styling</span>
+          </button>
+
+          <button
+            onClick={() => setTheme('dark')}
+            className={`flex flex-col items-center justify-center p-5 rounded-xl border text-center transition-all cursor-pointer hover:shadow-md active:scale-95 ${
+              theme === 'dark'
+                ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 ring-1 ring-blue-600'
+                : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+            }`}
+          >
+            <Moon className="w-8 h-8 mb-3" />
+            <span className="font-bold text-sm">Dark Mode</span>
+            <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Sleek, low-light aesthetic</span>
+          </button>
+
+          <button
+            onClick={() => setTheme('system')}
+            className={`flex flex-col items-center justify-center p-5 rounded-xl border text-center transition-all cursor-pointer hover:shadow-md active:scale-95 ${
+              theme === 'system'
+                ? 'border-blue-600 bg-blue-50/50 dark:bg-blue-900/10 text-blue-600 dark:text-blue-400 ring-1 ring-blue-600'
+                : 'border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+            }`}
+          >
+            <Monitor className="w-8 h-8 mb-3" />
+            <span className="font-bold text-sm">System Theme</span>
+            <span className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">Match device-level preferences</span>
+          </button>
+        </div>
       </div>
     </div>
   )
