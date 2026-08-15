@@ -39,41 +39,18 @@ def _require_auth(req: func.HttpRequest, required_scopes: Optional[list] = None)
 
     return _auth_client.validate(req, required_scopes=["user"])
 
-def validate_api_key(req: func.HttpRequest) -> Tuple[any, Optional[func.HttpResponse]]:
-    expected_key = os.environ.get("API_KEY")
-    provided_key = req.headers.get("x-api-key")
-    if provided_key:
-        if expected_key and expected_key == provided_key:
-            logging.info("API key is valid")
-            return None, None
-        else:
-            logging.warning("API key is invalid")
-            return None, func.HttpResponse(
-                json.dumps({"error": "invalid_key", "description": "API key is invalid"}),
-                status_code=401,
-                mimetype="application/json",
-                headers={"WWW-Authenticate": 'ApiKey error="invalid_key", error_description="API key is invalid"'}
-            )
-    else:
-        logging.warning("API key is not provided")
-    
-    # Allow Bearer token with scope "notif_ingestion"
-    payload, err = _auth_client.validate(req, required_scopes=["user"])
+def validate_api_key(req: func.HttpRequest) -> Tuple[Optional[dict], Optional[func.HttpResponse]]:
+    """Validate Bearer JWT using personal_access_token / Bearer auth with notif_ingestion scope (configurable via NOTIF_INGESTION_SCOPE env var)."""
+    scope = os.environ.get("NOTIF_INGESTION_SCOPE", "notif_ingestion")
+    required_scopes = [scope] if scope else None
+    payload, err = _auth_client.validate(req, required_scopes=required_scopes)
     if payload is not None and not err:
-        logging.info(f"Bearer token is valid")
+        logging.info("Bearer token is valid")
         return payload, None
     else:
-        logging.warning(f"Bearer token is invalid: {err.get_body()}")
-        if err:
-            headers = dict(err.headers) if err.headers else {}
-            return None, err
-
-    return None, func.HttpResponse(
-        json.dumps({"error": "unauthorized", "description": "API key or Bearer token is required"}),
-        status_code=401,
-        mimetype="application/json",
-        headers={"WWW-Authenticate": "ApiKey, Bearer"}
-    )
+        err_body = err.get_body().decode("utf-8") if err and hasattr(err, "get_body") else ""
+        logging.warning(f"Bearer token is invalid: {err_body}")
+        return None, err
 
 # Setup dependencies
 from functools import lru_cache

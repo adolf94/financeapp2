@@ -41,7 +41,7 @@ Users need a structured way to mirror their real-world financial accounts within
 ### 2.4. Data Entry & Automation
 - **Smart Categorization:** Learns from manual entries to suggest categories based on past transaction vectors using cosine-similarity retrieval.
 - **Automated Data Capture via Notification Ingester:** A dedicated Python Azure Functions microservice (`notif-ingester/`) handles incoming phone notifications and auto-creates pending transactions:
-  1. **Receive:** A mobile notification payload is `POST`ed to `/phone_hook` (API key protected) and saved to the `PhoneHookMessages` CosmosDB container with `status = "received"`.
+  1. **Receive:** A mobile notification payload is `POST`ed to `/phone_hook` (Bearer token auth with `notif_ingestion` scope via personal access token) and saved to the `PhoneHookMessages` CosmosDB container with `status = "received"`.
   2. **Classify:** A Cosmos DB Change Feed trigger fires. The pipeline first runs a lightweight Gemini check (`is_financial_transaction_async`) to skip non-financial notifications (`status = "NonFinancial"`, TTL = 7 days). For financial ones, it embeds the raw text via Gemini `text-embedding-004`, retrieves top-5 similar past transactions via cosine similarity, fetches accounts and the RUNBOOK.md, then calls Gemini for structured classification into an `AiParsedData` result.
   3. **Vendor Matching:** The AI has a guess for the vendor, but can be overridden by vendor lookup. If there is a match via vendor lookup, prepopulate the new transaction Vendor. Else, if there is a match from the current vendor list via AI classification, prepopulate using this value. If there is no matching, the AI provides a suggestion (showing the Vendor, (I/B) type, and tags). If the suggestion has masks (containing asterisks `*` or `xxx` or related), quick create is disabled, requiring the user to edit it or select/add via the Vendor dropdown. If there are no masks, quick create is enabled, but custom edit is still available. After saving a newly created vendor, the dropdown is automatically populated.
   4. **Auto-Confirm:** If the top similarity score ≥ `AUTO_CONFIRM_THRESHOLD` (default `0.92`) and all account IDs are resolved, the transaction is created immediately via the Finance API (`status = "AutoConfirmed"`) and the vector embedding is learned.
@@ -49,7 +49,7 @@ Users need a structured way to mirror their real-world financial accounts within
   6. **User Actions:** The user can review via `GET /ingestions`, quick-confirm via `POST /ingestions/{id}/confirm-status`, edit & confirm via the `AddTransactionModal` (pre-filled from AI data), reject via `POST /ingestions/{id}/reject`, or reclassify via `POST /ingestions/{id}/reclassify`. Vendor can be patched inline via `PATCH /ingestions/{id}/vendor`.
   7. **Learn:** On confirmation, `POST /ingestions/{id}/learn` embeds the confirmed transaction and stores a `TransactionVector` for future similarity lookups.
   8. **Historical Import:** `GET /historical-hooks` and `POST /historical-hooks/{id}/import` allow migrating past notifications from a legacy CosmosDB database into the new pipeline.
-  9. **Multimodal Image Ingestion:** Receipt, invoice, and bank statement images can be uploaded via `POST /image_hook` (accepting `multipart/form-data` with Bearer auth or API key). Images are stored in Azure Blob Storage (`receipt-images` container) for review/auditing, processed in a single inference step via multimodal AI (`ImageProcessingService` using `runbook-image`), and queued as `PendingIngestion` records (`notification_type = "image"`). Users can preview the receipt image alongside AI parsed fields in the UI before confirming.
+  9. **Multimodal Image Ingestion:** Receipt, invoice, and bank statement images can be uploaded via `POST /image_hook` (accepting `multipart/form-data` with Bearer auth). Images are stored in Azure Blob Storage (`receipt-images` container) for review/auditing, processed in a single inference step via multimodal AI (`ImageProcessingService` using `runbook-image`), and queued as `PendingIngestion` records (`notification_type = "image"`). Users can preview the receipt image alongside AI parsed fields in the UI before confirming.
 
 ### 2.5. Monthly Transaction List View
 - Chronological log of financial activity for a calendar month, accessed via the **Daily tab** (default) inside the Transactions page.
@@ -156,7 +156,7 @@ Users need a structured way to mirror their real-world financial accounts within
 ### 4.5 Notification Ingester (Python Azure Functions)
 - **Language & Runtime:** Python 3.11+, Azure Functions v2 programming model (`azure-functions`).
 - **Authentication:**
-  - `POST /phone_hook` — API key protected (`x-api-key` header vs. `API_KEY` env var).
+  - `POST /phone_hook` — Bearer token protected with `notif_ingestion` scope via personal access token (`NOTIF_INGESTION_SCOPE` env var).
   - All other endpoints — JWT Bearer validated via `ArAuthClient` from `ar_auth` package (JWKS cached, authority: `https://auth.adolfrey.com/api`).
 - **Dependency Injection:** Manual factory functions (`get_hook_service()`, `get_ingestion_service()`) compose services in `function_app.py`.
 - **Service Layer:**
@@ -167,8 +167,8 @@ Users need a structured way to mirror their real-world financial accounts within
   - `FinanceApiService` — Directly queries CosmosDB containers (`Accounts`, `AccountGroups`, `Vendors`, `VendorLookups`) to resolve accounts and vendors. Creates confirmed transactions by writing directly to the `Transactions` container. Methods include `get_accounts_async`, `search_vendors_by_lookups_async`, `ensure_vendor_and_lookups_async`, `create_transaction_async`, `get_runbook_content_async`, `update_vendor_tags_async`.
   - `IngestionService` — Orchestrates the full pipeline: financial-check → embed → vector-search → fetch-accounts+runbook → classify → vendor-match → auto-confirm-or-pending → save.
 - **HTTP Endpoints (`function_app.py`):**
-  - `POST /phone_hook` — Receive raw notification, API key auth.
-  - `POST /image_hook` — Upload receipt/statement image (`multipart/form-data`), store in Azure Blob Storage (`receipt-images`), classify via multimodal AI, and queue as `PendingIngestion`, JWT or API key auth.
+  - `POST /phone_hook` — Receive raw notification, Bearer auth (`notif_ingestion` scope).
+  - `POST /image_hook` — Upload receipt/statement image (`multipart/form-data`), store in Azure Blob Storage (`receipt-images`), classify via multimodal AI, and queue as `PendingIngestion`, Bearer auth (`notif_ingestion` scope).
   - `GET /image_hook/{blob_name}` — Retrieve SAS URL / receipt image stream for authorized preview, JWT auth.
   - `GET /ingestions` — List ingestions by status (default `Pending`), JWT auth.
   - `POST /ingestions/{id}/confirm-status` — Mark as `Confirmed`, record `transaction_id`, trigger learn, JWT auth.
