@@ -154,7 +154,9 @@ export default function ReasoningDrawer({
 
   // Auto-scroll
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (typeof bottomRef.current?.scrollIntoView === 'function') {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [thinkingText, contentText])
 
   const hasThinking = thinkingText.length > 0

@@ -8,7 +8,9 @@ namespace FinanceApp.Services
         private readonly ITransactionRepository _transactionRepository;
         private readonly IAccountRepository _accountRepository;
 
-        public TransactionService(ITransactionRepository transactionRepository, IAccountRepository accountRepository)
+        public TransactionService(
+            ITransactionRepository transactionRepository,
+            IAccountRepository accountRepository)
         {
             _transactionRepository = transactionRepository;
             _accountRepository = accountRepository;
@@ -43,6 +45,12 @@ namespace FinanceApp.Services
 
             await _transactionRepository.AddTransactionAsync(transaction);
             await _transactionRepository.SaveChangesAsync();
+
+            // Link occurrence if ScheduleId is present
+            if (!string.IsNullOrEmpty(transaction.ScheduleId))
+            {
+                await _transactionRepository.LinkRecurringOccurrenceAsync(userId, transaction.ScheduleId, transaction.Id, transaction.Date);
+            }
 
             return transaction;
         }

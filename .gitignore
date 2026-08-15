@@ -20,3 +20,5 @@ local.settings.json
 notif-ingester/debug_prompts
 local-nuget
 settings.local.json
+.env
+github.env

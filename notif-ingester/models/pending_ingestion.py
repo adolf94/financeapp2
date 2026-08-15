@@ -41,6 +41,7 @@ class AiParsedData(BaseModel):
     application: Optional[str] = None
     why: Optional[str] = None
     user_why: Optional[str] = None
+    suggested_rule: Optional[str] = None
     is_auto_confirmed: Optional[bool] = False
     ingestion_id: Optional[str] = None
     date: Optional[datetime] = None

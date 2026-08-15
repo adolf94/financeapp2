@@ -4,6 +4,7 @@ import { useAddTransaction } from './AddTransactionContext'
 import { useUpdateIngestionVendor, PendingIngestion } from '@/hooks/useIngestions'
 import { useGetVendors, useCreateVendor } from '@/hooks/useVendors'
 import SuggestedAccountsPanel from './SuggestedAccountsPanel'
+import { IngestionReviewSkeleton } from '@/components/ui/Skeleton'
 
 const getIngestionAppName = (ing: PendingIngestion) => {
   if (ing.ai_parsed?.application) return ing.ai_parsed.application
@@ -29,6 +30,7 @@ export default function IngestionReviewPanel() {
   const {
     ingestion,
     ingestionId,
+    isLoadingIngestion,
     isReviewOpen,
     setIsReviewOpen,
     setConfirmReclassifyOpen,
@@ -48,6 +50,10 @@ export default function IngestionReviewPanel() {
 
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+
+  if (isLoadingIngestion) {
+    return <IngestionReviewSkeleton />
+  }
 
   if (!ingestion) return null
 

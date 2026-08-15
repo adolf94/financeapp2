@@ -7,6 +7,7 @@ prompts and the separate 'runbook-email' CosmosDB document.
 
 import os
 import logging
+from typing import Optional
 from models.phone_hook import PhoneHookMessage
 from models.pending_ingestion import AiParsedData
 from services.ingestion_service import IngestionService
@@ -58,11 +59,12 @@ class EmailProcessingService(IngestionService):
         operation_id: str = None,
         connection_id: str = None,
         stream_reasoning: bool = True,
-        exchange_rate_info: str = ""
+        exchange_rate_info: str = "",
+        user_corrections: Optional[dict] = None
     ) -> AiParsedData:
         """Use the Email-specific classification prompt."""
         return await self._ai_service.classify_email_async(
-            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info
+            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections
         )
 
     def get_default_email_runbook_content(self) -> str:

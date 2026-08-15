@@ -330,6 +330,14 @@ async def ReclassifyIngestionFunction(req: func.HttpRequest) -> func.HttpRespons
     connection_id = req.params.get("connectionId")
     stream_reasoning = req.params.get("streamReasoning", "false").lower() == "true"
 
+    user_corrections = None
+    try:
+        req_body = req.get_json()
+        if isinstance(req_body, dict):
+            user_corrections = req_body.get("user_corrections") or req_body
+    except Exception:
+        user_corrections = None
+
     ingestion_repo = CosmosIngestionRepository()
     try:
         ingestion = await ingestion_repo.get_by_id_async(ingestion_id, user_id)
@@ -352,7 +360,7 @@ async def ReclassifyIngestionFunction(req: func.HttpRequest) -> func.HttpRespons
         else:
             service = get_ingestion_service()
 
-        reclassified = await service.reclassify_ingestion_async(ingestion_id, user_id, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning)
+        reclassified = await service.reclassify_ingestion_async(ingestion_id, user_id, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning, user_corrections=user_corrections)
         return func.HttpResponse(
             json.dumps(reclassified.model_dump(by_alias=True, mode="json")),
             status_code=200, mimetype="application/json"

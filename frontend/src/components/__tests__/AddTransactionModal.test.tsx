@@ -90,7 +90,7 @@ describe('AddTransactionModal Reclassify Button', () => {
     expect(sidebarBtn).toBeDefined()
   })
 
-  it('opens confirmation modal and triggers reclassify on confirm', async () => {
+  it('opens confirmation modal, accepts comments, and triggers reclassify with userCorrections', async () => {
     render(
       <AddTransactionModal
         isOpen={true}
@@ -105,16 +105,24 @@ describe('AddTransactionModal Reclassify Button', () => {
 
     // Verify confirmation modal is open
     expect(screen.getByText('Re-run AI Classification')).toBeDefined()
-    expect(
-      screen.getByText(/Are you sure you want to re-run AI classification/)
-    ).toBeDefined()
+
+    // Type a comment in the textarea
+    const commentInput = screen.getByPlaceholderText(/Treat this as a Food & Dining expense/i)
+    fireEvent.change(commentInput, { target: { value: 'Fix category to Utilities' } })
 
     // Click confirm inside confirmation modal
     const confirmBtn = screen.getByRole('button', { name: 'Reclassify' })
     fireEvent.click(confirmBtn)
 
     await waitFor(() => {
-      expect(mockReclassifyMutate).toHaveBeenCalledWith('ingestion-123')
+      expect(mockReclassifyMutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'ingestion-123',
+          userCorrections: expect.objectContaining({
+            comment: 'Fix category to Utilities',
+          }),
+        })
+      )
     })
   })
 

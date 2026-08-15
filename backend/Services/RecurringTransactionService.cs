@@ -47,7 +47,17 @@ namespace FinanceApp.Services
 
             _context.RecurringTransactions.Add(transaction);
             await _context.SaveChangesAsync();
-            return transaction;
+
+            // If the start date is today or in the past, immediately process so the
+            // first occurrence is created AND linked as an Occurrence record.
+            if (transaction.NextOccurrenceDate.Date <= DateTime.UtcNow.Date)
+            {
+                await ProcessDueRecurringTransactionsAsync();
+            }
+
+            // Reload to return the updated occurrence list
+            return await _context.RecurringTransactions
+                .FirstAsync(rt => rt.Id == transaction.Id);
         }
 
         public async Task<RecurringTransaction> UpdateRecurringTransactionAsync(string userId, RecurringTransaction transaction)
@@ -151,6 +161,30 @@ namespace FinanceApp.Services
                 }
             }
 
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task AddOccurrenceAsync(string scheduleId, string transactionId, DateTime date)
+        {
+            var schedule = await _context.RecurringTransactions
+                .FirstOrDefaultAsync(rt => rt.Id == scheduleId);
+
+            if (schedule == null)
+                return;
+
+            // Avoid duplicate occurrence for same transactionId
+            if (schedule.Occurrences.Any(o => o.TransactionId == transactionId))
+                return;
+
+            schedule.Occurrences.Add(new RecurringTransactionOccurrence
+            {
+                Date = date,
+                OccurrenceNo = schedule.Occurrences.Count + 1,
+                Status = "Processed",
+                TransactionId = transactionId
+            });
+
+            _context.RecurringTransactions.Update(schedule);
             await _context.SaveChangesAsync();
         }
 

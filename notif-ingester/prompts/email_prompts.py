@@ -30,7 +30,7 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   "sender_account_name": string,
   "reference_number": string (reference number/transaction id/trace number if mentioned in the message),
   "application": string (name of the email sender or service, e.g. Shopee, BPI),
-  "why": string (explain the classification so the user can spot mistakes and provide corrections)
+  "why": string (explain the classification so the user can spot mistakes and provide corrections){suggested_rule_field}
 }}
 
 Rules:
@@ -61,6 +61,7 @@ Existing Vendors:
 
 Vendor Matches Found:
 {vendor_matches}
+{user_corrections_section}
 
 ==================================================
 Now classify the following Email transaction:

@@ -8,6 +8,7 @@ import CalendarView from '@/pages/CalendarView'
 import RecurringTransactionsList from '@/components/RecurringTransactionsList'
 import ConfirmationModal from '@/components/ui/ConfirmationModal'
 import TransactionCard from '@/components/TransactionCard'
+import { TransactionListSkeleton } from '@/components/ui/Skeleton'
 
 
 type ViewMode = 'daily' | 'month' | 'recurring'
@@ -101,7 +102,7 @@ export default function Transactions() {
         ) : (
           /* Daily view content */<>
             {isLoading ? (
-              <div className="p-4 text-slate-500 text-center mt-4">Loading transactions...</div>
+              <TransactionListSkeleton count={6} />
             ) : transactions.length === 0 && !isLoading ? (
               <div className="p-8 text-center text-slate-400 italic">No transactions recorded yet.</div>
             ) : (

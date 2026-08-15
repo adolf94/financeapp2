@@ -592,8 +592,51 @@ Return ONLY valid JSON matching this schema:
             return data.get("is_financial", True) # Default to true if ambiguous
         except Exception as e:
             logging.error(f"Error checking if financial transaction: {e}")
-            return True # If it fails, default to true to let the full flow handle it
+    def _format_user_corrections(self, user_corrections: Optional[dict], accounts: list[dict] = None) -> tuple[str, str]:
+        if not user_corrections:
+            return "", ""
 
+        parts = ["User Corrections / Instructions Provided:"]
+        
+        comment = user_corrections.get("comment") or user_corrections.get("user_why")
+        if comment:
+            parts.append(f"- User Instruction/Comment: {comment}")
+            
+        corr_type = user_corrections.get("type") or user_corrections.get("transaction_type")
+        if corr_type:
+            parts.append(f"- Expected Transaction Type: {corr_type}")
+            
+        vendor = user_corrections.get("vendor")
+        if vendor:
+            vendor_name = vendor.get("name") if isinstance(vendor, dict) else vendor
+            if vendor_name:
+                parts.append(f"- Expected Vendor: {vendor_name}")
+
+        def _get_acc_label(acc_id):
+            if not acc_id:
+                return None
+            if accounts:
+                for a in accounts:
+                    if a.get("id") == acc_id:
+                        return f"{a.get('name')} (ID: {acc_id})"
+            return acc_id
+
+        debit_id = user_corrections.get("debit_account_id")
+        if debit_id:
+            parts.append(f"- Selected Debit Account: {_get_acc_label(debit_id)}")
+
+        credit_id = user_corrections.get("credit_account_id")
+        if credit_id:
+            parts.append(f"- Selected Credit Account: {_get_acc_label(credit_id)}")
+
+        if len(parts) == 1:
+            return "", ""
+
+        parts.append("- Note on suggested_rule: Formulate a concise, reusable rule string in 'suggested_rule' based on these user corrections / comments for RUNBOOK.md.")
+
+        section = "\n" + "\n".join(parts) + "\n"
+        suggested_rule_field = ',\n  "suggested_rule": string (A concise, reusable rule or instruction suitable for adding to the user\'s RUNBOOK.md based on this transaction and user corrections/instructions. Return null or empty string if not applicable.)'
+        return section, suggested_rule_field
 
     async def classify_async(
         self,
@@ -606,7 +649,8 @@ Return ONLY valid JSON matching this schema:
         operation_id: str = None,
         connection_id: str = None,
         stream_reasoning_to_client: bool = True,
-        exchange_rate_info: str = ""
+        exchange_rate_info: str = "",
+        user_corrections: Optional[dict] = None
     ) -> AiParsedData:
         
         context = self._build_context(similar_vectors)
@@ -616,6 +660,8 @@ Return ONLY valid JSON matching this schema:
         
         # Format vendor matches for AI context
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
+
+        user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
 
         # Resolve a clean app name from the hook data
         app_name = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_rcv_sender") or hook.raw_payload.get("sms_sender") or ""
@@ -636,6 +682,8 @@ Return ONLY valid JSON matching this schema:
             accounts=accounts_text,
             vendors=vendors_text,
             vendor_matches=vendor_matches_text,
+            user_corrections_section=user_corrections_section,
+            suggested_rule_field=suggested_rule_field,
             exchange_rate_info=exchange_rate_info,
             conversion_instructions=conversion_instructions
         )
@@ -686,13 +734,15 @@ Return ONLY valid JSON matching this schema:
         operation_id: str = None,
         connection_id: str = None,
         stream_reasoning_to_client: bool = True,
-        exchange_rate_info: str = ""
+        exchange_rate_info: str = "",
+        user_corrections: Optional[dict] = None
     ) -> AiParsedData:
         """Classify using SMS-specific prompt (tailored for SMS banking messages)."""
         context = self._build_context(similar_vectors)
         accounts_text = self._format_accounts(accounts)
         vendors_text = self._format_vendors(vendors)
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
+        user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
 
         # Resolve SMS sender from payload
         app_name = (
@@ -718,6 +768,8 @@ Return ONLY valid JSON matching this schema:
             accounts=accounts_text,
             vendors=vendors_text,
             vendor_matches=vendor_matches_text,
+            user_corrections_section=user_corrections_section,
+            suggested_rule_field=suggested_rule_field,
             exchange_rate_info=exchange_rate_info,
             conversion_instructions=conversion_instructions
         )
@@ -767,13 +819,15 @@ Return ONLY valid JSON matching this schema:
         operation_id: str = None,
         connection_id: str = None,
         stream_reasoning_to_client: bool = True,
-        exchange_rate_info: str = ""
+        exchange_rate_info: str = "",
+        user_corrections: Optional[dict] = None
     ) -> AiParsedData:
         """Classify using Email-specific prompt (tailored for email receipts/statements)."""
         context = self._build_context(similar_vectors)
         accounts_text = self._format_accounts(accounts)
         vendors_text = self._format_vendors(vendors)
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
+        user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
 
         sender = hook.raw_payload.get("sender") or ""
         subject = hook.raw_payload.get("subject") or ""
@@ -794,6 +848,8 @@ Return ONLY valid JSON matching this schema:
             accounts=accounts_text,
             vendors=vendors_text,
             vendor_matches=vendor_matches_text,
+            user_corrections_section=user_corrections_section,
+            suggested_rule_field=suggested_rule_field,
             exchange_rate_info=exchange_rate_info,
             conversion_instructions=conversion_instructions
         )

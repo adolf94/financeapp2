@@ -73,6 +73,7 @@ namespace backend.Tests
             _mockTxRepo.Verify(r => r.AddTransactionAsync(tx), Times.Once);
             _mockTxRepo.Verify(r => r.SaveChangesAsync(), Times.Once);
         }
+
         [Fact]
         public async Task UpdateTransaction_RevertsOldImpactAndAppliesNew()
         {
@@ -112,6 +113,57 @@ namespace backend.Tests
 
             _mockTxRepo.Verify(r => r.UpdateTransactionAsync(oldTx, It.IsAny<IEnumerable<LedgerEntry>>()), Times.Once);
             _mockTxRepo.Verify(r => r.SaveChangesAsync(), Times.Once);
+        }
+
+        [Fact]
+        public async Task CreateTransaction_CallsLinkRecurringOccurrence_WhenScheduleIdProvided()
+        {
+            var acc1 = new Account { Id = "acc-1", CurrentBalance = 500 };
+            var acc2 = new Account { Id = "acc-2", CurrentBalance = 100 };
+            _mockAccRepo.Setup(r => r.GetAccountByIdAsync("user-1", "acc-1")).ReturnsAsync(acc1);
+            _mockAccRepo.Setup(r => r.GetAccountByIdAsync("user-1", "acc-2")).ReturnsAsync(acc2);
+
+            var txDate = DateTime.UtcNow;
+            var tx = new Transaction
+            {
+                Id = "tx-created-1",
+                ScheduleId = "sched-1",
+                Date = txDate,
+                Entries = new List<LedgerEntry>
+                {
+                    new LedgerEntry { AccountId = "acc-1", Amount = -50 },
+                    new LedgerEntry { AccountId = "acc-2", Amount = 50 }
+                }
+            };
+
+            await _service.CreateTransactionAsync("user-1", tx);
+
+            _mockTxRepo.Verify(r => r.LinkRecurringOccurrenceAsync("user-1", "sched-1", "tx-created-1", txDate), Times.Once);
+        }
+
+        [Fact]
+        public async Task CreateTransaction_DoesNotCallLinkRecurringOccurrence_WhenScheduleIdEmpty()
+        {
+            var acc1 = new Account { Id = "acc-1", CurrentBalance = 500 };
+            var acc2 = new Account { Id = "acc-2", CurrentBalance = 100 };
+            _mockAccRepo.Setup(r => r.GetAccountByIdAsync("user-1", "acc-1")).ReturnsAsync(acc1);
+            _mockAccRepo.Setup(r => r.GetAccountByIdAsync("user-1", "acc-2")).ReturnsAsync(acc2);
+
+            var tx = new Transaction
+            {
+                Id = "tx-created-2",
+                ScheduleId = null,
+                Date = DateTime.UtcNow,
+                Entries = new List<LedgerEntry>
+                {
+                    new LedgerEntry { AccountId = "acc-1", Amount = -50 },
+                    new LedgerEntry { AccountId = "acc-2", Amount = 50 }
+                }
+            };
+
+            await _service.CreateTransactionAsync("user-1", tx);
+
+            _mockTxRepo.Verify(r => r.LinkRecurringOccurrenceAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
         }
     }
 }

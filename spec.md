@@ -15,7 +15,7 @@
 Users need a structured way to mirror their real-world financial accounts within the app.
 - **Account Groups (Categories):** Custom groups (e.g., "Cash," "Bank Accounts," "Credit Cards," "Investments"). System provides defaults. Note: "Expense" and "Income" types are excluded from manual group creation in the main Accounts UI, as they function as dynamic tracking categories rather than persistent running-balance accounts. They are managed instead via the Settings tab.
 - **Accounts (Specific Entities):** Added under groups. Fields include: Name, Group, Starting Balance, Currency. For Credit Cards, fields also include `CreditCardCycleStartDay` and `CreditCardPaymentDueDay`.
-- **Actions:** CRUD operations, view balances, and drill-down to Account History View.
+- **Actions:** CRUD operations, view balances, drill-down to Account History View, and Balance Adjustment (reconcile differences with actual bank balances via automated balancing Journal transactions under an `Adjustment`-type group/account).
 - **Settings Tab (Configuration):** A dedicated configuration area designed to strictly separate structural financial accounts from tracking meta-data. It features:
   - **Categories Management:** CRUD management for `Expense` and `Income` groups (Categories) and their nested accounts (Sub-Categories).
   - **Vendor Management:** Dedicated UI to view, create, and delete Vendors.
@@ -33,6 +33,7 @@ Users need a structured way to mirror their real-world financial accounts within
 - Automates data entry (Daily, Weekly, Monthly, Yearly).
 - Supports configuring `maxOccurrences` to automatically stop generation after a fixed number of transactions.
 - Uses `RecurringTransaction` entity featuring document embedding in Cosmos DB (nesting `templateEntries` and `occurrences` directly in the document).
+- When creating an initial transaction via `POST /transactions` with a `scheduleId`, the initial occurrence is automatically linked to the parent recurring schedule (`RecurringTransactionOccurrence`).
 - Handled efficiently in the background via a nightly Azure Functions `[TimerTrigger]`. 
 - Provides an automated view under the Transactions page, showcasing the scheduled history and expected end dates.
 
@@ -167,7 +168,8 @@ Users need a structured way to mirror their real-world financial accounts within
   - `POST /ingestions/{id}/confirm-status` — Mark as `Confirmed`, record `transaction_id`, trigger learn, JWT auth.
   - `POST /ingestions/{id}/reject` — Mark as `Rejected`, JWT auth.
   - `POST /ingestions/{id}/learn` — Embed and store `TransactionVector` for a confirmed ingestion, JWT auth.
-  - `POST /ingestions/{id}/reclassify` — Re-run full AI classification pipeline, JWT auth.
+  - `POST /ingestions/{id}/reclassify` — Re-run full AI classification pipeline with optional user corrections, comments, and `operationId` for real-time SignalR progress streaming, JWT auth.
+  - `GET/POST /negotiate` — SignalR Hub negotiation endpoint for real-time Chain of Thoughts (CoT) and progress updates during reclassification and runbook operations, JWT auth.
   - `PATCH /ingestions/{id}/vendor` — Patch vendor name and set `vendor_matched = true`, JWT auth.
   - `POST /ingestions/classify-hook` — Synchronous classification (no Change Feed), JWT auth.
   - `POST /accounts/generate-description` — Generate an AI account description, JWT auth.

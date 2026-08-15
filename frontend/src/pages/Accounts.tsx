@@ -11,6 +11,7 @@ import {
 import { Building2, CreditCard, Landmark, Plus, Trash2, Sparkles } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import ConfirmationModal from '@/components/ui/ConfirmationModal'
+import { AccountListSkeleton } from '@/components/ui/Skeleton'
 
 export default function Accounts() {
   const { data: accounts = [], isLoading: isLoadingAccounts } = useGetAccounts()
@@ -106,7 +107,14 @@ export default function Accounts() {
   }
 
   if (isLoadingAccounts || isLoadingGroups) {
-    return <div className="p-4 text-slate-500">Loading accounts...</div>
+    return (
+      <div className="flex flex-col min-h-full bg-slate-50 dark:bg-slate-950">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10">
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Accounts</h1>
+        </div>
+        <AccountListSkeleton count={3} />
+      </div>
+    )
   }
 
   return (

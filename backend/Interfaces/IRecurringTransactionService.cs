@@ -10,5 +10,6 @@ namespace FinanceApp.Interfaces
         Task<RecurringTransaction> UpdateRecurringTransactionAsync(string userId, RecurringTransaction transaction);
         Task DeleteRecurringTransactionAsync(string userId, string id);
         Task ProcessDueRecurringTransactionsAsync();
+        Task AddOccurrenceAsync(string scheduleId, string transactionId, DateTime date);
     }
 }

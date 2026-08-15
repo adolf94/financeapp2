@@ -31,6 +31,7 @@ import { useGetRunbookCorrections, useGetRunbookSession } from '@/hooks/useRunbo
 import { RunbookReviewModal } from '@/components/RunbookReviewModal'
 import { useQuery } from '@tanstack/react-query'
 import ingesterClient from '@/lib/ingesterClient'
+import { TableListSkeleton } from '@/components/ui/Skeleton'
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<'general' | 'categories' | 'vendors' | 'notifications' | 'historicalLogs' | 'runbook'>('general')
@@ -189,8 +190,8 @@ function GeneralSettings() {
 }
 
 function CategoriesSettings() {
-  const { data: groups = [] } = useGetAccountGroups()
-  const { data: accounts = [] } = useGetAccounts()
+  const { data: groups = [], isLoading: isLoadingGroups } = useGetAccountGroups()
+  const { data: accounts = [], isLoading: isLoadingAccounts } = useGetAccounts()
   
   const createGroup = useCreateAccountGroup()
   const deleteGroup = useDeleteAccountGroup()
@@ -248,7 +249,9 @@ function CategoriesSettings() {
         groupName,
         context
       })
-      setNewAccountDescriptions(prev => ({ ...prev, [groupId]: description }))
+      if (description) {
+        setNewAccountDescriptions((prev) => ({ ...prev, [groupId]: description }))
+      }
       if (tags && tags.length > 0) {
         setNewAccountTags(prev => ({ ...prev, [groupId]: tags }))
       }
@@ -256,6 +259,14 @@ function CategoriesSettings() {
       console.error(e)
       alert("Failed to generate description.")
     }
+  }
+
+  if (isLoadingGroups || isLoadingAccounts) {
+    return (
+      <div className="flex flex-col gap-6 max-w-2xl mx-auto w-full pb-8">
+        <TableListSkeleton count={4} />
+      </div>
+    )
   }
 
   return (
@@ -429,7 +440,7 @@ function CategoriesSettings() {
 }
 
 function VendorsSettings() {
-  const { data: vendors = [] } = useGetVendors()
+  const { data: vendors = [], isLoading } = useGetVendors()
   const createVendor = useCreateVendor()
   const deleteVendor = useDeleteVendor()
 
@@ -451,6 +462,14 @@ function VendorsSettings() {
           setNewVendorType('Business')
         }
       }
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-6 max-w-2xl mx-auto w-full pb-8">
+        <TableListSkeleton count={5} />
+      </div>
     )
   }
 
@@ -678,7 +697,13 @@ function RunbookReviewSettings() {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
 
-  if (isLoading) return <div className="p-8 text-center text-slate-500">Loading pending corrections...</div>
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full pb-8">
+        <TableListSkeleton count={3} />
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full pb-8">

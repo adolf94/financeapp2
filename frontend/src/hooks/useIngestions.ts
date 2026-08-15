@@ -41,6 +41,7 @@ export interface AiParsedData {
   application?: string | null
   why?: string | null
   user_why?: string | null
+  suggested_rule?: string | null
   is_auto_confirmed?: boolean | null
 }
 
@@ -59,7 +60,8 @@ export interface PendingIngestion {
   transaction_id?: string | null
   month_key: string
   partition_key: string
-  notification_type?: 'sms' | 'app' | 'email' | 'unknown'
+  notification_type: string
+  runbook_synced?: boolean
 }
 
 export function useGetPendingIngestions(status: string = 'Pending') {
@@ -160,13 +162,34 @@ export function useRejectIngestion() {
   })
 }
 
+export interface ReclassifyCorrections {
+  comment?: string
+  type?: string
+  vendor?: string
+  debit_account_id?: string | null
+  credit_account_id?: string | null
+}
+
 export function useReclassifyIngestion() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, operationId, streamReasoning }: { id: string; operationId: string; streamReasoning?: boolean }) => {
+    mutationFn: async ({
+      id,
+      operationId,
+      streamReasoning,
+      userCorrections,
+    }: {
+      id: string
+      operationId: string
+      streamReasoning?: boolean
+      userCorrections?: ReclassifyCorrections
+    }) => {
       // Goes directly to Python ingester (JWT Bearer, no .NET proxy)
       const connId = (window as any).signalRConnectionId || ''
-      const response = await ingesterClient.post(`/ingestions/${id}/reclassify?operationId=${operationId}&connectionId=${connId}&streamReasoning=${!!streamReasoning}`)
+      const response = await ingesterClient.post(
+        `/ingestions/${id}/reclassify?operationId=${operationId}&connectionId=${connId}&streamReasoning=${!!streamReasoning}`,
+        userCorrections ? { user_corrections: userCorrections } : {}
+      )
       return response.data as PendingIngestion
     },
     onSuccess: (data, variables) => {

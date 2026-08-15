@@ -49,6 +49,7 @@ interface AddTransactionContextProps {
   initialData: Transaction | null
   ingestionId: string | null
   ingestion: PendingIngestion | null
+  isLoadingIngestion: boolean
 
   // Form State
   mode: 'Simple' | 'Advanced'
@@ -130,6 +131,7 @@ export function AddTransactionProvider({
   initialData,
   ingestionId,
   ingestion,
+  isLoadingIngestion = false,
 }: {
   children: ReactNode
   isOpen: boolean
@@ -138,6 +140,7 @@ export function AddTransactionProvider({
   initialData: Transaction | null
   ingestionId: string | null
   ingestion: PendingIngestion | null
+  isLoadingIngestion?: boolean
 }) {
   const { data: accounts = [] } = useGetAccounts()
   const { data: dbVendors = [] } = useGetVendors()
@@ -237,7 +240,9 @@ export function AddTransactionProvider({
         if (parsed.summary || parsed.notes) {
           setNote(parsed.summary || parsed.notes || '')
         }
-        if (parsed.user_why) {
+        if (parsed.suggested_rule) {
+          setUserWhy(parsed.suggested_rule)
+        } else if (parsed.user_why) {
           setUserWhy(parsed.user_why)
         }
         if (parsed.date) {
@@ -247,6 +252,41 @@ export function AddTransactionProvider({
         }
         if (parsed.reference_number !== undefined) {
           setReferenceNumber(parsed.reference_number || '')
+        }
+
+        // Pre-fill accounts based on transaction_type
+        if (parsed.transaction_type === 'Transfer') {
+          // Transfer: debit = receiving/to, credit = sending/source
+          if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
+          if (parsed.debit_account_id) setToAccountId(parsed.debit_account_id)
+        } else if (parsed.transaction_type === 'Income') {
+          // Income: debit = receiving/source account, credit = income category
+          if (parsed.debit_account_id) setSourceAccountId(parsed.debit_account_id)
+          if (parsed.credit_account_id) {
+            const acc = accountsRef.current.find((a) => a.id === parsed.credit_account_id)
+            setSplits([
+              {
+                id: generateId(),
+                categoryId: acc?.accountGroupId || '',
+                subCategoryId: parsed.credit_account_id,
+                amount: '',
+              },
+            ])
+          }
+        } else {
+          // Expense: debit = expense category, credit = source payment account
+          if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
+          if (parsed.debit_account_id) {
+            const acc = accountsRef.current.find((a) => a.id === parsed.debit_account_id)
+            setSplits([
+              {
+                id: generateId(),
+                categoryId: acc?.accountGroupId || '',
+                subCategoryId: parsed.debit_account_id,
+                amount: '',
+              },
+            ])
+          }
         }
       }
       prevIngestionRef.current = ingestion
@@ -360,8 +400,65 @@ export function AddTransactionProvider({
       } else {
         if (justOpened) {
           resetForm()
-          if (ingestion?.ai_parsed?.vendor) {
-            setVendor(ingestion.ai_parsed.vendor.name || '')
+          const parsed = ingestion?.ai_parsed
+          if (parsed) {
+            if (parsed.transaction_type) {
+              const t = ['Income', 'Expense', 'Transfer'].includes(parsed.transaction_type) ? (parsed.transaction_type as any) : 'Expense'
+              setType(t)
+            }
+            if (parsed.amount) {
+              setTotalAmount(Math.abs(parsed.amount).toString())
+            }
+            if (parsed.vendor) {
+              setVendor(parsed.vendor.name || '')
+            }
+            if (parsed.summary || parsed.notes) {
+              setNote(parsed.summary || parsed.notes || '')
+            }
+            if (parsed.suggested_rule) {
+              setUserWhy(parsed.suggested_rule)
+            } else if (parsed.user_why) {
+              setUserWhy(parsed.user_why)
+            }
+            if (parsed.date) {
+              setDate(dayjs(parsed.date).format('YYYY-MM-DDTHH:mm'))
+            } else if (ingestion.received_at) {
+              setDate(dayjs(ingestion.received_at).format('YYYY-MM-DDTHH:mm'))
+            }
+            if (parsed.reference_number !== undefined) {
+              setReferenceNumber(parsed.reference_number || '')
+            }
+
+            if (parsed.transaction_type === 'Transfer') {
+              if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
+              if (parsed.debit_account_id) setToAccountId(parsed.debit_account_id)
+            } else if (parsed.transaction_type === 'Income') {
+              if (parsed.debit_account_id) setSourceAccountId(parsed.debit_account_id)
+              if (parsed.credit_account_id) {
+                const acc = accountsRef.current.find((a) => a.id === parsed.credit_account_id)
+                setSplits([
+                  {
+                    id: generateId(),
+                    categoryId: acc?.accountGroupId || '',
+                    subCategoryId: parsed.credit_account_id,
+                    amount: '',
+                  },
+                ])
+              }
+            } else {
+              if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
+              if (parsed.debit_account_id) {
+                const acc = accountsRef.current.find((a) => a.id === parsed.debit_account_id)
+                setSplits([
+                  {
+                    id: generateId(),
+                    categoryId: acc?.accountGroupId || '',
+                    subCategoryId: parsed.debit_account_id,
+                    amount: '',
+                  },
+                ])
+              }
+            }
           }
         }
       }
@@ -717,6 +814,7 @@ export function AddTransactionProvider({
       initialData,
       ingestionId,
       ingestion,
+      isLoadingIngestion,
       mode,
       setMode,
       type,
@@ -784,6 +882,7 @@ export function AddTransactionProvider({
       initialData,
       ingestionId,
       ingestion,
+      isLoadingIngestion,
       mode,
       type,
       totalAmount,
@@ -796,6 +895,7 @@ export function AddTransactionProvider({
       selectedNewLookups,
       date,
       note,
+      referenceNumber,
       userWhy,
       isRecurring,
       frequency,

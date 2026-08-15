@@ -2,9 +2,10 @@ import { useState, useMemo } from 'react'
 import { useParams, Link } from '@tanstack/react-router'
 import { useGetAccounts, useGetAccountGroups } from '@/hooks/useAccounts'
 import { useGetAccountTransactions, Transaction } from '@/hooks/useTransactions'
-import { ArrowLeft, ArrowDownRight, ArrowUpRight, ArrowRightLeft, BookOpen, Pencil, Edit3 } from 'lucide-react'
+import { ArrowLeft, ArrowDownRight, ArrowUpRight, ArrowRightLeft, BookOpen, Pencil, Edit3, SlidersHorizontal } from 'lucide-react'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import EditAccountModal from '@/components/EditAccountModal'
+import AdjustBalanceModal from '@/components/AdjustBalanceModal'
 
 export default function AccountDetails() {
   const { accountId } = useParams({ from: '/accounts/$accountId' })
@@ -14,6 +15,7 @@ export default function AccountDetails() {
 
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [isEditingAccount, setIsEditingAccount] = useState(false)
+  const [isAdjustingBalance, setIsAdjustingBalance] = useState(false)
 
   const account = accounts.find(a => a.id === accountId)
   const group = groups.find((g: any) => g.id === account?.accountGroupId)
@@ -138,6 +140,13 @@ export default function AccountDetails() {
           >
             <Edit3 className="w-4 h-4" />
           </button>
+          <button 
+            onClick={() => setIsAdjustingBalance(true)}
+            className="p-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 transition-colors"
+            title="Adjust Balance"
+          >
+            <SlidersHorizontal className="w-4 h-4" />
+          </button>
         </div>
         <div className="flex justify-between items-end mt-1">
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">
@@ -254,6 +263,11 @@ export default function AccountDetails() {
       <EditAccountModal
         isOpen={isEditingAccount}
         onClose={() => setIsEditingAccount(false)}
+        account={account}
+      />
+      <AdjustBalanceModal
+        isOpen={isAdjustingBalance}
+        onClose={() => setIsAdjustingBalance(false)}
         account={account}
       />
     </div>

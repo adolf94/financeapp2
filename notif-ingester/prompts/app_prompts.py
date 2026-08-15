@@ -31,7 +31,7 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   "sender_account_name": string (sender name if mentioned in the message),
   "reference_number": string (reference number/transaction id/trace number if mentioned in the message),
   "application": string (name of the app or SMS sender, e.g. BPI, GCash),
-  "why": string (explain the classification so the user can spot mistakes and provide corrections — mention which runbook rule, keyword, or past transaction match drove each decision. Do NOT include raw UUIDs.)
+  "why": string (explain the classification so the user can spot mistakes and provide corrections — mention which runbook rule, keyword, or past transaction match drove each decision. Do NOT include raw UUIDs.){suggested_rule_field}
 }}
 
 Rules:
@@ -63,6 +63,7 @@ Existing Vendors:
 
 Vendor Matches Found (via account number/name lookup):
 {vendor_matches}
+{user_corrections_section}
 
 ==================================================
 Now, classify the following specific notification transaction:

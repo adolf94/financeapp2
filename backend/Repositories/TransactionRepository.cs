@@ -146,6 +146,32 @@ namespace FinanceApp.Repositories
             }
         }
 
+        public async Task LinkRecurringOccurrenceAsync(string userId, string scheduleId, string transactionId, DateTime date)
+        {
+            try
+            {
+                var schedule = await _context.RecurringTransactions
+                    .FirstOrDefaultAsync(rt => rt.Id == scheduleId && rt.UserId == userId);
+
+                if (schedule != null && !schedule.Occurrences.Any(o => o.TransactionId == transactionId))
+                {
+                    schedule.Occurrences.Add(new RecurringTransactionOccurrence
+                    {
+                        Date = date,
+                        OccurrenceNo = schedule.Occurrences.Count + 1,
+                        Status = "Processed",
+                        TransactionId = transactionId
+                    });
+                    _context.RecurringTransactions.Update(schedule);
+                    await _context.SaveChangesAsync();
+                }
+            }
+            catch
+            {
+                // Fail silently per AC3
+            }
+        }
+
         public async Task SaveChangesAsync()
         {
             await _context.SaveChangesAsync();

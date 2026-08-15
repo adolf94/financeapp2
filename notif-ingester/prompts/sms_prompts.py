@@ -74,7 +74,7 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   "sender_account_name": string,
   "reference_number": string (reference number/transaction id/trace number if mentioned in the message),
   "application": string,
-  "why": string
+  "why": string{suggested_rule_field}
 }}
 
 Rules:
@@ -108,6 +108,7 @@ Existing Vendors:
 
 Vendor Matches Found (via account number/name lookup):
 {vendor_matches}
+{user_corrections_section}
 
 ==================================================
 Now classify the following SMS transaction:
