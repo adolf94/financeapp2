@@ -37,6 +37,8 @@ namespace FinanceApp.Services
         public async Task<Transaction> CreateTransactionAsync(string userId, Transaction transaction)
         {
             transaction.UserId = userId;
+            CopyNoteAndReferenceNumberToEntries(transaction);
+
             foreach (var entry in transaction.Entries)
             {
                 entry.UserId = userId;
@@ -76,6 +78,8 @@ namespace FinanceApp.Services
             // Revert old impact
             await RevertBalanceImpactAsync(userId, existingTx);
 
+            CopyNoteAndReferenceNumberToEntries(transaction);
+
             // Apply new impact
             await ApplyBalanceImpactAsync(userId, transaction);
 
@@ -91,6 +95,7 @@ namespace FinanceApp.Services
             existingTx.Entries = transaction.Entries;
             existingTx.Date = transaction.Date;
             existingTx.Note = transaction.Note;
+            existingTx.ReferenceNumber = transaction.ReferenceNumber;
             existingTx.Vendor = transaction.Vendor;
             existingTx.Type = transaction.Type;
 
@@ -103,6 +108,42 @@ namespace FinanceApp.Services
             await _transactionRepository.SaveChangesAsync();
 
             return existingTx;
+        }
+
+        private static void CopyNoteAndReferenceNumberToEntries(Transaction transaction)
+        {
+            if (transaction.Entries == null || transaction.Entries.Count == 0) return;
+
+            if (transaction.Type == TransactionType.Expense)
+            {
+                // For Expenses: copy transaction note & referenceNumber to Debit entry (Amount > 0)
+                var debitEntry = transaction.Entries.FirstOrDefault(e => e.Amount > 0);
+                if (debitEntry != null)
+                {
+                    if (string.IsNullOrWhiteSpace(debitEntry.Note)) debitEntry.Note = transaction.Note;
+                    if (string.IsNullOrWhiteSpace(debitEntry.ReferenceNumber)) debitEntry.ReferenceNumber = transaction.ReferenceNumber;
+                }
+            }
+            else if (transaction.Type == TransactionType.Income)
+            {
+                // For Income: copy transaction note & referenceNumber to Credit entry (Amount < 0)
+                var creditEntry = transaction.Entries.FirstOrDefault(e => e.Amount < 0);
+                if (creditEntry != null)
+                {
+                    if (string.IsNullOrWhiteSpace(creditEntry.Note)) creditEntry.Note = transaction.Note;
+                    if (string.IsNullOrWhiteSpace(creditEntry.ReferenceNumber)) creditEntry.ReferenceNumber = transaction.ReferenceNumber;
+                }
+            }
+            else if (transaction.Type == TransactionType.Transfer)
+            {
+                // For Transfer: copy transaction note & referenceNumber to Credit entry (Amount < 0, source account)
+                var creditEntry = transaction.Entries.FirstOrDefault(e => e.Amount < 0);
+                if (creditEntry != null)
+                {
+                    if (string.IsNullOrWhiteSpace(creditEntry.Note)) creditEntry.Note = transaction.Note;
+                    if (string.IsNullOrWhiteSpace(creditEntry.ReferenceNumber)) creditEntry.ReferenceNumber = transaction.ReferenceNumber;
+                }
+            }
         }
 
         public async Task DeleteTransactionAsync(string userId, string id)

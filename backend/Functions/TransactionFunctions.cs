@@ -187,7 +187,8 @@ namespace FinanceApp.Functions
                 Date = aiData.Date ?? DateTime.UtcNow,
                 Vendor = aiData.Vendor?.Name,
                 Type = Enum.TryParse<TransactionType>(aiData.TransactionType, true, out var typeEnum) ? typeEnum : TransactionType.Expense,
-                Note = aiData.Notes,
+                Note = aiData.Notes ?? string.Empty,
+                ReferenceNumber = aiData.ReferenceNumber,
                 Entries = new List<LedgerEntry>
                 {
                     new LedgerEntry
@@ -195,14 +196,18 @@ namespace FinanceApp.Functions
                         Id = Guid.CreateVersion7().ToString(),
                         UserId = userId,
                         AccountId = aiData.DebitAccountId,
-                        Amount = aiData.Amount.Value // Positive for debit
+                        Amount = aiData.Amount.Value, // Positive for debit
+                        Note = (!"Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) && !"Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.Notes : null,
+                        ReferenceNumber = (!"Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) && !"Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.ReferenceNumber : null
                     },
                     new LedgerEntry
                     {
                         Id = Guid.CreateVersion7().ToString(),
                         UserId = userId,
                         AccountId = aiData.CreditAccountId,
-                        Amount = -aiData.Amount.Value // Negative for credit
+                        Amount = -aiData.Amount.Value, // Negative for credit
+                        Note = ("Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) || "Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.Notes : null,
+                        ReferenceNumber = ("Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) || "Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.ReferenceNumber : null
                     }
                 },
                 IsAutoConfirmed = aiData.IsAutoConfirmed ?? false,

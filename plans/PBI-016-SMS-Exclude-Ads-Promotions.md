@@ -1,7 +1,7 @@
----
+﻿---
 github_issue: 16
 github_url: https://github.com/adolf94/financeapp2/issues/16
-status: open
+status: closed
 ---
 # PBI: Exclude Advertisements and Promotions from SMS/Notification Processing
 

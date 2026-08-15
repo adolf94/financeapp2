@@ -33,7 +33,8 @@ namespace FinanceApp.Models
     {
         public string AccountId { get; set; } = string.Empty;
         public decimal Amount { get; set; }
-        public string? Comment { get; set; }
+        public string? Note { get; set; }
+        public string? ReferenceNumber { get; set; }
     }
 
     public class RecurringTransactionOccurrence

@@ -1,7 +1,7 @@
----
+﻿---
 github_issue: 8
 github_url: https://github.com/adolf94/financeapp2/issues/8
-status: open
+status: closed
 ---
 # PBI 006: Multimodal Image Ingestion via POST Route
 

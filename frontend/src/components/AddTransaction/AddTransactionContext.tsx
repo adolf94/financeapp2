@@ -22,7 +22,8 @@ export interface JournalLine {
   subCategoryId: string
   amount: string
   type: 'Debit' | 'Credit'
-  comment?: string
+  note?: string
+  referenceNumber?: string
 }
 
 export interface PendingNewAccountType {
@@ -164,8 +165,8 @@ export function AddTransactionProvider({
     { id: generateId(), categoryId: '', subCategoryId: '', amount: '' },
   ])
   const [journalLines, setJournalLines] = useState<JournalLine[]>([
-    { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
-    { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', comment: '' },
+    { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', note: '', referenceNumber: '' },
+    { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' },
   ])
   const [vendor, setVendor] = useState('')
   const [selectedLookups, setSelectedLookups] = useState<string[]>([])
@@ -206,8 +207,8 @@ export function AddTransactionProvider({
     setToAccountId('')
     setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
     setJournalLines([
-      { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
-      { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', comment: '' },
+      { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', note: '', referenceNumber: '' },
+      { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' },
     ])
     setVendor('')
     setNote('')
@@ -340,7 +341,8 @@ export function AddTransactionProvider({
                 subCategoryId: e.accountId,
                 amount: Math.abs(e.amount).toString(),
                 type: e.amount > 0 ? 'Debit' : 'Credit',
-                comment: e.comment || '',
+                note: e.note || '',
+                referenceNumber: e.referenceNumber || '',
               }
             })
           )
@@ -480,8 +482,8 @@ export function AddTransactionProvider({
           setTotalAmount('')
           setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
           setJournalLines([
-            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
-            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', comment: '' },
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', note: '', referenceNumber: '' },
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' },
           ])
           setVendor('')
           setNote('')
@@ -517,7 +519,8 @@ export function AddTransactionProvider({
         entries.push({
           accountId: line.subCategoryId,
           amount: line.type === 'Debit' ? roundedAmt : -roundedAmt,
-          comment: line.comment?.trim() || undefined,
+          note: line.note?.trim() || undefined,
+          referenceNumber: line.referenceNumber?.trim() || undefined,
         })
       }
 
@@ -568,26 +571,62 @@ export function AddTransactionProvider({
 
     const entries: LedgerEntry[] = []
     const parsedTotal = parseFloat(totalAmount)
+    const trimmedNote = note.trim() || undefined
+    const trimmedRef = referenceNumber.trim() || undefined
 
     if (type === 'Transfer') {
       if (!toAccountId) return
-      entries.push({ accountId: sourceAccountId, amount: -parsedTotal })
-      entries.push({ accountId: toAccountId, amount: parsedTotal })
-    } else {
+      // For Transfer: copy note and referenceNumber to Credit (sourceAccountId)
       entries.push({
         accountId: sourceAccountId,
-        amount: type === 'Expense' ? -parsedTotal : parsedTotal,
+        amount: -parsedTotal,
+        note: trimmedNote,
+        referenceNumber: trimmedRef,
       })
-
+      // Debit (toAccountId)
+      entries.push({
+        accountId: toAccountId,
+        amount: parsedTotal,
+      })
+    } else if (type === 'Expense') {
       const categorySplit = splits[0]
       if (!categorySplit?.subCategoryId) {
         alert('Please select a category.')
         return
       }
 
+      // Credit entry (payment source account)
+      entries.push({
+        accountId: sourceAccountId,
+        amount: -parsedTotal,
+      })
+
+      // Debit entry (category / expense account): copy note & referenceNumber
       entries.push({
         accountId: categorySplit.subCategoryId,
-        amount: type === 'Expense' ? parsedTotal : -parsedTotal,
+        amount: parsedTotal,
+        note: trimmedNote,
+        referenceNumber: trimmedRef,
+      })
+    } else if (type === 'Income') {
+      const categorySplit = splits[0]
+      if (!categorySplit?.subCategoryId) {
+        alert('Please select a category.')
+        return
+      }
+
+      // Debit entry (deposit to account)
+      entries.push({
+        accountId: sourceAccountId,
+        amount: parsedTotal,
+      })
+
+      // Credit entry (category / income account): copy note & referenceNumber
+      entries.push({
+        accountId: categorySplit.subCategoryId,
+        amount: -parsedTotal,
+        note: trimmedNote,
+        referenceNumber: trimmedRef,
       })
     }
 
@@ -611,7 +650,12 @@ export function AddTransactionProvider({
         templateType: type,
         templateNote: note,
         templateVendor: type === 'Transfer' ? undefined : vendor,
-        templateEntries: entries.map((e) => ({ accountId: e.accountId, amount: e.amount })),
+        templateEntries: entries.map((e) => ({
+          accountId: e.accountId,
+          amount: e.amount,
+          note: e.note,
+          referenceNumber: e.referenceNumber,
+        })),
       })
     }
 
@@ -718,8 +762,8 @@ export function AddTransactionProvider({
           setTotalAmount('')
           setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
           setJournalLines([
-            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
-            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', comment: '' },
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', note: '', referenceNumber: '' },
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' },
           ])
           setVendor('')
           setNote('')

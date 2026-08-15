@@ -26,7 +26,8 @@ Users need a structured way to mirror their real-world financial accounts within
   - **Advanced Mode (Journal):** Full double-entry accounting view supporting multiple splits and manual debit/credit allocation.
 - **Transaction Types:** Expense, Income, Transfer, Journal.
 - **Categorization:** Two-level (Primary Group > Specific Selection).
-- **Fields:** Type, Amount, Date, Account (From/To for transfers), Category Group, Specific Selection, Note, Vendor.
+- **Fields:** Type, Amount, Date, Account (From/To for transfers), Category Group, Specific Selection, Note, Vendor, ReferenceNumber.
+- **Entry Note & Reference Propagation:** On transaction save, parent `Note` and `ReferenceNumber` are automatically copied to the corresponding entry: Debit for Expense, Credit for Income, and Credit for Transfer. Individual Journal lines (`LedgerEntry`) support line-level `Note` and `ReferenceNumber`.
 - **Inline Creation & Search (Combobox):** The Category, Sub-Category, and Vendor selection fields utilize a custom `Combobox` component. This enables searchable dropdowns and allows users to seamlessly create new categories, sub-categories, or vendors inline directly during the Add Transaction flow without navigating away.
 
 ### 2.3. Recurring Transactions
@@ -139,6 +140,8 @@ Users need a structured way to mirror their real-world financial accounts within
   - `EnhancedDiffViewer.tsx` (`components/ui/`) — Rich diff visualizer supporting Line, Word, and Character differences.
   - `RunbookEditorPanel.tsx` (`components/RunbookReview/`) — Container component for the Monaco-based direct runbook markdown editor.
   - `RunbookSectionNavigator.tsx` (`components/RunbookReview/`) — Table of contents section jump navigator.
+  - `ImageUploadModal.tsx` (`components/`) — Modal for uploading and previewing receipt/statement images directly into the ingestion pipeline.
+  - `AuthenticatedReceiptImage.tsx` (`components/`) — Secure preview component for displaying stored receipt images from Azure Blob Storage.
 - **Key Hooks:**
   - `useIngestions.ts` — `useGetPendingIngestions`, `useConfirmIngestion`, `useRejectIngestion`, `useUpdateIngestionVendor`, `useGenerateAccountDescription`, `useReclassifyIngestion`. All use `ingesterClient`.
   - `useRunbookReview.ts` — `useGetRunbookCorrections`, `useStartRunbookReview`, `useChatRunbookReview`, `useUpdateRunbookSession`, `useApproveRunbookReview`. Uses `pythonApiClient`.
@@ -160,11 +163,13 @@ Users need a structured way to mirror their real-world financial accounts within
   - `HookService` — Validates and persists incoming `PhoneHookMessage` to CosmosDB.
   - `EmbeddingService` — Calls Google Gemini `text-embedding-004` to produce a 768-dimension float vector from notification text.
   - `VectorService` — Performs cosine-similarity search (via `numpy`) across all stored `TransactionVector` documents for a user to retrieve top-k matches.
-  - `AiService` — Two-stage Gemini calls: (1) `is_financial_transaction_async` — lightweight check to filter non-financial notifications; (2) `classify_async` — full structured JSON classification with notification + similar transactions + accounts + RUNBOOK.md context. Produces `AiParsedData` with enhanced fields: `vendor`, `amount`, `transaction_type`, `debit_account_id`, `credit_account_id`, `suggested_account_creation`, `notes`, `confidence`, `recipient_account_number/name`, `sender_account_number/name`, `application`, `why`, `user_why`, `is_financial`, `is_auto_confirmed`, `vendor_matched`.
+  - `AiService` — Two-stage Gemini calls: (1) `is_financial_transaction_async` — lightweight check to filter non-financial notifications (strictly excludes advertisements and promotional offers regardless of monetary amounts); (2) `classify_async` — full structured JSON classification with notification + similar transactions + accounts + RUNBOOK.md context. Produces `AiParsedData` with enhanced fields: `vendor`, `amount`, `transaction_type`, `debit_account_id`, `credit_account_id`, `suggested_account_creation`, `notes`, `confidence`, `recipient_account_number/name`, `sender_account_number/name`, `application`, `why`, `user_why`, `is_financial`, `is_auto_confirmed`, `vendor_matched`. Also supports multimodal `classify_image_async` for receipts and screenshots.
   - `FinanceApiService` — Directly queries CosmosDB containers (`Accounts`, `AccountGroups`, `Vendors`, `VendorLookups`) to resolve accounts and vendors. Creates confirmed transactions by writing directly to the `Transactions` container. Methods include `get_accounts_async`, `search_vendors_by_lookups_async`, `ensure_vendor_and_lookups_async`, `create_transaction_async`, `get_runbook_content_async`, `update_vendor_tags_async`.
   - `IngestionService` — Orchestrates the full pipeline: financial-check → embed → vector-search → fetch-accounts+runbook → classify → vendor-match → auto-confirm-or-pending → save.
 - **HTTP Endpoints (`function_app.py`):**
   - `POST /phone_hook` — Receive raw notification, API key auth.
+  - `POST /image_hook` — Upload receipt/statement image (`multipart/form-data`), store in Azure Blob Storage (`receipt-images`), classify via multimodal AI, and queue as `PendingIngestion`, JWT or API key auth.
+  - `GET /image_hook/{blob_name}` — Retrieve SAS URL / receipt image stream for authorized preview, JWT auth.
   - `GET /ingestions` — List ingestions by status (default `Pending`), JWT auth.
   - `POST /ingestions/{id}/confirm-status` — Mark as `Confirmed`, record `transaction_id`, trigger learn, JWT auth.
   - `POST /ingestions/{id}/reject` — Mark as `Rejected`, JWT auth.

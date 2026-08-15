@@ -122,7 +122,8 @@ namespace FinanceApp.Services
                             UserId = schedule.UserId,
                             AccountId = te.AccountId,
                             Amount = te.Amount,
-                            Comment = te.Comment
+                            Note = te.Note,
+                            ReferenceNumber = te.ReferenceNumber
                         }).ToList()
                     };
 

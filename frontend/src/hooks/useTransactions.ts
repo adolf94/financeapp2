@@ -5,7 +5,8 @@ export interface LedgerEntry {
   id?: string
   accountId: string
   amount: number
-  comment?: string
+  note?: string
+  referenceNumber?: string
 }
 
 export interface Transaction {

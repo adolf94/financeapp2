@@ -26,7 +26,7 @@ We need a system to:
 Two ingestions (or an ingestion and an already confirmed transaction) are considered **related** if they belong to the same user and satisfy either of:
 
 1. **Reference Number Match**: Both have a non-empty `reference_number` and they are identical. Lookup window: **past 30 days** (to avoid stale collision from old transactions with reused ref numbers).
-2. **Time and Amount Match**: Both have the same `amount` (absolute value, rounded to 2 decimal places for normalization) and their timestamps (`received_at` or parsed transaction `date`) are within **5 minutes** of each other.
+2. **Time and Amount Match**: Both have the same `amount` (absolute value, rounded to 2 decimal places for normalization) and their effective timestamps (`date` from `ai_parsed.date`, `raw_payload.timestamp`, or fallback `received_at`) are within **5 minutes** of each other — even if reference numbers differ or are missing (e.g. merchant order ID vs banking trace number).
 
 > **Note**: Confirmed transaction cross-check is in scope for v1. When a new ingestion is processed, also query the C# backend `GET /transactions?userId=...&amount=...` for recent confirmed transactions matching criteria 2. If a match is found, add the confirmed transaction ID to `related_transaction_ids` **and** flag the ingestion with a `has_possible_confirmed_match: true` warning field so the UI can surface: *"A confirmed transaction for this amount already exists."*
 
@@ -65,9 +65,9 @@ class AiParsedData(BaseModel):
 
 class PendingIngestion(BaseModel):
     # ... existing fields ...
-    related_ingestion_ids: List[str] = Field(default_factory=list)  # Definite matches (e.g. same Reference Number)
+    related_ingestion_ids: List[str] = Field(default_factory=list)  # Definite matches (same Reference Number)
     related_transaction_ids: List[str] = Field(default_factory=list)
-    possible_related_ingestion_ids: List[str] = Field(default_factory=list)  # Possible matches (e.g. same amount and time but no ref number)
+    possible_related_ingestion_ids: List[str] = Field(default_factory=list)  # Possible matches (same amount and time within 5m, even with differing/missing ref numbers)
     possible_related_transaction_ids: List[str] = Field(default_factory=list)
 ```
 
@@ -76,13 +76,13 @@ Use the `model-syncer` skill to ensure the models are updated and aligned.
 
 ### Ingestion Pipeline Logic
 In `IngestionService.process_hook_async`:
-1. Extract `reference_number` and `amount` from the AI classification result.
+1. Extract `reference_number`, `amount`, and effective timestamp (`resolved_time = ai_parsed.date or raw_payload.timestamp or received_at`) from the AI classification result and raw hook.
 2. **Query 1 — Pending ingestions**: Search CosmosDB `PendingIngestions` (PartitionKey = `user_id`, Status = `Pending`) for matches.
-3. **Query 2 — Confirmed transactions**: Call C# backend API for confirmed transactions matching user+amount within 5-minute window.
+3. **Query 2 — Confirmed transactions**: Call C# backend API for confirmed transactions matching user+amount within 5-minute window of `resolved_time`.
 4. Categorize relations:
    - **Definite Relation** (`related_ingestion_ids`): Same non-empty `reference_number` (within 30 days).
-   - **Possible Relation** (`possible_related_ingestion_ids`): No matching `reference_number` (or one is missing), but `amount` is equal (normalized to 2dp) and `received_at` within **5 minutes**.
-   - **Confirmed Match** (`related_transaction_ids` + `has_possible_confirmed_match = true`): Confirmed transaction found matching amount+time.
+   - **Possible Relation** (`possible_related_ingestion_ids`): Different or missing `reference_number`, but `amount` is equal (normalized to 2dp) and effective timestamp (`date` / `timestamp` / `received_at`) is within **5 minutes**.
+   - **Confirmed Match** (`related_transaction_ids` + `has_possible_confirmed_match = true`): Confirmed transaction found matching amount + 5-minute effective time window.
 5. Link IDs accordingly.
 6. **Back-port (mandatory)**: Update all matched existing pending ingestions to append the new ingestion's ID to their corresponding relation list.
 

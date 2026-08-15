@@ -1,5 +1,17 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { RefreshCw, RotateCcw, X, Trash2, Plus, Loader2, Info } from 'lucide-react'
+import {
+  RefreshCw,
+  RotateCcw,
+  X,
+  Trash2,
+  Plus,
+  Loader2,
+  Info,
+  MessageSquare,
+  CheckCircle2,
+  AlertCircle,
+  Sparkles,
+} from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { uuidv7 } from 'uuidv7'
 import { useGetAccounts, useGetAccountGroups } from '@/hooks/useAccounts'
@@ -111,7 +123,65 @@ function AddTransactionModalContent() {
   const [streamReasoning, setStreamReasoning] = useState(false)
   const [reclassifyComment, setReclassifyComment] = useState('')
   const [showJournalGuide, setShowJournalGuide] = useState(false)
+  const [expandedMemoLineIds, setExpandedMemoLineIds] = useState<Set<string>>(new Set())
   const journalGuideRef = useRef<HTMLDivElement>(null)
+
+  const toggleMemo = (lineId: string) => {
+    setExpandedMemoLineIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(lineId)) next.delete(lineId)
+      else next.add(lineId)
+      return next
+    })
+  }
+
+  const { debitTotal, creditTotal, balanceDiff } = useMemo(() => {
+    const dr = journalLines
+      .filter((l) => l.type === 'Debit')
+      .reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0)
+    const cr = journalLines
+      .filter((l) => l.type === 'Credit')
+      .reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0)
+    return {
+      debitTotal: dr,
+      creditTotal: cr,
+      balanceDiff: Math.round((dr - cr) * 100) / 100,
+    }
+  }, [journalLines])
+
+  const handleAutoBalance = () => {
+    if (Math.abs(balanceDiff) < 0.001) return
+    const targetType = balanceDiff > 0 ? 'Credit' : 'Debit'
+    const targetAmount = Math.abs(balanceDiff).toFixed(2)
+
+    // Check if there is an empty line or line with 0 amount to fill
+    const emptyLineIndex = journalLines.findIndex(
+      (l) => (!l.amount || parseFloat(l.amount) === 0)
+    )
+
+    if (emptyLineIndex >= 0) {
+      setJournalLines((prev) =>
+        prev.map((line, idx) =>
+          idx === emptyLineIndex
+            ? { ...line, type: targetType, amount: targetAmount }
+            : line
+        )
+      )
+    } else {
+      setJournalLines((prev) => [
+        ...prev,
+        {
+          id: uuidv7(),
+          categoryId: '',
+          subCategoryId: '',
+          amount: targetAmount,
+          type: targetType,
+          note: '',
+          referenceNumber: '',
+        },
+      ])
+    }
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -190,7 +260,7 @@ function AddTransactionModalContent() {
   const addJournalLine = () => {
     setJournalLines((prev) => [
       ...prev,
-      { id: uuidv7(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
+      { id: uuidv7(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', note: '', referenceNumber: '' },
     ])
   }
 
@@ -531,7 +601,7 @@ function AddTransactionModalContent() {
                   {journalLines.map((line) => (
                     <div
                       key={line.id}
-                      className="flex flex-col gap-2 p-2 border border-slate-200 dark:border-slate-800 rounded-lg"
+                      className="flex flex-col gap-2 p-2.5 bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl transition-all"
                     >
                       <div className="flex gap-2">
                         <Combobox
@@ -562,7 +632,7 @@ function AddTransactionModalContent() {
                           value={line.categoryId}
                           onChange={(val) => updateJournalLine(line.id, { categoryId: val })}
                           placeholder="Category..."
-                          className="flex-1 text-sm"
+                          className="flex-1 text-xs sm:text-sm"
                         />
                         <Combobox
                           options={accounts
@@ -572,7 +642,7 @@ function AddTransactionModalContent() {
                           value={line.subCategoryId}
                           onChange={(val) => updateJournalLine(line.id, { subCategoryId: val })}
                           placeholder="Account..."
-                          className="flex-1 text-sm"
+                          className="flex-1 text-xs sm:text-sm"
                           disabled={!line.categoryId}
                           onCreate={(val) => {
                             const group = accountGroups.find((g) => g.id === line.categoryId)
@@ -589,29 +659,34 @@ function AddTransactionModalContent() {
                       </div>
 
                       <div className="flex gap-2 items-center w-full">
-                        <div className="flex flex-col flex-1 border border-slate-200 dark:border-slate-800 rounded-lg focus-within:border-blue-600 bg-white dark:bg-slate-950">
-                          <div className="flex text-[10px] uppercase font-bold text-slate-400 bg-slate-100 dark:bg-slate-900 rounded-t-lg">
-                            <button
-                              type="button"
-                              onClick={() => updateJournalLine(line.id, { type: 'Debit' })}
-                              className={`flex-1 py-1 text-center transition-colors ${line.type === 'Debit'
-                                  ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
-                                  : 'hover:bg-slate-200/50 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                              Dr
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => updateJournalLine(line.id, { type: 'Credit' })}
-                              className={`flex-1 py-1 text-center transition-colors ${line.type === 'Credit'
-                                  ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-100'
-                                  : 'hover:bg-slate-200/50 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                              Cr
-                            </button>
-                          </div>
+                        {/* Segmented Dr / Cr Pill */}
+                        <div className="inline-flex p-0.5 bg-slate-200/80 dark:bg-slate-800 rounded-lg shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => updateJournalLine(line.id, { type: 'Debit' })}
+                            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                              line.type === 'Debit'
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            Dr
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateJournalLine(line.id, { type: 'Credit' })}
+                            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                              line.type === 'Credit'
+                                ? 'bg-emerald-600 text-white shadow-sm'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            Cr
+                          </button>
+                        </div>
+
+                        {/* Amount Input */}
+                        <div className="flex-1 relative">
                           <CalculatorInput
                             placeholder="0.00"
                             value={line.amount}
@@ -627,56 +702,119 @@ function AddTransactionModalContent() {
                               }
                             }}
                             required
-                            className="w-full min-h-[30px] px-2 pr-8 text-right bg-transparent text-sm focus:outline-none text-slate-900 dark:text-slate-100"
+                            className="w-full min-h-[38px] px-3 pr-8 text-right bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-semibold focus:outline-none focus:border-blue-600 text-slate-900 dark:text-slate-100"
                           />
                         </div>
 
+                        {/* Memo / Details Toggle Icon Button */}
+                        <button
+                          type="button"
+                          onClick={() => toggleMemo(line.id)}
+                          title={line.note || line.referenceNumber ? 'Edit line details (note/ref)' : 'Add line note / ref #'}
+                          className={`p-2 rounded-lg transition-colors cursor-pointer shrink-0 ${
+                            line.note || line.referenceNumber || expandedMemoLineIds.has(line.id)
+                              ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800'
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 border border-transparent'
+                          }`}
+                        >
+                          <MessageSquare className="w-4 h-4" strokeWidth={1.5} />
+                        </button>
+
+                        {/* Delete Line Button */}
                         {journalLines.length > 2 && (
                           <button
                             type="button"
                             onClick={() => removeJournalLine(line.id)}
-                            className="p-1 text-slate-400 hover:text-rose-500 transition-colors cursor-pointer"
+                            title="Remove line"
+                            className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer shrink-0"
                           >
                             <Trash2 className="w-4 h-4" strokeWidth={1.5} />
                           </button>
                         )}
                       </div>
 
-                      <input
-                        type="text"
-                        placeholder="Line comment / memo (optional)..."
-                        value={line.comment || ''}
-                        onChange={(e) => updateJournalLine(line.id, { comment: e.target.value })}
-                        className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:border-blue-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
-                      />
+                      {/* Collapsible Memo / Note & Reference Field */}
+                      {(Boolean(line.note) || Boolean(line.referenceNumber) || expandedMemoLineIds.has(line.id)) && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                          <input
+                            type="text"
+                            placeholder="Line memo / note (optional)..."
+                            value={line.note || ''}
+                            onChange={(e) => updateJournalLine(line.id, { note: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:border-blue-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Line ref # (optional)..."
+                            value={line.referenceNumber || ''}
+                            onChange={(e) => updateJournalLine(line.id, { referenceNumber: e.target.value })}
+                            className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:border-blue-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
+                          />
+                        </div>
+                      )}
                     </div>
                   ))}
 
-                  <button
-                    type="button"
-                    onClick={addJournalLine}
-                    className="mt-1 w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg flex items-center justify-center gap-2 text-sm font-semibold transition-colors cursor-pointer border border-dashed border-slate-300 dark:border-slate-600"
-                  >
-                    <Plus className="w-4 h-4" strokeWidth={1.5} /> Add Line
-                  </button>
+                  {/* Actions: Add Line & Auto-Balance */}
+                  <div className="flex gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={addJournalLine}
+                      className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg flex items-center justify-center gap-1.5 text-xs sm:text-sm font-semibold transition-colors cursor-pointer border border-dashed border-slate-300 dark:border-slate-600"
+                    >
+                      <Plus className="w-4 h-4" strokeWidth={1.5} /> Add Line
+                    </button>
 
-                  <div className="flex justify-between items-center text-sm font-medium mt-2 p-2 bg-slate-100 dark:bg-slate-800 rounded-lg">
-                    <span className="text-slate-500">Totals:</span>
-                    <div className="flex gap-4">
-                      <span className="text-blue-600 dark:text-blue-400">
-                        Dr: ₱
-                        {journalLines
-                          .filter((l) => l.type === 'Debit')
-                          .reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0)
-                          .toFixed(2)}
-                      </span>
-                      <span className="text-rose-600 dark:text-rose-400 font-semibold bg-rose-50 dark:bg-rose-500/10 px-2 py-0.5 rounded">
-                        Cr: ₱
-                        {journalLines
-                          .filter((l) => l.type === 'Credit')
-                          .reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0)
-                          .toFixed(2)}
-                      </span>
+                    {Math.abs(balanceDiff) >= 0.01 && (
+                      <button
+                        type="button"
+                        onClick={handleAutoBalance}
+                        className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60 rounded-lg flex items-center justify-center gap-1 text-xs font-semibold transition-colors cursor-pointer shadow-sm"
+                        title={`Auto-add ${balanceDiff > 0 ? 'Credit' : 'Debit'} ₱${Math.abs(balanceDiff).toFixed(2)}`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> Auto-Balance
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Live Balance Status Card */}
+                  <div
+                    className={`flex flex-col gap-1.5 p-2.5 rounded-xl border transition-all text-xs ${
+                      Math.abs(balanceDiff) < 0.01 && debitTotal > 0
+                        ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/50 text-emerald-800 dark:text-emerald-300'
+                        : 'bg-slate-100/90 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center font-medium">
+                      <div className="flex items-center gap-1.5">
+                        {Math.abs(balanceDiff) < 0.01 && debitTotal > 0 ? (
+                          <>
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                              Balanced
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="w-4 h-4 text-amber-500 dark:text-amber-400" />
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              {debitTotal === 0 && creditTotal === 0
+                                ? 'Enter line amounts'
+                                : `Diff: ₱${Math.abs(balanceDiff).toFixed(2)} (${balanceDiff > 0 ? 'Need Cr' : 'Need Dr'})`}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2.5 font-semibold">
+                        <span className="text-blue-600 dark:text-blue-400">
+                          Dr: ₱{debitTotal.toFixed(2)}
+                        </span>
+                        <span className="text-slate-300 dark:text-slate-600">|</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          Cr: ₱{creditTotal.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -737,20 +875,22 @@ function AddTransactionModalContent() {
                       </span>
                     ))}
                     {selectedNewLookups.map((l, i) => (
-                        <span
-                          key={`suggested-${i}`}
-                          onClick={() => setSelectedNewLookups(prev => prev.filter(x => x !== l))}
-                          className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40 px-2 py-0.5 rounded-full shadow-sm cursor-pointer hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 dark:hover:border-rose-800 transition-colors"
-                          title="Click to exclude suggested lookup"
-                        >
-                          {l}
-                          <X className="w-2.5 h-2.5" />
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                      <span
+                        key={`suggested-${i}`}
+                        onClick={() => setSelectedNewLookups(prev => prev.filter(x => x !== l))}
+                        className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40 px-2 py-0.5 rounded-full shadow-sm cursor-pointer hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 dark:hover:border-rose-800 transition-colors"
+                        title="Click to exclude suggested lookup"
+                      >
+                        {l}
+                        <X className="w-2.5 h-2.5" />
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
+
+              {/* Date & Reference in clean responsive 2-col row */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
                 <div className="flex flex-col gap-1">
                   <label
                     htmlFor="transaction-date-input"
@@ -764,23 +904,7 @@ function AddTransactionModalContent() {
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
                     required
-                    className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label
-                    htmlFor="transaction-note-textarea"
-                    className="text-xs font-semibold text-slate-500 uppercase tracking-wider"
-                  >
-                    Note
-                  </label>
-                  <textarea
-                    id="transaction-note-textarea"
-                    placeholder="Note (optional)"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    className="min-h-[44px] p-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full text-sm resize-y"
-                    rows={2}
+                    className="min-h-[42px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
                   />
                 </div>
                 <div className="flex flex-col gap-1">
@@ -796,9 +920,27 @@ function AddTransactionModalContent() {
                     placeholder="Reference Number (optional)"
                     value={referenceNumber}
                     onChange={(e) => setReferenceNumber(e.target.value)}
-                    className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full"
+                    className="min-h-[42px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
                   />
                 </div>
+              </div>
+
+              {/* Full Width Note textarea */}
+              <div className="flex flex-col gap-1 mt-1">
+                <label
+                  htmlFor="transaction-note-textarea"
+                  className="text-xs font-semibold text-slate-500 uppercase tracking-wider"
+                >
+                  Note
+                </label>
+                <textarea
+                  id="transaction-note-textarea"
+                  placeholder="Note (optional)"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  className="min-h-[42px] p-2.5 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm resize-y"
+                  rows={2}
+                />
               </div>
 
               {ingestion && (
