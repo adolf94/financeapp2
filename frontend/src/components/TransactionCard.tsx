@@ -45,7 +45,13 @@ export default function TransactionCard({ tx, getAccountName, onEdit, onDelete }
             <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
               {
                 tx.type === 'Transfer'
-                ? tx.entries.map(e => getAccountName(e.accountId)).join(' ➔ ')
+                ? (() => {
+                    const src = tx.entries.find((e) => e.amount < 0)
+                    const dst = tx.entries.find((e) => e.amount > 0)
+                    return src && dst
+                      ? `${getAccountName(src.accountId)} ➔ ${getAccountName(dst.accountId)}`
+                      : tx.entries.map((e) => getAccountName(e.accountId)).join(' ➔ ')
+                  })()
                 : tx.type === 'Journal'
                 ? `${tx.entries.length} splits`
                 : getAccountName(tx.entries.find(e => tx.type === 'Expense' ? e.amount < 0 : e.amount > 0)?.accountId ?? '')

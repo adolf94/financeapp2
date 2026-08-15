@@ -78,7 +78,7 @@ Analyze the image carefully and return ONLY valid JSON matching this schema:
   "sender_account_number": string (if visible on receipt/statement),
   "sender_account_name": string (if visible on receipt/statement),
   "reference_number": string (order ID, invoice number, receipt number, or trace number),
-  "date": "ISO8601 string or null if date is not visible on the document",
+  "date": "ISO8601 UTC string ending in 'Z' (e.g. '2026-08-15T12:13:00Z') or null if date is not visible on the document",
   "application": "string (The application/source of the document. If this is a physical paper receipt, cash invoice, or POS slip, strictly set 'Physical Receipt'. If this is a mobile banking or e-wallet screenshot, identify the app such as 'GCash', 'BPI', 'Maya', 'BDO', 'UnionBank', 'Grab', 'Shopee', 'Foodpanda', 'GoTyme', 'SeaBank', etc.)",
   "why": "string (explain the classification decisions, extracted fields, and matching rules)"{suggested_rule_field}
 }}
@@ -93,7 +93,7 @@ Rules:
 - amount = TOTAL amount paid/settled (the final charged total, not subtotal or before discounts).
 
 
-- date = Extract transaction date and time from the receipt/statement if printed; format as ISO8601 (e.g. 2026-08-15T14:30:00Z). If no year is printed, assume current year. If no date is found, set null.
+- date = Extract transaction date and time from the receipt/statement if printed and format strictly as an ISO8601 UTC string ending in 'Z' (e.g. 8:13 PM GMT+8 becomes 20:13:00 GMT+8 -> convert to UTC: '2026-08-15T12:13:00Z'). Assume time in screenshot is GMT+08:00 (Asia/Manila) unless another timezone is explicitly stated. Pay special attention to AM vs PM. If no year is printed, assume current year. If no date is found, set null.
 - Apply the User Runbook rules ABOVE everything else.
 - For transaction_type: "Expense" = money leaving user's accounts to pay for goods/services; "Income" = salary, deposits, earnings; "Transfer" = moving money between user's own bank accounts, paying a credit card, or e-wallet top-up.
 - For Expense: debit = expense account, credit = source bank/cash/credit card account.

@@ -404,6 +404,12 @@ class FinanceApiService:
         
         # 1. Create the main Transaction document (EF Core format)
         tx_date = parsed.date or ingestion.received_at or datetime.now(timezone.utc)
+        if tx_date.tzinfo is None:
+            tx_date = tx_date.replace(tzinfo=timezone.utc)
+        else:
+            tx_date = tx_date.astimezone(timezone.utc)
+        tx_date_iso = tx_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+
         vendor_lookups = []
         if parsed.vendor:
             if parsed.vendor.lookups:
@@ -413,9 +419,10 @@ class FinanceApiService:
         vendor_lookups = list(set([l for l in vendor_lookups if l]))
 
         tx_doc = {
-            "id": tx_id,
+            "id": f"Transaction|{tx_id}",
+            "Id": tx_id,
             "UserId": ingestion.user_id,
-            "Date": tx_date.isoformat(),
+            "Date": tx_date_iso,
             "Vendor": parsed.vendor.name if parsed.vendor else None,
             "Type": tx_type,
             "Note": parsed.notes or "",
@@ -429,8 +436,10 @@ class FinanceApiService:
         await tx_container.create_item(tx_doc)
         
         # 2. Create the LedgerEntry documents (EF Core format)
+        debit_id = str(uuid7())
         debit_entry = {
-            "id": str(uuid7()),
+            "id": f"LedgerEntry|{debit_id}",
+            "Id": debit_id,
             "UserId": ingestion.user_id,
             "TransactionId": tx_id,
             "AccountId": parsed.debit_account_id,
@@ -438,8 +447,10 @@ class FinanceApiService:
             "$type": "LedgerEntry"
         }
         
+        credit_id = str(uuid7())
         credit_entry = {
-            "id": str(uuid7()),
+            "id": f"LedgerEntry|{credit_id}",
+            "Id": credit_id,
             "UserId": ingestion.user_id,
             "TransactionId": tx_id,
             "AccountId": parsed.credit_account_id,

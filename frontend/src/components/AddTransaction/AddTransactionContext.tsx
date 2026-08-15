@@ -169,7 +169,7 @@ export function AddTransactionProvider({
   const [vendor, setVendor] = useState('')
   const [selectedLookups, setSelectedLookups] = useState<string[]>([])
   const [selectedNewLookups, setSelectedNewLookups] = useState<string[]>([])
-  const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'))
+  const [date, setDate] = useState(dayjs().format('YYYY-MM-DDTHH:mm'))
   const [note, setNote] = useState('')
   const [referenceNumber, setReferenceNumber] = useState('')
   const [userWhy, setUserWhy] = useState('')
@@ -436,7 +436,7 @@ export function AddTransactionProvider({
       vendor,
       note,
       referenceNumber,
-      date: new Date(date).toISOString(),
+      date: dayjs(date).toISOString(),
     }
 
     const mutation = initialData?.id ? updateTxMutation : createTxMutation
@@ -602,7 +602,7 @@ export function AddTransactionProvider({
         id: finalScheduleId,
         frequency,
         interval: 1,
-        startDate: new Date(date).toISOString(),
+        startDate: dayjs(date).toISOString(),
         nextOccurrenceDate: nextDate.toISOString(),
         maxOccurrences: maxOccurrences ? parseInt(maxOccurrences) : undefined,
         templateType: type,
@@ -663,7 +663,7 @@ export function AddTransactionProvider({
         vendor: type === 'Transfer' ? null : vendor.trim() || undefined,
         note: note.trim() || undefined,
         referenceNumber: referenceNumber.trim() || undefined,
-        date: dayjs(date).format('YYYY-MM-DDTHH:mm:ss[Z]'),
+        date: dayjs(date).toISOString(),
     }
 
     const mutation = initialData?.id ? updateTxMutation : createTxMutation

@@ -117,7 +117,13 @@ export default function DayModal({ date, transactions, accounts, summary, onClos
 
               const secondaryLabel =
                 tx.type === 'Transfer'
-                  ? tx.entries.map((e) => getAccountName(e.accountId)).join(' ➔ ')
+                  ? (() => {
+                      const src = tx.entries.find((e) => e.amount < 0)
+                      const dst = tx.entries.find((e) => e.amount > 0)
+                      return src && dst
+                        ? `${getAccountName(src.accountId)} ➔ ${getAccountName(dst.accountId)}`
+                        : tx.entries.map((e) => getAccountName(e.accountId)).join(' ➔ ')
+                    })()
                   : tx.type === 'Journal'
                   ? `${tx.entries.length} splits`
                   : getAccountName(
