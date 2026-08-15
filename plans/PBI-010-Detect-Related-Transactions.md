@@ -1,4 +1,4 @@
-﻿---
+---
 github_issue: 10
 github_url: https://github.com/adolf94/financeapp2/issues/10
 status: open
@@ -22,17 +22,24 @@ We need a system to:
 * Add a `reference_number` property to the `AiParsedData` model.
 
 ### 2. Detection Criteria
+
 Two ingestions (or an ingestion and an already confirmed transaction) are considered **related** if they belong to the same user and satisfy either of:
-1. **Reference Number Match**: Both have a non-empty `reference_number` and they are identical.
-2. **Time and Amount Match**: Both have the exact same `amount` (absolute value) and their timestamps (`received_at` or parsed transaction `date`) are within **5 minutes** of each other.
+
+1. **Reference Number Match**: Both have a non-empty `reference_number` and they are identical. Lookup window: **past 30 days** (to avoid stale collision from old transactions with reused ref numbers).
+2. **Time and Amount Match**: Both have the same `amount` (absolute value, rounded to 2 decimal places for normalization) and their timestamps (`received_at` or parsed transaction `date`) are within **5 minutes** of each other.
+
+> **Note**: Confirmed transaction cross-check is in scope for v1. When a new ingestion is processed, also query the C# backend `GET /transactions?userId=...&amount=...` for recent confirmed transactions matching criteria 2. If a match is found, add the confirmed transaction ID to `related_transaction_ids` **and** flag the ingestion with a `has_possible_confirmed_match: true` warning field so the UI can surface: *"A confirmed transaction for this amount already exists."*
 
 ### 3. Backend & Database Schema Updates
-* Add `reference_number` to `AiParsedData` (and sync it to C# `AiParsedData.cs`).
-* Add `related_ingestion_ids` (list of strings) and `related_transaction_ids` (list of strings) to `PendingIngestion` to track detected relationships.
+* Add `reference_number` to `AiParsedData` (already present — ✅ no change needed).
+* Add `related_ingestion_ids`, `related_transaction_ids`, `possible_related_ingestion_ids`, `possible_related_transaction_ids` to `PendingIngestion`.
+* Add `has_possible_confirmed_match: bool = False` to `PendingIngestion` — set `true` when a confirmed transaction match is found.
+* Add `Duplicate` and `Merged` to the ingestion `status` enum (used when auto-rejecting duplicates on confirm).
 * Update `IngestionService` in Python:
-  * When processing a hook, query the database for other pending ingestions or recent transactions (e.g. within the last 15 minutes if doing amount/time checks, or any time if doing reference number checks) that match the criteria.
-  * Populate `related_ingestion_ids` and `related_transaction_ids` on the new pending ingestion.
-  * Optionally, back-port the relationship to the existing pending ingestions.
+  * When processing a hook, query CosmosDB `PendingIngestions` for matching pending items.
+  * **Also query the C# backend** for confirmed transactions matching the time+amount criteria. If found: add to `related_transaction_ids`, set `has_possible_confirmed_match = true`.
+  * Populate `related_ingestion_ids` / `possible_related_ingestion_ids` on the new pending ingestion.
+  * **Back-port is mandatory**: always update matched existing pending ingestions to include the new ID in their list (not optional).
 
 ### 4. API Enhancements
 * Extend `GET /ingestions` to return relationship context, ensuring the frontend can access linked items.
@@ -70,14 +77,14 @@ Use the `model-syncer` skill to ensure the models are updated and aligned.
 ### Ingestion Pipeline Logic
 In `IngestionService.process_hook_async`:
 1. Extract `reference_number` and `amount` from the AI classification result.
-2. Search CosmosDB `PendingIngestions` container for items:
-   - PartitionKey = `user_id`
-   - Status = `Pending`
-3. Categorize relations:
-   - **Definite Relation**: Both have the same non-empty `reference_number`.
-   - **Possible Relation**: No matching `reference_number` (or one is missing), but `amount` is equal and `received_at` / transaction `date` is within **5 minutes**.
-4. Link IDs accordingly.
-5. Update matched pending ingestions to include the new ingestion's ID in their corresponding list.
+2. **Query 1 — Pending ingestions**: Search CosmosDB `PendingIngestions` (PartitionKey = `user_id`, Status = `Pending`) for matches.
+3. **Query 2 — Confirmed transactions**: Call C# backend API for confirmed transactions matching user+amount within 5-minute window.
+4. Categorize relations:
+   - **Definite Relation** (`related_ingestion_ids`): Same non-empty `reference_number` (within 30 days).
+   - **Possible Relation** (`possible_related_ingestion_ids`): No matching `reference_number` (or one is missing), but `amount` is equal (normalized to 2dp) and `received_at` within **5 minutes**.
+   - **Confirmed Match** (`related_transaction_ids` + `has_possible_confirmed_match = true`): Confirmed transaction found matching amount+time.
+5. Link IDs accordingly.
+6. **Back-port (mandatory)**: Update all matched existing pending ingestions to append the new ingestion's ID to their corresponding relation list.
 
 ---
 

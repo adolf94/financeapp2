@@ -40,8 +40,15 @@ class HookService:
 
         action = body.get("action", "unknown")
         is_sms = self._is_sms_action(action, body)
+        explicit_type = body.get("notification_type")
 
-        if is_sms:
+        if explicit_type == "image" or "image" in action.lower() or body.get("blob_name"):
+            raw_msg = f"[IMAGE]: {body.get('filename') or body.get('description') or 'Receipt Image'}"
+            notification_type = "image"
+        elif explicit_type == "email" or action.lower() == "email_received":
+            raw_msg = f"[EMAIL]: {body.get('subject', 'Email Notification')}"
+            notification_type = "email"
+        elif is_sms:
             # SMS: primary message is in sms_rcv_msg
             sender = body.get("sms_rcv_sender") or body.get("sms_sender") or ""
             sms_msg = body.get("sms_rcv_msg") or body.get("sms_msg") or ""
@@ -56,13 +63,15 @@ class HookService:
             raw_msg = "Unknown notification"
 
         hook_msg = PhoneHookMessage(
-            user_id=body.get("userId","default"),
+            id=body.get("id") or str(uuid7()),
+            user_id=body.get("userId", "default"),
             action=action,
             raw_payload=body,
             raw_msg=raw_msg,
             month_key=month_key,
-            partition_key=month_key,
+            partition_key=body.get("userId") or month_key,
             notification_type=notification_type
         )
 
         return await self._repo.add_async(hook_msg)
+

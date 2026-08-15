@@ -42,7 +42,8 @@ namespace FinanceApp.Services
             {
                 UserId = userId,
                 Name = name.Trim(),
-                Tags = new List<string>()
+                Tags = new List<string>(),
+                LastUsed = DateTime.UtcNow
             };
             await _repository.AddVendorAsync(vendor);
             return vendor;
@@ -55,6 +56,7 @@ namespace FinanceApp.Services
             {
                 existing.Type = vendor.Type ?? existing.Type;
                 existing.Tags = vendor.Tags.Any() ? vendor.Tags : existing.Tags;
+                existing.LastUsed = vendor.LastUsed ?? existing.LastUsed ?? DateTime.UtcNow;
                 await _repository.UpdateVendorAsync(userId, existing);
                 return existing;
             }
@@ -68,6 +70,7 @@ namespace FinanceApp.Services
             {
                 vendor.Tags = new List<string>();
             }
+            vendor.LastUsed ??= DateTime.UtcNow;
             await _repository.AddVendorAsync(vendor);
             return vendor;
         }
@@ -89,6 +92,7 @@ namespace FinanceApp.Services
             {
                 vendor.Tags = new List<string>();
             }
+            vendor.LastUsed ??= existing?.LastUsed ?? DateTime.UtcNow;
             await _repository.UpdateVendorAsync(userId, vendor);
             return vendor;
         }

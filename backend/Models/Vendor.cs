@@ -25,5 +25,6 @@ namespace FinanceApp.Models
             get => _tags ??= new(); 
             set => _tags = value ?? new(); 
         }
+        public DateTime? LastUsed { get; set; }
     }
 }

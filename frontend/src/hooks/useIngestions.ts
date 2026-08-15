@@ -301,3 +301,51 @@ export function useCheckEmails() {
     }
   })
 }
+
+export function useUploadImage() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      file,
+      operationId,
+      description,
+      streamReasoning = true,
+    }: {
+      file: File
+      operationId?: string
+      description?: string
+      streamReasoning?: boolean
+    }) => {
+      const connId = (window as any).signalRConnectionId || ''
+      const formData = new FormData()
+      formData.append('image', file)
+      if (operationId) {
+        formData.append('operation_id', operationId)
+      }
+      if (connId) {
+        formData.append('connection_id', connId)
+      }
+      if (description) {
+        formData.append('description', description)
+      }
+
+      const response = await ingesterClient.post('/image_hook', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        params: {
+          ...(operationId ? { operationId } : {}),
+          ...(connId ? { connectionId: connId } : {}),
+          ...(description ? { description } : {}),
+          streamReasoning: !!streamReasoning,
+        },
+      })
+      return response.data as { ingestion_id: string; status: string; message: string }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
+    },
+  })
+}
+
+

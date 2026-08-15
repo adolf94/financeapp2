@@ -7,13 +7,16 @@ namespace FinanceApp.Services
     {
         private readonly ITransactionRepository _transactionRepository;
         private readonly IAccountRepository _accountRepository;
+        private readonly IVendorRepository _vendorRepository;
 
         public TransactionService(
             ITransactionRepository transactionRepository,
-            IAccountRepository accountRepository)
+            IAccountRepository accountRepository,
+            IVendorRepository vendorRepository)
         {
             _transactionRepository = transactionRepository;
             _accountRepository = accountRepository;
+            _vendorRepository = vendorRepository;
         }
 
         public async Task<IEnumerable<Transaction>> GetTransactionsAsync(string userId, DateTime? startDate, DateTime? endDate, string? accountGroupId = null)
@@ -42,6 +45,11 @@ namespace FinanceApp.Services
 
             // Apply balance impact
             await ApplyBalanceImpactAsync(userId, transaction);
+
+            if (!string.IsNullOrWhiteSpace(transaction.Vendor))
+            {
+                await _vendorRepository.UpdateVendorLastUsedAsync(userId, transaction.Vendor, transaction.Date);
+            }
 
             await _transactionRepository.AddTransactionAsync(transaction);
             await _transactionRepository.SaveChangesAsync();
@@ -85,6 +93,11 @@ namespace FinanceApp.Services
             existingTx.Note = transaction.Note;
             existingTx.Vendor = transaction.Vendor;
             existingTx.Type = transaction.Type;
+
+            if (!string.IsNullOrWhiteSpace(transaction.Vendor))
+            {
+                await _vendorRepository.UpdateVendorLastUsedAsync(userId, transaction.Vendor, transaction.Date);
+            }
 
             await _transactionRepository.UpdateTransactionAsync(existingTx, oldEntries);
             await _transactionRepository.SaveChangesAsync();

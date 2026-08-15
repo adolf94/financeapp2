@@ -1,12 +1,15 @@
 import { useState } from 'react'
-import { RotateCcw, Sparkles, Plus, X, Mail, MessageSquare, Bell } from 'lucide-react'
+import { RotateCcw, Sparkles, Plus, X, Mail, MessageSquare, Bell, Image as ImageIcon } from 'lucide-react'
 import { useAddTransaction } from './AddTransactionContext'
 import { useUpdateIngestionVendor, PendingIngestion } from '@/hooks/useIngestions'
 import { useGetVendors, useCreateVendor } from '@/hooks/useVendors'
 import SuggestedAccountsPanel from './SuggestedAccountsPanel'
 import { IngestionReviewSkeleton } from '@/components/ui/Skeleton'
+import AuthenticatedReceiptImage from '@/components/AuthenticatedReceiptImage'
 
 const getIngestionAppName = (ing: PendingIngestion) => {
+
+
   if (ing.ai_parsed?.application) return ing.ai_parsed.application
 
   const payload = (ing.raw_payload as any) || {}
@@ -98,6 +101,12 @@ export default function IngestionReviewPanel() {
               App
             </span>
           )}
+          {ingestion.notification_type === 'image' && (
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700/50">
+              <ImageIcon className="w-2.5 h-2.5" />
+              Receipt
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -158,6 +167,25 @@ export default function IngestionReviewPanel() {
                 "{ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ingestion.raw_msg}"
               </p>
             </div>
+          ) : ingestion.notification_type === 'image' ? (
+            <div className="p-3 bg-purple-50 dark:bg-purple-950/20 border border-purple-200 dark:border-purple-800/60 rounded-xl flex flex-col gap-2 shadow-sm">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+                  Receipt Summary
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewOpen(true)}
+                  className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 bg-white dark:bg-slate-900 px-2 py-0.5 rounded border border-purple-200 dark:border-purple-800 transition-colors shadow-sm cursor-pointer"
+                >
+                  <ImageIcon className="w-3 h-3" />
+                  Preview Receipt
+                </button>
+              </div>
+              <p className="text-slate-800 dark:text-slate-200 italic font-semibold text-xs leading-snug">
+                "{ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ingestion.raw_msg}"
+              </p>
+            </div>
           ) : ingestion.notification_type === 'sms' ? (
             <div className="p-3 bg-cyan-50 dark:bg-cyan-950/20 border border-cyan-200 dark:border-cyan-800/60 rounded-xl flex flex-col gap-1.5 shadow-sm">
               <span className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
@@ -177,6 +205,7 @@ export default function IngestionReviewPanel() {
               </p>
             </div>
           )}
+
 
           {/* Sender / Recipient / App metadata if present */}
           <div className="grid grid-cols-2 gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
@@ -340,10 +369,12 @@ export default function IngestionReviewPanel() {
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 rounded-t-2xl">
               <div className="flex-1 min-w-0 pr-4">
                 <h3 className="font-bold text-slate-950 dark:text-white text-base truncate">
-                  {ingestion.raw_payload?.subject || ingestion.raw_payload?.Subject || ingestion.raw_payload?.notif_title || 'Email Preview'}
+                  {ingestion.raw_payload?.subject || ingestion.raw_payload?.Subject || ingestion.raw_payload?.notif_title || (ingestion.notification_type === 'image' ? 'Receipt Image Preview' : 'Email Preview')}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-                  From: {ingestion.raw_payload?.from || ingestion.raw_payload?.From || ingestion.raw_payload?.sender || 'Unknown'}
+                  {ingestion.notification_type === 'image' 
+                    ? `File: ${ingestion.raw_payload?.filename || 'Receipt'} (${ingestion.raw_payload?.file_size ? `${(ingestion.raw_payload.file_size / 1024).toFixed(1)} KB` : ''})`
+                    : `From: ${ingestion.raw_payload?.from || ingestion.raw_payload?.From || ingestion.raw_payload?.sender || 'Unknown'}`}
                 </p>
               </div>
               <button 
@@ -354,7 +385,20 @@ export default function IngestionReviewPanel() {
               </button>
             </div>
             <div className="p-4 overflow-y-auto flex-1 bg-white dark:bg-slate-950 text-sm min-h-[300px]">
-              {(() => {
+              {ingestion.notification_type === 'image' ? (
+                <div className="flex flex-col items-center justify-center p-4 bg-slate-950 rounded-xl">
+                  <AuthenticatedReceiptImage
+                    ingestionId={ingestion.id}
+                    alt={ingestion.raw_payload?.filename || 'Receipt Image'}
+                    className="max-h-[60vh] max-w-full object-contain rounded-lg shadow-lg"
+                  />
+                  <div className="mt-3 flex justify-between w-full text-xs text-slate-400 px-2">
+                    <span>{ingestion.raw_payload?.filename || 'Receipt Image'}</span>
+                    <span>{ingestion.raw_payload?.file_size ? `${(ingestion.raw_payload.file_size / 1024).toFixed(1)} KB` : ''}</span>
+                  </div>
+                </div>
+              ) : (() => {
+
                 const html = ingestion.raw_payload?.html_content || ingestion.raw_payload?.html || ingestion.raw_payload?.body_html
                 const markdown = ingestion.raw_payload?.markdown_content || ingestion.raw_payload?.markdown || ingestion.raw_payload?.body_markdown
                 const plainText = ingestion.raw_payload?.raw_msg || ingestion.raw_payload?.body || ingestion.raw_payload?.text || ingestion.raw_payload?.content || ingestion.raw_payload?.text_content || ingestion.raw_msg
@@ -383,3 +427,4 @@ export default function IngestionReviewPanel() {
     </div>
   )
 }
+

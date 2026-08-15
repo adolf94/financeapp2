@@ -139,7 +139,8 @@ class FinanceApiService:
                     "id": item.get("id"),
                     "name": item.get("Name", item.get("name")),
                     "type": item.get("Type", item.get("type", "Business")),
-                    "tags": item.get("Tags", item.get("tags", []))
+                    "tags": item.get("Tags", item.get("tags", [])),
+                    "last_used": item.get("LastUsed", item.get("last_used"))
                 })
             # Sort by name
             vendors.sort(key=lambda x: (x.get("name") or "").lower())
@@ -320,21 +321,28 @@ class FinanceApiService:
         )
         
         vendor_id = None
+        existing_doc = None
         async for item in items:
             vendor_id = item.get("id")
+            existing_doc = item
             break
             
+        now_iso = datetime.now(timezone.utc).isoformat()
         if not vendor_id:
             vendor_id = str(uuid7())
             doc = {
                 "id": vendor_id,
                 "UserId": user_id,
                 "Name": vendor_name,
-                "Tags": []
+                "Tags": [],
+                "LastUsed": now_iso
             }
             if vendor_type:
                 doc["Type"] = vendor_type
             await vendor_container.create_item(doc)
+        elif existing_doc:
+            existing_doc["LastUsed"] = now_iso
+            await vendor_container.upsert_item(existing_doc)
             
         if lookups:
             lookup_container = db.get_container_client("VendorLookups")

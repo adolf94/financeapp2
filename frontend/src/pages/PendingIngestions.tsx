@@ -3,15 +3,17 @@ import { useGetPendingIngestions, useCheckEmails } from '@/hooks/useIngestions'
 import { useGetTransactionById } from '@/hooks/useTransactions'
 import PendingIngestionsList from '@/components/PendingIngestionsList'
 import AddTransactionModal from '@/components/AddTransactionModal'
+import ImageUploadModal from '@/components/ImageUploadModal'
 import { Transaction } from '@/hooks/useTransactions'
-import { RefreshCw, Mail } from 'lucide-react'
+import { RefreshCw, Mail, Image as ImageIcon } from 'lucide-react'
 
 export default function PendingIngestions() {
   const [viewMode, setViewMode] = useState<'Pending' | 'AutoConfirmed' | 'Confirmed'>('Pending')
-  const [filter, setFilter] = useState<'all' | 'sms' | 'app' | 'email'>('all')
+  const [filter, setFilter] = useState<'all' | 'sms' | 'app' | 'email' | 'image'>('all')
   const { data: pendingIngestions = [], isLoading, refetch } = useGetPendingIngestions(viewMode)
   const [confirmingIngestionId, setConfirmingIngestionId] = useState<string | null>(null)
   const [openingTransactionId, setOpeningTransactionId] = useState<string | null>(null)
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
   
   const { data: openedTransaction } = useGetTransactionById(openingTransactionId)
 
@@ -91,6 +93,7 @@ export default function PendingIngestions() {
                 className="appearance-none pr-8 pl-3 py-2 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm"
               >
                 <option value="all">All Notifications</option>
+                <option value="image">Receipt Images</option>
                 <option value="email">Email Only</option>
                 <option value="sms">SMS Only</option>
                 <option value="app">App Push Only</option>
@@ -108,6 +111,13 @@ export default function PendingIngestions() {
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
               <span>Refetch</span>
+            </button>
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 active:scale-95 transition-all rounded-xl shadow-sm cursor-pointer"
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              <span>Upload Receipt</span>
             </button>
             <button
               onClick={handleCheckEmails}
@@ -162,6 +172,15 @@ export default function PendingIngestions() {
         )}
       </div>
 
+      <ImageUploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onSuccess={(id) => {
+          refetch()
+          setConfirmingIngestionId(id)
+        }}
+      />
+
       <AddTransactionModal
         isOpen={!!confirmingIngestionId || !!openedTransaction}
         onClose={() => {
@@ -175,3 +194,4 @@ export default function PendingIngestions() {
     </div >
   )
 }
+

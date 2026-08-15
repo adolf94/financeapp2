@@ -1,4 +1,4 @@
-﻿---
+---
 github_issue: 13
 github_url: https://github.com/adolf94/financeapp2/issues/13
 status: open
@@ -24,10 +24,15 @@ Additionally, the Shopee email does **not** identify which credit card was used 
 
 ## Technical Requirements
 
-### 1. Multi-Order Detection (Preprocessing)
+### 1. Multi-Order Detection (LLM)
 
-- `PreprocessingService` detects >= 2 distinct `Order ID:` blocks in the email body using regex — no extra LLM call.
-- Result surfaced via a new `is_multi_order: bool` field on `ExtractedAccountInfo`.
+- Multi-order detection is **fully handled by the LLM** — no regex pre-check step.
+- The email body is always passed to `SHOPEE_MULTI_ORDER_PROMPT`.
+- The LLM determines whether the email contains 1 or N orders and returns either:
+  - A **JSON array** of `AiParsedData` objects (N orders found, N ≥ 2), or
+  - A **single `AiParsedData` JSON object** (1 order or no order detected).
+- `EmailProcessingService` inspects the response: if it is an array → multi-order path; if object → standard single-ingestion path.
+- No `is_multi_order` field or pre-classification step required.
 
 ### 2. Multi-Order Classification (AI)
 
@@ -74,18 +79,11 @@ Additionally, the Shopee email does **not** identify which credit card was used 
 
 ### `ExtractedAccountInfo` (preprocessing_service.py)
 
-Add `is_multi_order` field:
-
-```python
-@dataclass
-class ExtractedAccountInfo:
-    # ... existing fields ...
-    is_multi_order: bool = False
-```
+No changes — `is_multi_order` field is **not needed**. Detection is done by the LLM.
 
 ### `PendingIngestion` (pending_ingestion.py)
 
-Ensure PBI-008 relation fields exist (add if not yet present):
+Ensure PBI-010 relation fields exist (add if not yet present — may already be added by PBI-010):
 
 ```python
 class PendingIngestion(BaseModel):
@@ -102,15 +100,14 @@ class PendingIngestion(BaseModel):
 
 | File/Component | Change |
 |---|---|
-| `services/preprocessing_service.py` | Add `is_multi_order: bool = False` to `ExtractedAccountInfo`; add `_detect_multi_order(text: str) -> bool` (regex: count `Order ID:` >= 2); call inside `process_hook()` |
-| `services/email_processing_service.py` | After preprocessing, fork on `extracted_info.is_multi_order`; if `True`, call `_process_multi_order_async()` instead of base `process_hook_async()` |
-| `services/email_processing_service.py` | Add `_process_multi_order_async(hook, extracted_info, accounts, runbook, vendors, vendor_matches)` — calls `classify_email_multi_async()`, creates N ingestions with cross-linked `related_ingestion_ids`, calls `_resolve_source_account_async()` |
+| `services/email_processing_service.py` | Always call `classify_email_shopee_async()` for Shopee emails; inspect response — if array → `_process_multi_order_async()`, if object → standard single path |
+| `services/email_processing_service.py` | Add `_process_multi_order_async(hook, orders: List[AiParsedData], accounts, runbook, vendors, vendor_matches)` — creates N ingestions with cross-linked `related_ingestion_ids`, calls `_resolve_source_account_async()` |
 | `services/email_processing_service.py` | Add `_resolve_source_account_async(total_amount, received_at, user_id)` — queries repo, patches `credit_account_id` on all siblings, back-ports link to source ingestion |
-| `repositories/ingestion_repository.py` | Add `find_by_amount_and_time_async(user_id, amount, around_time, window_minutes=5) -> List[PendingIngestion]` — reusable by PBI-008 general detection too |
-| `services/ai_service.py` | Add `classify_email_multi_async()` — uses `SHOPEE_MULTI_ORDER_PROMPT`, parses response as `List[AiParsedData]` |
-| `prompts/email_prompts.py` | Add `SHOPEE_MULTI_ORDER_PROMPT` |
-| `models/pending_ingestion.py` | Ensure PBI-008 relation fields exist |
-| `runbooks/shopee_email_runbook.md` *(new)* | Shopee-specific classification rules |
+| `repositories/ingestion_repository.py` | Add `find_by_amount_and_time_async(user_id, amount, around_time, window_minutes=5) -> List[PendingIngestion]` — reusable by PBI-010 general detection too |
+| `services/ai_service.py` | Add `classify_email_shopee_async()` — uses `SHOPEE_MULTI_ORDER_PROMPT`, handles response as either `List[AiParsedData]` (multi) or `AiParsedData` (single) |
+| `prompts/email_prompts.py` | Add `SHOPEE_MULTI_ORDER_PROMPT` — instructs LLM to detect order count and return array if N≥2, single object if N=1 |
+| `models/pending_ingestion.py` | Ensure PBI-010 relation fields exist (see PBI-010) |
+| `runbooks/shopee_email_runbook.md` *(new)* | Shopee-specific classification rules — always loaded when sender is Shopee |
 
 ---
 
@@ -159,6 +156,9 @@ if candidates:
 
 ### Automated Tests
 
-- Unit test `_detect_multi_order()`: single-order body (False), two-order body (True), three-order body (True).
+- Unit test `classify_email_shopee_async()` response handling:
+  - Single-order Shopee email → returns single `AiParsedData`, creates 1 ingestion.
+  - Two-order Shopee email → returns `List[AiParsedData]` (length 2), creates 2 cross-linked ingestions.
+  - Non-Shopee email (control) → not routed to this path.
 - Unit test `_resolve_source_account_async()`: matching candidate found, no candidate, candidate outside 5-min window.
-- Unit test `classify_email_multi_async()` response parsing with the sample Shopee email.
+- Unit test for deduplication: same Order IDs already in DB → skip creating duplicate ingestions.

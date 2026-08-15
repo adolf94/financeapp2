@@ -2,6 +2,8 @@ import azure.functions as func
 import os
 import json
 import logging
+import asyncio
+from uuid_extensions import uuid7
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -56,7 +58,7 @@ def validate_api_key(req: func.HttpRequest) -> Tuple[any, Optional[func.HttpResp
         logging.warning("API key is not provided")
     
     # Allow Bearer token with scope "notif_ingestion"
-    payload, err = _auth_client.validate(req, required_scopes=["notif_ingestion"])
+    payload, err = _auth_client.validate(req, required_scopes=["user"])
     if payload is not None and not err:
         logging.info(f"Bearer token is valid")
         return payload, None
@@ -74,10 +76,14 @@ def validate_api_key(req: func.HttpRequest) -> Tuple[any, Optional[func.HttpResp
     )
 
 # Setup dependencies
+from functools import lru_cache
+
+@lru_cache(maxsize=1)
 def get_hook_service():
     repo = CosmosHookRepository()
     return HookService(repo)
 
+@lru_cache(maxsize=1)
 def get_ingestion_service():
     ingestion_repo = CosmosIngestionRepository()
     vector_repo = CosmosVectorRepository()
@@ -97,6 +103,7 @@ def get_ingestion_service():
         finance_api_service=finance_api_service
     )
 
+@lru_cache(maxsize=1)
 def get_sms_ingestion_service():
     """Factory for the SMS-specific processing pipeline."""
     ingestion_repo = CosmosIngestionRepository()
@@ -116,6 +123,7 @@ def get_sms_ingestion_service():
         finance_api_service=finance_api_service
     )
 
+@lru_cache(maxsize=1)
 def get_email_ingestion_service():
     """Factory for the Email-specific processing pipeline."""
     ingestion_repo = CosmosIngestionRepository()
@@ -135,6 +143,30 @@ def get_email_ingestion_service():
         ai_service=ai_service,
         finance_api_service=finance_api_service
     )
+
+@lru_cache(maxsize=1)
+def get_image_ingestion_service():
+    """Factory for the Image-specific processing pipeline."""
+    ingestion_repo = CosmosIngestionRepository()
+    vector_repo = CosmosVectorRepository()
+    embedding_service = EmbeddingService()
+    vector_service = VectorService(vector_repo)
+    prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
+    debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
+    ai_service = AiService(debug_repo=debug_repo)
+    finance_api_service = FinanceApiService()
+
+    from services.blob_storage_service import BlobStorageService
+    from services.image_processing_service import ImageProcessingService
+    return ImageProcessingService(
+        ingestion_repo=ingestion_repo,
+        embedding_service=embedding_service,
+        vector_service=vector_service,
+        ai_service=ai_service,
+        finance_api_service=finance_api_service,
+        blob_storage_service=BlobStorageService()
+    )
+
 
 _type_detector = NotificationTypeDetector()
 
@@ -190,6 +222,130 @@ async def PhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
         if added_to_processing and notif_id:
             _processing_notif_ids.discard(notif_id)
 
+# ── Function 1.5: ImageHookFunction ─────────────────────────────────────────
+@app.route(route="image_hook", methods=["POST"])
+async def ImageHookFunction(req: func.HttpRequest) -> func.HttpResponse:
+    user, err_resp = validate_api_key(req)
+    if err_resp:
+        return err_resp
+
+    user_id = user.get("sub", "default") if user else "default"
+
+    # Get uploaded image file from multipart form data
+    uploaded_file = None
+    if req.files:
+        uploaded_file = req.files.get("image") or req.files.get("file")
+        if not uploaded_file and len(req.files) > 0:
+            uploaded_file = next(iter(req.files.values()))
+
+    if not uploaded_file:
+        return func.HttpResponse(
+            json.dumps({"error": "No image file provided in multipart form data"}),
+            status_code=400,
+            mimetype="application/json"
+        )
+
+    filename = uploaded_file.filename or "receipt.png"
+    content_type = uploaded_file.content_type or getattr(uploaded_file, "mimetype", "")
+    
+    # Infer mime_type if empty or generic
+    if not content_type or content_type == "application/octet-stream":
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in (".jpg", ".jpeg"):
+            content_type = "image/jpeg"
+        elif ext == ".webp":
+            content_type = "image/webp"
+        else:
+            content_type = "image/png"
+
+    allowed_types = {"image/png", "image/jpeg", "image/jpg", "image/webp"}
+    if content_type.lower() not in allowed_types:
+        return func.HttpResponse(
+            json.dumps({"error": f"Unsupported media type '{content_type}'. Allowed: png, jpeg, webp"}),
+            status_code=415,
+            mimetype="application/json"
+        )
+
+    try:
+        image_bytes = uploaded_file.read()
+    except Exception as e:
+        return func.HttpResponse(
+            json.dumps({"error": f"Failed to read image bytes: {e}"}),
+            status_code=400,
+            mimetype="application/json"
+        )
+
+    if not image_bytes:
+        return func.HttpResponse(
+            json.dumps({"error": "Uploaded image file is empty"}),
+            status_code=400,
+            mimetype="application/json"
+        )
+
+    operation_id = req.params.get("operationId") or (req.form.get("operation_id") if hasattr(req, "form") and req.form else None)
+    connection_id = req.params.get("connectionId") or (req.form.get("connection_id") if hasattr(req, "form") and req.form else None)
+    stream_reasoning = req.params.get("streamReasoning", "true").lower() == "true"
+    description = req.params.get("description") or (req.form.get("description") if hasattr(req, "form") and req.form else None)
+
+    hook_id = str(uuid7())
+    from services.blob_storage_service import BlobStorageService
+
+    try:
+        async with BlobStorageService() as blob_service:
+            blob_name, blob_url = await blob_service.upload_image_async(
+                image_bytes=image_bytes,
+                user_id=user_id,
+                ingestion_id=hook_id,
+                filename=filename,
+                mime_type=content_type,
+            )
+    except Exception as e:
+        logging.error(f"Error uploading image to blob storage: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": f"Failed uploading image blob: {e}"}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
+    hook_body = {
+        "id": hook_id,
+        "userId": user_id,
+        "action": "image_upload",
+        "notification_type": "image",
+        "status": "received",
+        "blob_name": blob_name,
+        "image_url": blob_url,
+        "filename": filename,
+        "format": content_type,
+        "file_size": len(image_bytes),
+        "description": description or "",
+        "operation_id": operation_id,
+        "connection_id": connection_id,
+        "stream_reasoning": stream_reasoning,
+    }
+
+    try:
+        hook_service = get_hook_service()
+        hook_msg = await hook_service.save_hook_async(hook_body)
+        return func.HttpResponse(
+            json.dumps({
+                "ingestion_id": hook_msg.id,
+                "status": "received",
+                "message": "Image received and queued for processing"
+            }),
+            status_code=201,
+            mimetype="application/json"
+        )
+    except Exception as e:
+        logging.error(f"Error saving image hook message: {e}")
+        return func.HttpResponse(
+            json.dumps({"error": f"Internal server error: {e}"}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+
 # ── Function 2: ClassifyNotificationFunction ────────────────────────────────
 @app.cosmos_db_trigger(
     arg_name="documents",
@@ -206,6 +362,7 @@ async def ClassifyNotificationFunction(documents: func.DocumentList) -> None:
     app_ingestion_service = get_ingestion_service()
     sms_ingestion_service = get_sms_ingestion_service()
     email_ingestion_service = get_email_ingestion_service()
+    image_ingestion_service = get_image_ingestion_service()
     hook_repo = CosmosHookRepository()
 
     for doc in documents:
@@ -225,18 +382,23 @@ async def ClassifyNotificationFunction(documents: func.DocumentList) -> None:
                 await sms_ingestion_service.process_hook_async(hook_msg)
             elif notif_type == "email":
                 await email_ingestion_service.process_hook_async(hook_msg)
+            elif notif_type == "image":
+                await image_ingestion_service.process_hook_async(hook_msg)
             else:
                 await app_ingestion_service.process_hook_async(hook_msg)
 
             # Mark hook as processed
+            user_id = hook_msg.user_id or doc_dict.get("UserId") or doc_dict.get("userId") or "default"
             await hook_repo.update_status_async(
-                hook_msg.id, "processed", hook_msg.user_id
+                hook_msg.id, "processed", user_id
             )
         except Exception as e:
             logging.error(f"Error processing document {doc_dict.get('id')}: {e}")
+            user_id = doc_dict.get("UserId") or doc_dict.get("userId") or doc_dict.get("user_id") or "default"
             await hook_repo.update_status_async(
-                doc_dict.get("id"), "error", doc_dict.get("user_id", "default")
+                doc_dict.get("id"), "error", user_id
             )
+
 
 # ── Function 3: LearnIngestionFunction ──────────────────────────────────
 @app.route(route="ingestions/{ingestion_id}/learn", methods=["POST"])
@@ -317,6 +479,41 @@ async def GetIngestionByIdFunction(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error fetching ingestion: {e}")
         return func.HttpResponse(f"Internal server error: {e}", status_code=500)
 
+# ── Function 3.1b2: GetImageBlobFunction ──────────────────────────────
+@app.route(route="images/{ingestion_id}", methods=["GET"])
+async def GetImageBlobFunction(req: func.HttpRequest) -> func.HttpResponse:
+    user, err = validate_api_key(req)
+    if err:
+        return err
+
+    ingestion_id = req.route_params.get("ingestion_id")
+    user_id = user.get("sub", "default") if user else "default"
+
+    ingestion_repo = CosmosIngestionRepository()
+    try:
+        ingestion = await ingestion_repo.get_by_id_async(ingestion_id, user_id)
+        if not ingestion:
+            return func.HttpResponse(json.dumps({"error": "Ingestion not found"}), status_code=404, mimetype="application/json")
+
+        blob_name = ingestion.raw_payload.get("blob_name") if ingestion.raw_payload else None
+        if not blob_name:
+            return func.HttpResponse(json.dumps({"error": "No image blob associated with this ingestion"}), status_code=404, mimetype="application/json")
+
+        from services.blob_storage_service import BlobStorageService
+        async with BlobStorageService() as blob_service:
+            data, content_type = await blob_service.download_image_async(blob_name)
+        return func.HttpResponse(
+            data,
+            status_code=200,
+            mimetype=content_type or "image/png",
+            headers={"Cache-Control": "private, max-age=3600"}
+        )
+
+    except Exception as e:
+        logging.error(f"Error fetching image blob: {e}")
+        return func.HttpResponse(json.dumps({"error": f"Internal server error: {e}"}), status_code=500, mimetype="application/json")
+
+
 
 # ── Function 3.1c: ReclassifyIngestionFunction ─────────────────────────
 @app.route(route="ingestions/{ingestion_id}/reclassify", methods=["POST"])
@@ -357,6 +554,8 @@ async def ReclassifyIngestionFunction(req: func.HttpRequest) -> func.HttpRespons
             service = get_sms_ingestion_service()
         elif notif_type == "email":
             service = get_email_ingestion_service()
+        elif notif_type == "image":
+            service = get_image_ingestion_service()
         else:
             service = get_ingestion_service()
 

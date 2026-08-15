@@ -58,8 +58,10 @@ class LlmProvider(ABC):
         json_mode: bool = False,
         temperature: float = 0.2,
         thinking_budget: Optional[int] = None,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
     ) -> Tuple[str, Optional[int], Optional[int]]:
-        """Send a prompt and return the raw text response, input tokens, and output tokens."""
+        """Send a prompt (and optional image) and return the raw text response, input tokens, and output tokens."""
 
     @abstractmethod
     async def generate_stream(
@@ -69,6 +71,8 @@ class LlmProvider(ABC):
         json_mode: bool = False,
         temperature: float = 0.2,
         include_reasoning: bool = False,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
     ):
         """Yield (chunk_type, text) tuples.
         
@@ -116,6 +120,8 @@ class GeminiProvider(LlmProvider):
         json_mode: bool = False,
         temperature: float = 0.2,
         thinking_budget: Optional[int] = None,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
     ) -> Tuple[str, Optional[int], Optional[int]]:
         config: dict = {"temperature": temperature}
         if json_mode:
@@ -127,9 +133,16 @@ class GeminiProvider(LlmProvider):
                 thinking_budget=thinking_budget
             )
 
+        contents = []
+        if image_bytes and mime_type:
+            contents.append(
+                self._genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+            )
+        contents.append(prompt)
+
         response = self.client.models.generate_content(
             model=self.model,
-            contents=prompt,
+            contents=contents if len(contents) > 1 else contents[0],
             config=config,
         )
         
@@ -148,6 +161,8 @@ class GeminiProvider(LlmProvider):
         json_mode: bool = False,
         temperature: float = 0.2,
         include_reasoning: bool = False,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
     ):
         config: dict = {"temperature": temperature}
         if json_mode:
@@ -159,9 +174,16 @@ class GeminiProvider(LlmProvider):
                 thinking_budget=0
             )
 
+        contents = []
+        if image_bytes and mime_type:
+            contents.append(
+                self._genai_types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+            )
+        contents.append(prompt)
+
         response_stream = self.client.models.generate_content_stream(
             model=self.model,
-            contents=prompt,
+            contents=contents if len(contents) > 1 else contents[0],
             config=config,
         )
         for chunk in response_stream:
@@ -210,11 +232,25 @@ class OpenAICompatibleProvider(LlmProvider):
         json_mode: bool = False,
         temperature: float = 0.2,
         thinking_budget: Optional[int] = None,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
     ) -> Tuple[str, Optional[int], Optional[int]]:
+        import base64
         messages: list[dict] = []
         if system:
             messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+
+        if image_bytes and mime_type:
+            b64_img = base64.b64encode(image_bytes).decode("utf-8")
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}}
+                ]
+            })
+        else:
+            messages.append({"role": "user", "content": prompt})
 
         kwargs: dict = {
             "model": self.model,
@@ -249,11 +285,25 @@ class OpenAICompatibleProvider(LlmProvider):
         json_mode: bool = False,
         temperature: float = 0.2,
         include_reasoning: bool = False,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
     ):
+        import base64
         messages: list[dict] = []
         if system:
             messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+
+        if image_bytes and mime_type:
+            b64_img = base64.b64encode(image_bytes).decode("utf-8")
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{b64_img}"}}
+                ]
+            })
+        else:
+            messages.append({"role": "user", "content": prompt})
 
         kwargs: dict = {
             "model": self.model,
@@ -301,6 +351,7 @@ class OpenAICompatibleProvider(LlmProvider):
             # ── Final content tokens ───────────────────────────────────────
             if delta.content:
                 yield ("content", delta.content)
+
 
     async def embed(self, text: str) -> list[float]:
         response = await self.client.embeddings.create(
@@ -357,7 +408,7 @@ def make_provider(role: str) -> LlmProvider:
         provider_prefix = provider_prefix.lower()
         api_key = apikey_var  # may be empty for local / keyless providers
 
-        logger.info("[LLM] Role=%s  provider=%s  model=%s", role, provider_prefix, model)
+        logger.debug("[LLM] Role=%s  provider=%s  model=%s", role, provider_prefix, model)
 
         if provider_prefix == "gemini":
             return GeminiProvider(api_key=api_key, model=model)
@@ -384,7 +435,8 @@ def make_provider(role: str) -> LlmProvider:
     model = os.environ.get(legacy_model_var, default_model)
     api_key = os.environ.get(legacy_key_var, "")
 
-    logger.info(
+    logger.debug(
         "[LLM] Role=%s  provider=gemini (legacy fallback)  model=%s", role, model
     )
     return GeminiProvider(api_key=api_key, model=model)
+

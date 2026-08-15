@@ -119,6 +119,7 @@ interface AddTransactionContextProps {
   handleSubmit: (e: React.FormEvent) => void
   submitTypeRef: React.MutableRefObject<'close' | 'more'>
   reclassifyMutation: ReturnType<typeof useReclassifyIngestion>
+  isSubmitting: boolean
 }
 
 const AddTransactionContext = createContext<AddTransactionContextProps | undefined>(undefined)
@@ -874,6 +875,12 @@ export function AddTransactionProvider({
       reclassifyMutation,
       skipLearning,
       setSkipLearning,
+      isSubmitting:
+        createTxMutation.isPending ||
+        updateTxMutation.isPending ||
+        confirmIngestionMutation.isPending ||
+        createVendorMutation.isPending ||
+        createRecurringTxMutation.isPending,
     }),
     [
       isOpen,
@@ -914,6 +921,11 @@ export function AddTransactionProvider({
       handleSubmit,
       reclassifyMutation,
       skipLearning,
+      createTxMutation.isPending,
+      updateTxMutation.isPending,
+      confirmIngestionMutation.isPending,
+      createVendorMutation.isPending,
+      createRecurringTxMutation.isPending,
     ]
   )
 
