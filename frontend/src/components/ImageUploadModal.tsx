@@ -21,6 +21,7 @@ export default function ImageUploadModal({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [description, setDescription] = useState('')
   const [streamReasoning, setStreamReasoning] = useState(true)
+
   const [isDragging, setIsDragging] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -77,7 +78,6 @@ export default function ImageUploadModal({
     setErrorMsg(null)
 
     const opId = uuidv7()
-
     if (streamReasoning) {
       onStreamReasoningStart?.(opId)
     }

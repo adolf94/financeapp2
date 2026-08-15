@@ -58,7 +58,6 @@ describe('ImageUploadModal', () => {
 
     const onSuccess = vi.fn()
     const onClose = vi.fn()
-
     const onStreamReasoningStart = vi.fn()
 
     render(

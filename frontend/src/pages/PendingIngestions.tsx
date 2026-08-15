@@ -231,7 +231,6 @@ export default function PendingIngestions() {
         thinkingEventName="reclassifyThinking"
         progressEventName="reclassifyProgress"
       />
-
       <AddTransactionModal
         isOpen={!!confirmingIngestionId || !!openedTransaction}
         onClose={() => {

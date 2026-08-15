@@ -366,10 +366,6 @@ async def ClassifyNotificationFunction(documents: func.DocumentList) -> None:
     hook_repo = CosmosHookRepository()
 
     for doc in documents:
-        doc_dict = dict(doc)
-        if doc_dict.get("status") != "received":
-            continue
-
         try:
             hook_msg = PhoneHookMessage(**doc_dict)
 
@@ -512,7 +508,6 @@ async def GetImageBlobFunction(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"Error fetching image blob: {e}")
         return func.HttpResponse(json.dumps({"error": f"Internal server error: {e}"}), status_code=500, mimetype="application/json")
-
 
 
 # ── Function 3.1c: ReclassifyIngestionFunction ─────────────────────────
