@@ -51,7 +51,23 @@ namespace FinanceApp.Repositories
                 existing.Name = vendor.Name;
                 existing.Type = vendor.Type;
                 existing.Tags = vendor.Tags;
+                existing.LastUsed = vendor.LastUsed;
                 await _context.SaveChangesAsync();
+            }
+        }
+
+        public async Task UpdateVendorLastUsedAsync(string userId, string vendorName, DateTime? lastUsed = null)
+        {
+            if (string.IsNullOrWhiteSpace(vendorName)) return;
+            var vendor = await GetVendorByNameAsync(userId, vendorName);
+            if (vendor != null)
+            {
+                var timestamp = lastUsed ?? DateTime.UtcNow;
+                if (vendor.LastUsed == null || timestamp > vendor.LastUsed)
+                {
+                    vendor.LastUsed = timestamp;
+                    await _context.SaveChangesAsync();
+                }
             }
         }
 

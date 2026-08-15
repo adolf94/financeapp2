@@ -7,6 +7,7 @@ export interface Vendor {
   name: string
   type?: 'Individual' | 'Business' | 'Internal'
   tags?: string[]
+  lastUsed?: string
 }
 
 export function useGetVendors() {

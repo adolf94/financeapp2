@@ -10,13 +10,15 @@ namespace backend.Tests
     {
         private readonly Mock<ITransactionRepository> _mockTxRepo;
         private readonly Mock<IAccountRepository> _mockAccRepo;
+        private readonly Mock<IVendorRepository> _mockVendorRepo;
         private readonly TransactionService _service;
 
         public TransactionServiceTests()
         {
             _mockTxRepo = new Mock<ITransactionRepository>();
             _mockAccRepo = new Mock<IAccountRepository>();
-            _service = new TransactionService(_mockTxRepo.Object, _mockAccRepo.Object);
+            _mockVendorRepo = new Mock<IVendorRepository>();
+            _service = new TransactionService(_mockTxRepo.Object, _mockAccRepo.Object, _mockVendorRepo.Object);
         }
 
         [Fact]

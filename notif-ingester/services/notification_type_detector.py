@@ -16,9 +16,10 @@ class NotificationTypeDetector:
     SMS_TYPE = "sms"
     APP_TYPE = "app"
     EMAIL_TYPE = "email"
+    IMAGE_TYPE = "image"
 
     def detect_type(self, hook: PhoneHookMessage) -> str:
-        """Return 'sms', 'app', or 'email' based on hook action and payload fields."""
+        """Return 'sms', 'app', 'email', or 'image' based on hook action and payload fields."""
         if hook.notification_type and hook.notification_type != "unknown":
             return hook.notification_type
         return self._detect_from_payload(hook.action, hook.raw_payload)
@@ -30,6 +31,10 @@ class NotificationTypeDetector:
     def _detect_from_payload(self, action: str, payload: dict) -> str:
         action_lower = (action or "").lower()
         
+        # Image indicators
+        if "image" in action_lower or payload.get("blob_name") or str(payload.get("format", "")).startswith("image/"):
+            return self.IMAGE_TYPE
+
         # Email indicators
         if action_lower == "email_received":
             return self.EMAIL_TYPE

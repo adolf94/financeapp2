@@ -5,7 +5,7 @@ import { useGetAccounts, useCreateAccount, useGetAccountGroups, useCreateAccount
 import PendingIngestionCard from '@/components/PendingIngestionCard'
 
 interface PendingIngestionsListProps {
-  filter: 'all' | 'sms' | 'app' | 'email'
+  filter: 'all' | 'sms' | 'app' | 'email' | 'image'
   viewMode?: string
   onEditConfirm: (ingestion: PendingIngestion) => void
   onOpenTransaction?: (transactionId: string) => void
@@ -19,6 +19,7 @@ export default function PendingIngestionsList({ filter, viewMode = 'Pending', on
     if (!type || type === 'unknown') {
       const action = (i.raw_payload?.action || '').toLowerCase()
       if (action === 'email_received') type = 'email'
+      else if (action.includes('image') || i.raw_payload?.blob_name || (typeof i.raw_payload?.format === 'string' && i.raw_payload.format.startsWith('image/'))) type = 'image'
       else if (action.includes('sms') || i.raw_payload?.sms_msg || i.raw_payload?.sms_sender) type = 'sms'
       else type = 'app'
     }

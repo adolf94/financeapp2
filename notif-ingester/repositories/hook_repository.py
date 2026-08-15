@@ -50,6 +50,26 @@ class CosmosHookRepository(IHookRepository):
 
     async def update_status_async(self, id: str, status: str, user_id: str) -> None:
         container = await self._get_container()
-        item = await container.read_item(item=id, partition_key=user_id)
-        item["status"] = status
-        await container.upsert_item(item)
+        for pk in [user_id, "default"]:
+            try:
+                item = await container.read_item(item=id, partition_key=pk)
+                item["status"] = status
+                await container.upsert_item(item)
+                return
+            except Exception:
+                pass
+
+        try:
+            query = "SELECT * FROM c WHERE c.id = @id"
+            items = container.query_items(
+                query=query,
+                parameters=[{"name": "@id", "value": id}],
+                enable_cross_partition_query=True
+            )
+            async for doc in items:
+                doc["status"] = status
+                await container.upsert_item(doc)
+                return
+        except Exception as e:
+            logging.error(f"[CosmosHookRepository] Failed to update status for hook {id}: {e}")
+

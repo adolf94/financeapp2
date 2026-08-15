@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell, Mail } from 'lucide-react'
+import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell, Mail, Image as ImageIcon } from 'lucide-react'
 import dayjs from 'dayjs'
 import { PendingIngestion } from '@/hooks/useIngestions'
 import { AccountGroup } from '@/hooks/useAccounts'
+import ingesterClient from '@/lib/ingesterClient'
 
 interface PendingIngestionCardProps {
   ingestion: PendingIngestion
@@ -84,6 +85,12 @@ export default function PendingIngestionCard({
                 App
               </span>
             )}
+            {ingestion.notification_type === 'image' && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-700/50">
+                <ImageIcon className="w-2.5 h-2.5" />
+                Receipt Image
+              </span>
+            )}
           </div>
           {ingestion.notification_type === 'email' ? (
             <div className="flex flex-col gap-1 mt-1">
@@ -100,6 +107,23 @@ export default function PendingIngestionCard({
               >
                 <Mail className="w-3.5 h-3.5" />
                 Preview Email
+              </button>
+            </div>
+          ) : ingestion.notification_type === 'image' ? (
+            <div className="flex flex-col gap-1 mt-1">
+              <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+                Receipt Summary
+              </span>
+              <p className="text-sm font-medium text-slate-800 dark:text-slate-200 italic leading-snug">
+                "{ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ingestion.raw_msg}"
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsPreviewOpen(true)}
+                className="self-start mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200/60 dark:border-purple-900/40 hover:bg-purple-100 dark:hover:bg-purple-950/60 transition-all cursor-pointer shadow-sm"
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+                Preview Receipt
               </button>
             </div>
           ) : (
@@ -125,10 +149,12 @@ export default function PendingIngestionCard({
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 rounded-t-2xl">
               <div className="flex-1 min-w-0 pr-4">
                 <h3 className="font-bold text-slate-950 dark:text-white text-base truncate">
-                  {ingestion.raw_payload?.subject || ingestion.raw_payload?.Subject || ingestion.raw_payload?.notif_title || 'Email Preview'}
+                  {ingestion.raw_payload?.subject || ingestion.raw_payload?.Subject || ingestion.raw_payload?.notif_title || (ingestion.notification_type === 'image' ? 'Receipt Image Preview' : 'Email Preview')}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-                  From: {ingestion.raw_payload?.from || ingestion.raw_payload?.From || ingestion.raw_payload?.sender || 'Unknown'}
+                  {ingestion.notification_type === 'image' 
+                    ? `File: ${ingestion.raw_payload?.filename || 'Receipt'} (${ingestion.raw_payload?.file_size ? `${(ingestion.raw_payload.file_size / 1024).toFixed(1)} KB` : ''})`
+                    : `From: ${ingestion.raw_payload?.from || ingestion.raw_payload?.From || ingestion.raw_payload?.sender || 'Unknown'}`}
                 </p>
               </div>
               <button 
@@ -139,7 +165,26 @@ export default function PendingIngestionCard({
               </button>
             </div>
             <div className="p-4 overflow-y-auto flex-1 bg-white dark:bg-slate-950 text-sm min-h-[300px]">
-              {(() => {
+              {ingestion.notification_type === 'image' ? (
+                <div className="flex flex-col items-center justify-center p-4 bg-slate-950 rounded-xl">
+                  <img
+                    src={ingestion.raw_payload?.image_url || `${ingesterClient.defaults.baseURL}/images/${ingestion.id}`}
+                    alt="Uploaded Receipt"
+                    className="max-h-[60vh] max-w-full object-contain rounded-lg shadow-lg"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      const fallback = `${ingesterClient.defaults.baseURL}/images/${ingestion.id}`;
+                      if (target.src !== fallback) {
+                        target.src = fallback;
+                      }
+                    }}
+                  />
+                  <div className="mt-3 flex justify-between w-full text-xs text-slate-400 px-2">
+                    <span>{ingestion.raw_payload?.filename || 'Receipt Image'}</span>
+                    <span>{ingestion.raw_payload?.file_size ? `${(ingestion.raw_payload.file_size / 1024).toFixed(1)} KB` : ''}</span>
+                  </div>
+                </div>
+              ) : (() => {
                 const html = ingestion.raw_payload?.html_content || ingestion.raw_payload?.html || ingestion.raw_payload?.body_html
                 const markdown = ingestion.raw_payload?.markdown_content || ingestion.raw_payload?.markdown || ingestion.raw_payload?.body_markdown
                 const plainText = ingestion.raw_payload?.raw_msg || ingestion.raw_payload?.body || ingestion.raw_payload?.text || ingestion.raw_payload?.content || ingestion.raw_payload?.text_content || ingestion.raw_msg
@@ -165,6 +210,7 @@ export default function PendingIngestionCard({
           </div>
         </div>
       )}
+
 
       {/* Proposed transaction details */}
       <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl text-xs border border-slate-100 dark:border-slate-800/60">

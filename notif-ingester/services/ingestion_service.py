@@ -78,7 +78,22 @@ class IngestionService:
             getattr(ai_parsed, 'sender_account_name', None),
             getattr(ai_parsed, 'sender_account_number', None)
         ]
+        if ai_parsed.vendor and ai_parsed.vendor.lookups:
+            raw_lookups.extend(ai_parsed.vendor.lookups)
         
+        # Add phone / account number variations (e.g. 0917 123 4567 -> 09171234567, 9171234567)
+        for num_field in [getattr(ai_parsed, 'recipient_account_number', None), getattr(ai_parsed, 'sender_account_number', None)]:
+            if num_field and isinstance(num_field, str):
+                cleaned = re.sub(r'[\s\-]+', '', num_field)
+                if cleaned != num_field:
+                    raw_lookups.append(cleaned)
+                if cleaned.startswith("09") and len(cleaned) == 11:
+                    raw_lookups.append(cleaned[1:])      # 9171234567
+                    raw_lookups.append("+63" + cleaned[1:]) # +639171234567
+                elif cleaned.startswith("+639") and len(cleaned) == 13:
+                    raw_lookups.append("0" + cleaned[3:]) # 09171234567
+                    raw_lookups.append(cleaned[3:])       # 9171234567
+
         # Clean and filter lookups
         lookups = [loc.strip() for loc in raw_lookups if loc and isinstance(loc, str) and loc.strip()]
         
@@ -105,7 +120,8 @@ class IngestionService:
                 continue
             clean_lookups.append(loc)
             
-        return clean_lookups
+        return list(dict.fromkeys(clean_lookups))
+
 
     async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id: str = None, connection_id: str = None, stream_reasoning: bool = True, exchange_rate_info: str = "", user_corrections: Optional[dict] = None) -> 'AiParsedData':
         """Classify a webhook and extract data."""

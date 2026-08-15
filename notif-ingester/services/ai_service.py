@@ -1,6 +1,7 @@
 import json
 import os
 import logging
+from datetime import datetime, timedelta, timezone
 from models.phone_hook import PhoneHookMessage
 from models.pending_ingestion import AiParsedData
 from models.transaction_vector import TransactionVector
@@ -11,6 +12,7 @@ from repositories.prompt_debug_repository import IPromptDebugRepository, NoOpPro
 from prompts.sms_prompts import SMS_IS_FINANCIAL_PROMPT, SMS_EXTRACTION_PROMPT, SMS_CLASSIFICATION_PROMPT
 from prompts.app_prompts import APP_IS_FINANCIAL_PROMPT, APP_CLASSIFICATION_PROMPT
 from prompts.email_prompts import EMAIL_CLASSIFICATION_PROMPT
+from prompts.image_prompts import IMAGE_CLASSIFICATION_PROMPT
 
 RUNBOOK_REVIEW_PROMPT = """
 You are a personal finance assistant. Your job is to review the user's transaction classification rules runbook (RUNBOOK.md) and propose updates to it, as well as account descriptions and vendor tags.
@@ -299,6 +301,8 @@ class AiService:
         include_reasoning: bool = True,
         stream_reasoning_to_client: bool = True,
         connection_id: str = None,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
     ) -> str:
         from services.signalr_publisher import publish_signalr_message, add_user_to_group, remove_user_from_group, add_connection_to_group, remove_connection_from_group
         import time
@@ -333,6 +337,8 @@ class AiService:
             # We parse JSON from the accumulated content chunks afterwards.
             json_mode=json_mode and not include_reasoning,
             include_reasoning=include_reasoning,
+            image_bytes=image_bytes,
+            mime_type=mime_type,
         ):
             if chunk_type == "thinking":
                 # Publish CoT tokens to a dedicated target so the UI can
@@ -473,11 +479,40 @@ class AiService:
             
         return "\n\n".join(sections)
 
-    def _format_vendors(self, vendors: list) -> str:
+    def _format_vendors(self, vendors: list, days: int = 30) -> str:
         if not vendors:
             return "No existing vendors yet."
-        vendors_lines = []
+            
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        filtered = []
         for v in vendors:
+            if isinstance(v, dict):
+                last_used = v.get("last_used") or v.get("LastUsed")
+                if last_used:
+                    try:
+                        if isinstance(last_used, str):
+                            raw = last_used.replace("Z", "+00:00")
+                            dt = datetime.fromisoformat(raw)
+                        elif isinstance(last_used, datetime):
+                            dt = last_used
+                        else:
+                            dt = None
+                            
+                        if dt:
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            if dt >= cutoff:
+                                filtered.append(v)
+                    except Exception:
+                        pass
+            else:
+                filtered.append(v)
+
+        if not filtered:
+            return "No existing vendors used in the past month."
+
+        vendors_lines = []
+        for v in filtered:
             if isinstance(v, dict):
                 name = v.get("name") or ""
                 tags = ", ".join(v.get("tags") or [])
@@ -888,6 +923,143 @@ Return ONLY valid JSON matching this schema:
             data["application"] = sender.split("@")[-1].replace(">", "") if "@" in sender else sender
 
         return AiParsedData(**data)
+
+    async def classify_image_async(
+        self,
+        image_bytes: bytes,
+        mime_type: str,
+        similar_vectors: List[Tuple[TransactionVector, float]],
+        accounts: list[dict],
+        runbook_content: str,
+        vendors: list[dict] | list[str] = None,
+        vendor_matches: list[dict] = None,
+        filename: str = "",
+        description: str = "",
+        inferred_app: str = "",
+        app_source: str = "",
+        user_id: str = None,
+        operation_id: str = None,
+        connection_id: str = None,
+        stream_reasoning_to_client: bool = True,
+        user_corrections: Optional[dict] = None,
+    ) -> AiParsedData:
+        """Classify a financial receipt/statement using multimodal vision AI."""
+        context = self._build_context(similar_vectors)
+        accounts_text = self._format_accounts(accounts)
+        vendors_text = self._format_vendors(vendors)
+        vendor_matches_text = self._format_vendor_matches(vendor_matches)
+        user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
+
+        from prompts.image_prompts import APP_BRANDING_GUIDELINES
+        desc_section = f"User Note / Description: {description}" if description else ""
+        if inferred_app:
+            if app_source == "ocr":
+                app_hint_section = f"Inferred App (via OCR pre-scan): {inferred_app} (Verify app branding, header color, and logo in image to be sure)"
+                app_branding_section = APP_BRANDING_GUIDELINES
+            else:
+                app_hint_section = f"Inferred App (from filename): {inferred_app}"
+                app_branding_section = ""
+        else:
+            app_hint_section = "Inferred App: Unknown (Inspect visual UI branding, header color, and logos to identify the mobile app, or set 'Physical Receipt')"
+            app_branding_section = APP_BRANDING_GUIDELINES
+
+        prompt = IMAGE_CLASSIFICATION_PROMPT.format(
+            filename=filename or "receipt_image",
+            description_section=desc_section,
+            inferred_app_section=app_hint_section,
+            app_branding_section=app_branding_section,
+            runbook_content=runbook_content,
+            accounts=accounts_text,
+            vendors=vendors_text,
+            vendor_matches=vendor_matches_text,
+            similar_context=context,
+            user_corrections_section=user_corrections_section,
+            suggested_rule_field=suggested_rule_field,
+        )
+
+
+        system_instruction = (
+            "You are an expert financial parsing assistant analyzing an image of a receipt, invoice, "
+            "bank statement, or checkout screenshot. Extract all transaction details accurately into JSON."
+        )
+
+        response_text = await self._generate_stream_to_signalr(
+            self.classification_provider,
+            prompt=prompt,
+            system=system_instruction,
+            json_mode=True,
+            include_reasoning=True,
+            target="reclassifyProgress",
+            operation_id=operation_id,
+            user_id=user_id,
+            connection_id=connection_id,
+            stream_reasoning_to_client=stream_reasoning_to_client,
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+        )
+        in_tok, out_tok = None, None
+
+        await self._debug_log(
+            "classify",
+            self.classification_provider,
+            prompt,
+            response_text,
+            system=system_instruction,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            notification_type="image",
+        )
+
+        data = self._extract_json(response_text)
+        if not data.get("application"):
+            data["application"] = inferred_app or "Physical Receipt"
+
+        return AiParsedData(**data)
+
+    async def extract_image_info_async(
+        self,
+        image_bytes: bytes,
+        mime_type: str,
+        filename: str = "",
+        description: str = "",
+    ) -> dict:
+        """Pass 1: Fast multimodal OCR to extract candidate accounts, recipient names, and potential vendors."""
+        from prompts.image_prompts import IMAGE_EXTRACTION_PROMPT
+        desc_section = f"User Description: {description}" if description else ""
+        prompt = IMAGE_EXTRACTION_PROMPT.format(
+            filename=filename or "receipt_image",
+            description_section=desc_section,
+        )
+        try:
+            response_text, in_tok, out_tok = await self.classification_provider.generate(
+                prompt=prompt,
+                json_mode=True,
+                temperature=0.1,
+                thinking_budget=0,
+                image_bytes=image_bytes,
+                mime_type=mime_type,
+            )
+            await self._debug_log(
+                "preprocess_image_extract",
+                self.classification_provider,
+                prompt,
+                response_text,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                notification_type="image",
+            )
+            return self._extract_json(response_text)
+        except Exception as e:
+            logging.warning(f"[AiService] Image OCR pre-extraction warning: {e}")
+            return {
+                "account_numbers": [],
+                "account_names": [],
+                "potential_vendor_names": [],
+                "application": "",
+                "currency": "PHP",
+            }
+
+
 
     async def summarize_email_async(self, sender: str, subject: str, markdown_content: str) -> dict:
         prompt = f"""You are a financial data extraction assistant. Extract ALL account identifiers, vendor names, and provide a summary from this email.

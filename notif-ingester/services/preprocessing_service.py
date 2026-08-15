@@ -152,10 +152,97 @@ class PreprocessingService:
         except Exception as e:
             self.logger.warning("PROMPT_DEBUG local markdown write failed: %s", e)
     
+    @staticmethod
+    def extract_application_from_filename(filename: str) -> Optional[str]:
+        """Infer application name from screenshot filename or package indicators."""
+        if not filename:
+            return None
+        fn_lower = filename.lower()
+        
+        mappings = [
+            ("gcash", "GCash"),
+            ("com.globe.gcash", "GCash"),
+            ("maya", "Maya"),
+            ("paymaya", "Maya"),
+            ("com.bpi.vybe", "Vybe"),
+            ("vybe", "Vybe"),
+            ("bpi", "BPI"),
+            ("com.bpi", "BPI"),
+            ("bdo", "BDO"),
+            ("com.bdo", "BDO"),
+            ("unionbank", "UnionBank"),
+            ("com.unionbank", "UnionBank"),
+            ("grab", "Grab"),
+            ("com.grab", "Grab"),
+            ("shopee", "Shopee"),
+            ("com.shopee", "Shopee"),
+            ("foodpanda", "Foodpanda"),
+            ("gotyme", "GoTyme"),
+            ("seabank", "SeaBank"),
+            ("rcbc", "RCBC"),
+            ("diskartech", "RCBC"),
+            ("metrobank", "Metrobank"),
+            ("lazada", "Lazada"),
+            ("atome", "Atome"),
+            ("com.atome", "Atome"),
+        ]
+        for pattern, app_name in mappings:
+            if pattern in fn_lower:
+                return app_name
+        return None
+
+
+    @classmethod
+    def extract_image_lookups(cls, filename: str, description: str = "") -> list[str]:
+        """Extract candidate lookup strings from filename, description, and inferred application."""
+        import re
+        candidates = set()
+        
+        # 1. Inferred app
+        app = cls.extract_application_from_filename(filename)
+        if app:
+            candidates.add(app)
+            
+        # 2. Filename tokens
+        if filename:
+            clean_name = os.path.splitext(os.path.basename(filename))[0]
+            tokens = re.split(r'[^a-zA-Z0-9]+', clean_name)
+            stop_words = {"screenshot", "img", "image", "receipt", "photo", "jpg", "jpeg", "png", "webp", "upload", "devstoreaccount1"}
+            for t in tokens:
+                t_str = t.strip()
+                if len(t_str) >= 3 and t_str.lower() not in stop_words and not re.match(r'^\d{8,}$', t_str):
+                    candidates.add(t_str)
+                    
+        # 3. Description tokens & entities
+        if description:
+            acc_matches = re.findall(r'\b(?:\d{4}[-\s]?\d{4}[-\s]?\d{4}|\d{10,12}|09\d{9})\b', description)
+            for m in acc_matches:
+                candidates.add(m.replace(" ", "").replace("-", ""))
+                
+            desc_tokens = re.split(r'[^a-zA-Z0-9]+', description)
+            common_stops = {"the", "and", "for", "with", "paid", "payment", "via", "from", "receipt", "note", "coffee", "team", "bought"}
+            for t in desc_tokens:
+                t_str = t.strip()
+                if len(t_str) >= 3 and t_str.lower() not in common_stops:
+                    candidates.add(t_str)
+                    
+        return list(candidates)
+
+
     def extract_application(self, hook: PhoneHookMessage) -> str:
         """Extract application/sender name from hook payload"""
-        app_name = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_rcv_sender") or hook.raw_payload.get("sms_sender") or ""
+        notif_pkg = hook.raw_payload.get("notif_pkg") or ""
+        if notif_pkg:
+            if "vybe" in notif_pkg.lower():
+                return "Vybe"
+            return notif_pkg
+
+        app_name = hook.raw_payload.get("sms_rcv_sender") or hook.raw_payload.get("sms_sender") or ""
+        if not app_name and hook.raw_payload.get("filename"):
+            app_name = self.extract_application_from_filename(hook.raw_payload["filename"]) or ""
         return app_name
+
+
     
     async def process_hook(self, hook: PhoneHookMessage) -> ExtractedAccountInfo:
         """Main method to extract all account information from a hook using AI"""

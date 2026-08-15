@@ -48,6 +48,7 @@ Users need a structured way to mirror their real-world financial accounts within
   6. **User Actions:** The user can review via `GET /ingestions`, quick-confirm via `POST /ingestions/{id}/confirm-status`, edit & confirm via the `AddTransactionModal` (pre-filled from AI data), reject via `POST /ingestions/{id}/reject`, or reclassify via `POST /ingestions/{id}/reclassify`. Vendor can be patched inline via `PATCH /ingestions/{id}/vendor`.
   7. **Learn:** On confirmation, `POST /ingestions/{id}/learn` embeds the confirmed transaction and stores a `TransactionVector` for future similarity lookups.
   8. **Historical Import:** `GET /historical-hooks` and `POST /historical-hooks/{id}/import` allow migrating past notifications from a legacy CosmosDB database into the new pipeline.
+  9. **Multimodal Image Ingestion:** Receipt, invoice, and bank statement images can be uploaded via `POST /image_hook` (accepting `multipart/form-data` with Bearer auth or API key). Images are stored in Azure Blob Storage (`receipt-images` container) for review/auditing, processed in a single inference step via multimodal AI (`ImageProcessingService` using `runbook-image`), and queued as `PendingIngestion` records (`notification_type = "image"`). Users can preview the receipt image alongside AI parsed fields in the UI before confirming.
 
 ### 2.5. Monthly Transaction List View
 - Chronological log of financial activity for a calendar month, accessed via the **Daily tab** (default) inside the Transactions page.
@@ -103,7 +104,7 @@ Users need a structured way to mirror their real-world financial accounts within
   - `Transactions` (`/UserId`) — Shared container storing both `Transaction` and `LedgerEntry` documents, differentiated by an EF Core Discriminator.
     - `Transaction` acts as the root header document.
     - `LedgerEntry` acts as the individual line items. Due to EF Core Cosmos provider limitations on non-embedded relationships, entries are fetched manually in the Repository (bypassing `.Include()`) and mapped via composite foreign keys (`TransactionId`, `UserId`).
-  - `Vendors` (`/UserId`) — Standalone vendor entity container for tracking and dropdown selection.
+  - `Vendors` (`/UserId`) — Standalone vendor entity container for tracking and dropdown selection. Stores `Name`, `Type` (`Individual`, `Business`, `Internal`), `Tags`, and `LastUsed` (UTC timestamp). When transactions are created or updated, the associated vendor's `LastUsed` timestamp is updated. The AI context (`notif-ingester`) filters vendors to those used within the past 1 month (30 days) to keep prompt context focused on active vendors while maintaining full lookup matching capability.
 - **Database Initialization:** Invokes `Database.EnsureCreatedAsync()` during application startup in `Program.cs` to ensure target database and containers are automatically created.
 - **Serialization & Persistence Rules:** 
   - Enums (`AccountType`, `TransactionType`) are decorated with `[JsonConverter(typeof(JsonStringEnumConverter))]` and processed with custom `JsonSerializerOptions` to support string enum values in HTTP JSON payloads.
