@@ -1,8 +1,10 @@
-// @vitest-environment jsdom
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useGetRecurringTransactions } from '../useRecurringTransactions'
+import apiClient from '@/lib/apiClient'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
+
+vi.mock('@/lib/apiClient')
 
 const createWrapper = () => {
   const queryClient = new QueryClient({
@@ -16,9 +18,6 @@ const createWrapper = () => {
 describe('useRecurringTransactions', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    
-    // We need to mock the global fetch since useRecurringTransactions uses native fetch directly
-    globalThis.fetch = vi.fn()
   })
 
   it('fetches recurring transactions successfully', async () => {
@@ -34,22 +33,17 @@ describe('useRecurringTransactions', () => {
       }
     ]
     
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockData
-    } as Response)
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockData })
 
     const { result } = renderHook(() => useGetRecurringTransactions(), { wrapper: createWrapper() })
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data).toEqual(mockData)
-    expect(globalThis.fetch).toHaveBeenCalledWith('http://localhost:7198/api/recurring-transactions')
+    expect(apiClient.get).toHaveBeenCalledWith('/recurring-transactions')
   })
   
   it('handles error when fetching fails', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValueOnce({
-      ok: false
-    } as Response)
+    vi.mocked(apiClient.get).mockRejectedValueOnce(new Error('Failed to fetch recurring transactions'))
 
     const { result } = renderHook(() => useGetRecurringTransactions(), { wrapper: createWrapper() })
 

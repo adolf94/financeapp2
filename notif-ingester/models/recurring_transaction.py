@@ -7,6 +7,7 @@ from models.enums import TransactionType
 class RecurringLedgerEntry(BaseModel):
     account_id: str = Field(alias="AccountId")
     amount: float = Field(alias="Amount")
+    comment: Optional[str] = Field(default=None, alias="Comment")
 
     class Config:
         populate_by_name = True

@@ -13,6 +13,7 @@ export interface RecurringTransactionOccurrence {
 export interface RecurringLedgerEntry {
   accountId: string
   amount: number
+  comment?: string
 }
 
 export interface RecurringTransaction {

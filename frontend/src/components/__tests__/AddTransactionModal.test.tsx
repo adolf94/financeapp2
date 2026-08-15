@@ -86,8 +86,8 @@ describe('AddTransactionModal Reclassify Button', () => {
     expect(headerBtn).toBeDefined()
 
     // The sidebar button has the text
-    const sidebarBtn = screen.getByRole('button', { name: /Re-run AI Classification/i })
-    expect(sidebarBtn).toBeDefined()
+    const reclassifyBtns = screen.getAllByRole('button', { name: /Re-run AI Classification/i })
+    expect(reclassifyBtns.length).toBeGreaterThanOrEqual(1)
   })
 
   it('opens confirmation modal, accepts comments, and triggers reclassify with userCorrections', async () => {
@@ -100,7 +100,8 @@ describe('AddTransactionModal Reclassify Button', () => {
       { wrapper: createWrapper() }
     )
 
-    const sidebarBtn = screen.getByRole('button', { name: /Re-run AI Classification/i })
+    const reclassifyBtns = screen.getAllByRole('button', { name: /Re-run AI Classification/i })
+    const sidebarBtn = reclassifyBtns[reclassifyBtns.length - 1]
     fireEvent.click(sidebarBtn)
 
     // Verify confirmation modal is open

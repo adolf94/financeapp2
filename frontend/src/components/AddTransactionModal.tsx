@@ -190,7 +190,7 @@ function AddTransactionModalContent() {
   const addJournalLine = () => {
     setJournalLines((prev) => [
       ...prev,
-      { id: uuidv7(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit' },
+      { id: uuidv7(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
     ])
   }
 
@@ -641,6 +641,14 @@ function AddTransactionModalContent() {
                           </button>
                         )}
                       </div>
+
+                      <input
+                        type="text"
+                        placeholder="Line comment / memo (optional)..."
+                        value={line.comment || ''}
+                        onChange={(e) => updateJournalLine(line.id, { comment: e.target.value })}
+                        className="w-full px-2.5 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:border-blue-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
+                      />
                     </div>
                   ))}
 

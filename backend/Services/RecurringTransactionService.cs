@@ -121,7 +121,8 @@ namespace FinanceApp.Services
                         {
                             UserId = schedule.UserId,
                             AccountId = te.AccountId,
-                            Amount = te.Amount
+                            Amount = te.Amount,
+                            Comment = te.Comment
                         }).ToList()
                     };
 

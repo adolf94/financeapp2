@@ -109,8 +109,15 @@ export default function TransactionCard({ tx, getAccountName, onEdit, onDelete }
           </div>
           <div className="flex flex-col gap-1">
             {tx.entries.map((entry, idx) => (
-              <div key={idx} className="grid grid-cols-12 text-sm text-slate-700 dark:text-slate-300 px-2 py-1 bg-white dark:bg-slate-800 rounded">
-                <div className="col-span-6 font-medium truncate">{getAccountName(entry.accountId)}</div>
+              <div key={idx} className="grid grid-cols-12 text-sm text-slate-700 dark:text-slate-300 px-2 py-1.5 bg-white dark:bg-slate-800 rounded items-center">
+                <div className="col-span-6 overflow-hidden">
+                  <div className="font-medium truncate">{getAccountName(entry.accountId)}</div>
+                  {entry.comment && (
+                    <div className="text-xs text-slate-500 dark:text-slate-400 italic truncate">
+                      {entry.comment}
+                    </div>
+                  )}
+                </div>
                 <div className="col-span-3 text-right text-slate-900 dark:text-slate-100">
                   {entry.amount > 0 ? `₱${entry.amount.toFixed(2)}` : ''}
                 </div>

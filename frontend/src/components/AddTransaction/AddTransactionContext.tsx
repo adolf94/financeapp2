@@ -22,6 +22,7 @@ export interface JournalLine {
   subCategoryId: string
   amount: string
   type: 'Debit' | 'Credit'
+  comment?: string
 }
 
 export interface PendingNewAccountType {
@@ -163,8 +164,8 @@ export function AddTransactionProvider({
     { id: generateId(), categoryId: '', subCategoryId: '', amount: '' },
   ])
   const [journalLines, setJournalLines] = useState<JournalLine[]>([
-    { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit' },
-    { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit' },
+    { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
+    { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', comment: '' },
   ])
   const [vendor, setVendor] = useState('')
   const [selectedLookups, setSelectedLookups] = useState<string[]>([])
@@ -205,8 +206,8 @@ export function AddTransactionProvider({
     setToAccountId('')
     setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
     setJournalLines([
-      { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit' },
-      { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit' },
+      { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
+      { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', comment: '' },
     ])
     setVendor('')
     setNote('')
@@ -339,6 +340,7 @@ export function AddTransactionProvider({
                 subCategoryId: e.accountId,
                 amount: Math.abs(e.amount).toString(),
                 type: e.amount > 0 ? 'Debit' : 'Credit',
+                comment: e.comment || '',
               }
             })
           )
@@ -478,8 +480,8 @@ export function AddTransactionProvider({
           setTotalAmount('')
           setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
           setJournalLines([
-            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit' },
-            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit' },
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', comment: '' },
           ])
           setVendor('')
           setNote('')
@@ -515,6 +517,7 @@ export function AddTransactionProvider({
         entries.push({
           accountId: line.subCategoryId,
           amount: line.type === 'Debit' ? roundedAmt : -roundedAmt,
+          comment: line.comment?.trim() || undefined,
         })
       }
 
@@ -715,8 +718,8 @@ export function AddTransactionProvider({
           setTotalAmount('')
           setSplits([{ id: generateId(), categoryId: '', subCategoryId: '', amount: '' }])
           setJournalLines([
-            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit' },
-            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit' },
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Debit', comment: '' },
+            { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', comment: '' },
           ])
           setVendor('')
           setNote('')
