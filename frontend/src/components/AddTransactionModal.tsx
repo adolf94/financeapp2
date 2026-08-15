@@ -852,10 +852,6 @@ function AddTransactionModalContent() {
 
         const commentText = reclassifyComment.trim()
         const hasComment = Boolean(commentText)
-        const originalType = ingestion.ai_parsed?.transaction_type
-        const originalVendor = ingestion.ai_parsed?.vendor?.name || ''
-        const originalDebit = ingestion.ai_parsed?.debit_account_id || null
-        const originalCredit = ingestion.ai_parsed?.credit_account_id || null
 
         // When user provides a comment/instruction text, send all current active modal values
         const corrections = hasComment ? {

@@ -80,7 +80,8 @@ Similar past transactions (for context):
 APP_IS_FINANCIAL_PROMPT = """
 You are a personal finance assistant. Determine if this notification represents a financial transaction.
 A financial transaction is anything involving movement of money (e.g., payments, expenses, income, transfers, withdrawals, bills).
-General notifications, security alerts, login OTPs, promotional messages, etc., are NOT financial transactions.
+General notifications, security alerts, login OTPs, promotional messages, and marketing offers are NOT financial transactions, even if they mention monetary amounts.
+Cashback or rewards expressed in POINTS or redeemable items are NOT financial — only classify as financial if real money (PHP) was actually credited/debited to an account.
 
 Notification: {raw_msg}
 Source App / Sender: {app_name}

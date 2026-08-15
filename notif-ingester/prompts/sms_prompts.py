@@ -10,7 +10,10 @@ These prompts are tailored for the unique characteristics of SMS banking message
 SMS_IS_FINANCIAL_PROMPT = """
 You are a personal finance assistant. Determine if this SMS represents a financial transaction.
 A financial transaction includes: payments, transfers, withdrawals, deposits, bills, purchases.
-Promotional messages, OTPs, security alerts, and balance inquiry replies ARE financial if they contain transaction amounts.
+Advertisements, promotions, and marketing offers are NOT financial transactions, even if they mention monetary amounts or rewards.
+Cashback or rewards expressed in POINTS or redeemable items are NOT financial — only classify as financial if real money (PHP) was actually credited/debited.
+OTPs and security alerts are NOT financial transactions.
+Only classify as financial if the message confirms an actual COMPLETED transaction — i.e., a past debit, credit, transfer, payment, or withdrawal that has ALREADY occurred.
 
 SMS Sender: {app_name}
 SMS Message: {raw_msg}
