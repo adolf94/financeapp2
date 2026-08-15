@@ -84,6 +84,14 @@ export const useSignalR = (enabled: boolean = true) => {
       window.dispatchEvent(new CustomEvent('chatProgress', { detail: { chunk, debounceDelay } }))
     })
 
+    connection.on('reclassifyComplete', (ingestion: any, operationId: string) => {
+      console.log('[SignalR] Reclassify complete:', operationId, ingestion)
+      window.dispatchEvent(new CustomEvent('reclassifyComplete', { detail: { ingestion, operationId } }))
+      if (operationId) {
+        window.dispatchEvent(new CustomEvent(`reclassifyComplete_${operationId}`, { detail: { ingestion, operationId } }))
+      }
+    })
+
     connection.start()
       .then(() => {
         console.log('[SignalR] Connected successfully!')

@@ -216,17 +216,22 @@ class AiService:
         system: Optional[str] = None,
         input_tokens: Optional[int] = None,
         output_tokens: Optional[int] = None,
+        cost: Optional[float] = None,
         notification_type: Optional[str] = None,
     ) -> None:
         """Persist a PROMPT_DEBUG entry to CosmosDB (and file as fallback)."""
         if not self._prompt_debug:
             return
 
+        from services.cost_calculator import resolve_or_calculate_cost
+
         # Try to parse response as JSON for structured querying
         try:
             response_json = json.loads(response_text)
         except Exception:
             response_json = None
+
+        final_cost = resolve_or_calculate_cost(provider.provider_label, input_tokens, output_tokens, cost)
 
         log = PromptDebugLog(
             call_type=call_type,
@@ -237,6 +242,7 @@ class AiService:
             response_json=response_json,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cost=final_cost,
             notification_type=notification_type,
         )
 
@@ -260,13 +266,20 @@ class AiService:
                 f"system: {repr(system) if system else 'null'}",
                 f"input_tokens: {input_tokens if input_tokens is not None else 'null'}",
                 f"output_tokens: {output_tokens if output_tokens is not None else 'null'}",
+                f"cost_usd: {cost if cost is not None else 'null'}",
                 "---"
             ]
             yaml_header = "\n".join(yaml_lines)
             
+            cost_display = f"${cost:.6f}" if cost is not None else "N/A"
             md_content = f"""{yaml_header}
 
 # Prompt Debug Log: {call_type}
+
+## Usage & Cost
+- **Input Tokens**: {input_tokens if input_tokens is not None else 'N/A'}
+- **Output Tokens**: {output_tokens if output_tokens is not None else 'N/A'}
+- **Estimated Cost**: {cost_display}
 
 ## System Instruction
 ```text
@@ -303,7 +316,7 @@ class AiService:
         connection_id: str = None,
         image_bytes: bytes | None = None,
         mime_type: str | None = None,
-    ) -> str:
+    ) -> Tuple[str, Optional[int], Optional[int], Optional[float]]:
         from services.signalr_publisher import publish_signalr_message, add_user_to_group, remove_user_from_group, add_connection_to_group, remove_connection_from_group
         import time
         
@@ -318,18 +331,16 @@ class AiService:
         global_enable = os.environ.get("ENABLE_REASONING", "false").lower() == "true"
         include_reasoning = include_reasoning and global_enable
 
-        # Globally enable/disable streaming final content via environment variable
-        stream_content_to_client = os.environ.get("STREAM_FINAL_CONTENT", "false").lower() == "true"
-
         debounce_delay = float(os.environ.get("THINKING_STREAM_DEBOUNCE_SECONDS", "0.0"))
         
         content_chunks: list[str] = []
         thinking_chunks: list[str] = []
-        content_publish_chunks: list[str] = []
         last_thinking_publish_time = time.time()
-        last_content_publish_time = time.time()
+        stream_in_tok: Optional[int] = None
+        stream_out_tok: Optional[int] = None
+        stream_cost: Optional[float] = None
 
-        async for chunk_type, text in provider.generate_stream(
+        async for chunk_type, text_or_data in provider.generate_stream(
             prompt=prompt,
             system=system,
             # When reasoning is requested, suppress json_mode — many models
@@ -340,12 +351,14 @@ class AiService:
             image_bytes=image_bytes,
             mime_type=mime_type,
         ):
-            if chunk_type == "thinking":
+            if chunk_type == "usage":
+                stream_in_tok, stream_out_tok, stream_cost = text_or_data
+            elif chunk_type == "thinking":
                 # Publish CoT tokens to a dedicated target so the UI can
                 # display them in a separate section from the final JSON.
                 if stream_reasoning_to_client:
                     if debounce_delay > 0:
-                        thinking_chunks.append(text)
+                        thinking_chunks.append(text_or_data)
                         current_time = time.time()
                         if current_time - last_thinking_publish_time >= debounce_delay:
                             accumulated_thinking = "".join(thinking_chunks)
@@ -359,31 +372,13 @@ class AiService:
                                 )
                     else:
                         if operation_id:
-                            args = [text, operation_id, debounce_delay]
+                            args = [text_or_data, operation_id, debounce_delay]
                             await publish_signalr_message(
                                 "notificationHub", "reclassifyThinking", args, user_id=user_id, group_name=operation_id
                             )
             else:
-                # Accumulate final content for JSON parsing after the stream.
-                content_chunks.append(text)
-                if operation_id and stream_content_to_client:
-                    if debounce_delay > 0:
-                        content_publish_chunks.append(text)
-                        current_time = time.time()
-                        if current_time - last_content_publish_time >= debounce_delay:
-                            accumulated_content = "".join(content_publish_chunks)
-                            content_publish_chunks = []
-                            last_content_publish_time = current_time
-                            
-                            args = [accumulated_content, operation_id, debounce_delay]
-                            await publish_signalr_message(
-                                "notificationHub", target, args, user_id=user_id, group_name=operation_id
-                            )
-                    else:
-                        args = [text, operation_id, debounce_delay]
-                        await publish_signalr_message(
-                            "notificationHub", target, args, user_id=user_id, group_name=operation_id
-                        )
+                # Accumulate final content for JSON parsing and whole-message broadcast after the stream.
+                content_chunks.append(text_or_data)
 
         # Flush any remaining thinking chunks
         if stream_reasoning_to_client and debounce_delay > 0 and thinking_chunks:
@@ -394,14 +389,20 @@ class AiService:
                     "notificationHub", "reclassifyThinking", args, user_id=user_id, group_name=operation_id
                 )
 
-        # Flush any remaining content chunks
-        if stream_content_to_client and debounce_delay > 0 and content_publish_chunks:
-            accumulated_content = "".join(content_publish_chunks)
-            if operation_id:
-                args = [accumulated_content, operation_id, debounce_delay]
-                await publish_signalr_message(
-                    "notificationHub", target, args, user_id=user_id, group_name=operation_id
-                )
+        final_content = "".join(content_chunks)
+
+        # Fallback estimation for token counts if provider stream omitted usage
+        if stream_in_tok is None:
+            stream_in_tok = max(1, len(prompt) // 4)
+        if stream_out_tok is None:
+            stream_out_tok = max(1, len(final_content) // 4)
+
+        # Broadcast the entire final content in one whole message
+        if operation_id and final_content:
+            args = [final_content, operation_id, 0]
+            await publish_signalr_message(
+                "notificationHub", target, args, user_id=user_id, group_name=operation_id
+            )
 
         if operation_id:
             if connection_id:
@@ -409,7 +410,7 @@ class AiService:
             elif user_id:
                 await remove_user_from_group("notificationHub", user_id, operation_id)
 
-        return "".join(content_chunks)
+        return final_content, stream_in_tok, stream_out_tok, stream_cost
         
     def _extract_json(self, text: str) -> dict:
         """Extract and parse JSON from the LLM response, stripping markdown blocks if present."""
@@ -574,13 +575,13 @@ Return ONLY valid JSON matching this schema:
 }}
 """
         try:
-            response_text, in_tok, out_tok = await self.classification_provider.generate(
+            response_text, in_tok, out_tok, cost = await self.classification_provider.generate(
                 prompt=prompt,
                 json_mode=True,
                 temperature=0.2,
             )
 
-            await self._debug_log("desc", self.classification_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
+            await self._debug_log("desc", self.classification_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok, cost=cost)
 
             data = json.loads(response_text)
             return {"description": "", "tags": data.get("tags", [])}
@@ -607,7 +608,7 @@ Return ONLY valid JSON matching this schema:
         )
 
         try:
-            response_text, in_tok, out_tok = await self.classification_provider.generate(
+            response_text, in_tok, out_tok, cost = await self.classification_provider.generate(
                 prompt=prompt,
                 json_mode=True,
                 thinking_budget=0,
@@ -620,6 +621,7 @@ Return ONLY valid JSON matching this schema:
                 response_text,
                 input_tokens=in_tok,
                 output_tokens=out_tok,
+                cost=cost,
                 notification_type="app",
             )
 
@@ -724,8 +726,8 @@ Return ONLY valid JSON matching this schema:
         )
 
         system_instruction = "You are a personal finance assistant. Classify the notification as a financial transaction."
-
-        response_text = await self._generate_stream_to_signalr(
+        
+        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
             prompt=prompt,
             system=system_instruction,
@@ -737,7 +739,6 @@ Return ONLY valid JSON matching this schema:
             connection_id=connection_id,
             stream_reasoning_to_client=stream_reasoning_to_client
         )
-        in_tok, out_tok = None, None
 
         await self._debug_log(
             "classify",
@@ -747,6 +748,7 @@ Return ONLY valid JSON matching this schema:
             system=system_instruction,
             input_tokens=in_tok,
             output_tokens=out_tok,
+            cost=cost,
             notification_type="app",
         )
 
@@ -811,7 +813,7 @@ Return ONLY valid JSON matching this schema:
 
         system_instruction = "You are a personal finance assistant. Classify the SMS banking notification as a financial transaction. Pay special attention to transfer patterns, masked account numbers, and person-to-person payment indicators."
 
-        response_text = await self._generate_stream_to_signalr(
+        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
             prompt=prompt,
             system=system_instruction,
@@ -823,7 +825,6 @@ Return ONLY valid JSON matching this schema:
             connection_id=connection_id,
             stream_reasoning_to_client=stream_reasoning_to_client
         )
-        in_tok, out_tok = None, None
 
         await self._debug_log(
             "classify",
@@ -833,6 +834,7 @@ Return ONLY valid JSON matching this schema:
             system=system_instruction,
             input_tokens=in_tok,
             output_tokens=out_tok,
+            cost=cost,
             notification_type="sms",
         )
 
@@ -891,7 +893,7 @@ Return ONLY valid JSON matching this schema:
 
         system_instruction = "You are a personal finance assistant. Classify the Email notification as a financial transaction. Pay special attention to invoice tables, vendor names, and credit/debit account assignments."
 
-        response_text = await self._generate_stream_to_signalr(
+        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
             prompt=prompt,
             system=system_instruction,
@@ -903,7 +905,6 @@ Return ONLY valid JSON matching this schema:
             connection_id=connection_id,
             stream_reasoning_to_client=stream_reasoning_to_client
         )
-        in_tok, out_tok = None, None
 
         await self._debug_log(
             "classify",
@@ -913,6 +914,7 @@ Return ONLY valid JSON matching this schema:
             system=system_instruction,
             input_tokens=in_tok,
             output_tokens=out_tok,
+            cost=cost,
             notification_type="email",
         )
 
@@ -955,13 +957,12 @@ Return ONLY valid JSON matching this schema:
         if inferred_app:
             if app_source == "ocr":
                 app_hint_section = f"Inferred App (via OCR pre-scan): {inferred_app} (Verify app branding, header color, and logo in image to be sure)"
-                app_branding_section = APP_BRANDING_GUIDELINES
             else:
                 app_hint_section = f"Inferred App (from filename): {inferred_app}"
-                app_branding_section = ""
         else:
             app_hint_section = "Inferred App: Unknown (Inspect visual UI branding, header color, and logos to identify the mobile app, or set 'Physical Receipt')"
-            app_branding_section = APP_BRANDING_GUIDELINES
+
+        app_branding_section = APP_BRANDING_GUIDELINES
 
         prompt = IMAGE_CLASSIFICATION_PROMPT.format(
             filename=filename or "receipt_image",
@@ -983,7 +984,7 @@ Return ONLY valid JSON matching this schema:
             "bank statement, or checkout screenshot. Extract all transaction details accurately into JSON."
         )
 
-        response_text = await self._generate_stream_to_signalr(
+        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
             prompt=prompt,
             system=system_instruction,
@@ -997,7 +998,6 @@ Return ONLY valid JSON matching this schema:
             image_bytes=image_bytes,
             mime_type=mime_type,
         )
-        in_tok, out_tok = None, None
 
         await self._debug_log(
             "classify",
@@ -1007,6 +1007,7 @@ Return ONLY valid JSON matching this schema:
             system=system_instruction,
             input_tokens=in_tok,
             output_tokens=out_tok,
+            cost=cost,
             notification_type="image",
         )
 
@@ -1031,7 +1032,7 @@ Return ONLY valid JSON matching this schema:
             description_section=desc_section,
         )
         try:
-            response_text, in_tok, out_tok = await self.classification_provider.generate(
+            response_text, in_tok, out_tok, cost = await self.classification_provider.generate(
                 prompt=prompt,
                 json_mode=True,
                 temperature=0.1,
@@ -1046,6 +1047,7 @@ Return ONLY valid JSON matching this schema:
                 response_text,
                 input_tokens=in_tok,
                 output_tokens=out_tok,
+                cost=cost,
                 notification_type="image",
             )
             return self._extract_json(response_text)
@@ -1153,7 +1155,7 @@ Return ONLY valid JSON matching this schema:
             corrections_section=corrections_section
         )
 
-        response_text = await self._generate_stream_to_signalr(
+        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.reasoning_provider,
             prompt=prompt,
             include_reasoning=stream_reasoning,
@@ -1165,8 +1167,7 @@ Return ONLY valid JSON matching this schema:
             stream_reasoning_to_client=stream_reasoning
         )
 
-        in_tok, out_tok = None, None
-        await self._debug_log("review_start", self.reasoning_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
+        await self._debug_log("review_start", self.reasoning_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok, cost=cost)
 
         return self._extract_json(response_text)
 
@@ -1218,7 +1219,7 @@ Return ONLY valid JSON matching this schema:
             user_message=user_message
         )
 
-        response_text = await self._generate_stream_to_signalr(
+        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.reasoning_provider,
             prompt=prompt,
             include_reasoning=stream_reasoning,
@@ -1229,8 +1230,7 @@ Return ONLY valid JSON matching this schema:
             connection_id=connection_id,
             stream_reasoning_to_client=stream_reasoning
         )
-        in_tok, out_tok = None, None
 
-        await self._debug_log("review_chat", self.reasoning_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok)
+        await self._debug_log("review_chat", self.reasoning_provider, prompt, response_text, input_tokens=in_tok, output_tokens=out_tok, cost=cost)
 
         return self._extract_json(response_text)

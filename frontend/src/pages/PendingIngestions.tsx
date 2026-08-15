@@ -1,11 +1,13 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useGetPendingIngestions, useCheckEmails } from '@/hooks/useIngestions'
 import { useGetTransactionById } from '@/hooks/useTransactions'
 import PendingIngestionsList from '@/components/PendingIngestionsList'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import ImageUploadModal from '@/components/ImageUploadModal'
+import ReasoningDrawer from '@/components/ReasoningDrawer'
 import { Transaction } from '@/hooks/useTransactions'
-import { RefreshCw, Mail, Image as ImageIcon } from 'lucide-react'
+import { RefreshCw, Mail, Image as ImageIcon, Brain } from 'lucide-react'
 
 export default function PendingIngestions() {
   const [viewMode, setViewMode] = useState<'Pending' | 'AutoConfirmed' | 'Confirmed'>('Pending')
@@ -14,10 +16,30 @@ export default function PendingIngestions() {
   const [confirmingIngestionId, setConfirmingIngestionId] = useState<string | null>(null)
   const [openingTransactionId, setOpeningTransactionId] = useState<string | null>(null)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  const [reasoningOpId, setReasoningOpId] = useState<string | null>(null)
+  const [isReasoningDrawerOpen, setIsReasoningDrawerOpen] = useState(false)
+  const [isReasoningPending, setIsReasoningPending] = useState(false)
   
+  const queryClient = useQueryClient()
   const { data: openedTransaction } = useGetTransactionById(openingTransactionId)
 
   const checkEmailsMutation = useCheckEmails()
+
+  useEffect(() => {
+    const handleReclassifyComplete = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (!reasoningOpId || detail?.operationId === reasoningOpId) {
+        setIsReasoningPending(false)
+        refetch()
+        queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
+      }
+    }
+
+    window.addEventListener('reclassifyComplete', handleReclassifyComplete)
+    return () => {
+      window.removeEventListener('reclassifyComplete', handleReclassifyComplete)
+    }
+  }, [reasoningOpId, refetch, queryClient])
 
   const confirmingIngestion = useMemo(() => {
     return pendingIngestions.find(i => i.id === confirmingIngestionId) || null
@@ -104,6 +126,17 @@ export default function PendingIngestions() {
             </div>
 
             <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
+            {reasoningOpId && (
+              <button
+                type="button"
+                onClick={() => setIsReasoningDrawerOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800/60 rounded-xl hover:bg-purple-100 dark:hover:bg-purple-900/40 active:scale-95 transition-all shadow-sm cursor-pointer"
+                title="Open AI reasoning stream drawer"
+              >
+                <Brain className={`w-3.5 h-3.5 ${isReasoningPending ? 'animate-pulse text-purple-500' : ''}`} />
+                <span>{isReasoningPending ? 'AI Thinking...' : 'View Reasoning'}</span>
+              </button>
+            )}
             <button
               onClick={handleRefetchList}
               disabled={isLoading}
@@ -175,10 +208,28 @@ export default function PendingIngestions() {
       <ImageUploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
-        onSuccess={(id) => {
-          refetch()
-          setConfirmingIngestionId(id)
+        onStreamReasoningStart={(opId) => {
+          setReasoningOpId(opId)
+          setIsReasoningPending(true)
+          setIsReasoningDrawerOpen(true)
         }}
+        onSuccess={(_id, opId, streamReasoning) => {
+          if (opId && streamReasoning) {
+            setReasoningOpId(opId)
+            setIsReasoningPending(true)
+            setIsReasoningDrawerOpen(true)
+          }
+          refetch()
+        }}
+      />
+
+      <ReasoningDrawer
+        isOpen={isReasoningDrawerOpen}
+        onClose={() => setIsReasoningDrawerOpen(false)}
+        operationId={reasoningOpId || ''}
+        isPending={isReasoningPending}
+        thinkingEventName="reclassifyThinking"
+        progressEventName="reclassifyProgress"
       />
 
       <AddTransactionModal
@@ -191,7 +242,7 @@ export default function PendingIngestions() {
         ingestionId={confirmingIngestion?.id || openedTransaction?.ingestionId}
         ingestion={confirmingIngestion}
       />
-    </div >
+    </div>
   )
 }
 

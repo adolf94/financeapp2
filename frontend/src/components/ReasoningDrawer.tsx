@@ -52,6 +52,19 @@ export default function ReasoningDrawer({
     }
   }, [isPending, thinkingText, contentText, finalContent])
 
+  // Listen to completion event for this operationId
+  useEffect(() => {
+    if (!operationId) return
+    const handleComplete = () => {
+      setIsDone(true)
+    }
+    const name = `reclassifyComplete_${operationId}`
+    window.addEventListener(name, handleComplete)
+    return () => {
+      window.removeEventListener(name, handleComplete)
+    }
+  }, [operationId])
+
   // Listen to reclassifyThinking_{operationId} with token simulation
   useEffect(() => {
     if (!operationId) return
@@ -101,46 +114,16 @@ export default function ReasoningDrawer({
     }
   }, [operationId])
 
-  // Listen to reclassifyProgress_{operationId} (final content) with token simulation
+  // Listen to reclassifyProgress_{operationId} (final content)
   useEffect(() => {
     if (!operationId) return
 
-    // Token simulation state for output
-    let outputBuffer = ''
-    let outputBufferTimeout: ReturnType<typeof setTimeout> | null = null
-
-    const processOutputBuffer = (currentDebounce: number) => {
-      if (outputBuffer.length > 0) {
-        const totalDurationMs = currentDebounce > 0 ? currentDebounce * 1000 : 200
-        const chunkSize = Math.min(4, outputBuffer.length) // Average 4 characters per token
-        const delay = Math.max(5, Math.min(200, totalDurationMs * (chunkSize / outputBuffer.length)))
-
-        const chunk = outputBuffer.substring(0, chunkSize)
-        setContentText(prev => prev + chunk)
-        outputBuffer = outputBuffer.substring(chunkSize)
-
-        // Continue processing if there's more in the buffer
-        if (outputBuffer.length > 0) {
-          outputBufferTimeout = setTimeout(() => processOutputBuffer(currentDebounce), delay)
-        } else {
-          outputBufferTimeout = null
-          // Auto-switch to output tab when content starts arriving
-          setActiveTab('output')
-        }
-      } else {
-        outputBufferTimeout = null
-      }
-    }
-
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
-      const chunk = typeof detail === 'string' ? detail : detail.chunk
-      const debounceDelay = typeof detail === 'string' ? 0 : (detail.debounceDelay || 0)
-      outputBuffer += chunk
-
-      // Start processing if not already running
-      if (!outputBufferTimeout) {
-        processOutputBuffer(debounceDelay)
+      const chunk = typeof detail === 'string' ? detail : detail?.chunk
+      if (chunk) {
+        setContentText(prev => (prev ? prev + chunk : chunk))
+        setActiveTab('output')
       }
     }
 
@@ -148,9 +131,8 @@ export default function ReasoningDrawer({
     window.addEventListener(name, handler)
     return () => {
       window.removeEventListener(name, handler)
-      if (outputBufferTimeout) clearTimeout(outputBufferTimeout)
     }
-  }, [operationId])
+  }, [operationId, progressEventName])
 
   // Auto-scroll
   useEffect(() => {

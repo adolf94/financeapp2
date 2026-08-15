@@ -23,18 +23,22 @@ Return ONLY valid JSON matching this schema:
 """
 
 APP_BRANDING_GUIDELINES = """
-- Application & Visual Branding Verification (Inspect UI layout, header color, and logos to confirm app):
+- Application & Visual Branding Verification:
+  * IMPORTANT: You MUST identify and classify the `application` using ONLY the applications listed below, with the exception of "Physical Receipt" for printed paper/POS receipts and physical store invoices. Do NOT invent or output any application name outside of this list:
   * **GCash**: Blue banner/theme, "Express Send", "Send Money", "Sent via GCash", "Ref No.", blue circular checkmark badge.
   * **Maya (PayMaya)**: Black & bright neon green theme, "Send Money", "Maya", "Ref ID", green checkmark badge.
   * **Vybe (by BPI)**: Purple / magenta / violet & white e-wallet theme, "VYBE" logo, "Send Money", "Scan to Pay", "Rewards points". (Distinct from regular BPI Online).
   * **BPI (BPI Online)**: Red header/accents, "BPI", "Transfer Details", "Confirmation Number", "Thank you for using BPI".
   * **BDO**: Dark blue & yellow branding, "BDO Pay", "BDO Digital Banking", "Transaction Confirmation".
-
   * **UnionBank**: Orange theme/accents, "UnionBank Online", "Transfer Successful", "UBP".
   * **Grab**: Green & white header, "GrabPay", "Order summary", "Delivered by GrabFood/GrabCar".
   * **Shopee**: Orange theme, "ShopeePay", "Payment Successful", "SPX".
   * **Foodpanda**: Pink/magenta theme, "foodpanda", "PandaPay".
-  * **Atome**: Bright yellow / black / neon-lime theme, "atome" logo, "Pay in 3", "Atome Card", "Bill payment", "Repayment Successful", "Order details".
+  * **Atome (Buy Now Pay Later / Card / QR Ph)**:
+    - Minimalist card-based layout on light gray background (`#f7f8fa`) with separate rounded white cards (`rounded-2xl`).
+    - Signature BNPL Card: A separate card below reading **"Loan Agreement >"** (linking to loan agreement terms).
+    - Other Atome visual variants: Bright yellow / neon-lime / black theme with lowercase "atome" logo, "Pay in 3", "Pay Later", "Atome Card", "Bill payment", "Repayment Successful", or "Order details".
+    - **CRITICAL FALLBACK RULE**: If you are not sure or uncertain of the mobile application name, and the screenshot shows "Loan Agreement" (or "Loan Agreement >") and was paid via "QR Ph" (or "Payment Method: QR Ph" / QR Ph logo), you MUST assume and set `application: "Atome"`.
   * **GoTyme**: Teal / Pastel green / white theme, "GoTyme Bank".
   * **SeaBank**: Orange & white theme, "SeaBank".
   * **RCBC**: Blue & yellow/orange branding, "RCBC Pulz" / "DiskarTech".

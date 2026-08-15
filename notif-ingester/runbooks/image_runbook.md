@@ -15,7 +15,7 @@ This runbook defines custom routing rules for transactions parsed from uploaded 
   - **Grab**: Green header, GrabPay receipt / delivery summary, or filename with `grab`.
   - **Shopee**: Orange header, ShopeePay receipt / order summary, or filename with `shopee`.
   - **Foodpanda**: Pink header, order receipt, or filename with `foodpanda`.
-  - **Atome**: Bright yellow / black / neon-lime theme, "atome" logo, Atome Card / Pay in 3 confirmation, or filename with `atome`.
+  - **Atome**: Clean light gray background (`#f7f8fa`) with rounded white cards, centered **"Details"** header with `[?]` help icon, light peach circle with store icon (`🏪`), "Payment" header, "Transaction Details" card with Merchant/Reference Number/Copy button/Posted Date/Payment Method (QR Ph), and signature **"Loan Agreement >"** card. Also yellow/lime/black theme, "atome" logo, Atome Card / Pay in 3, or filename with `atome`. **Fallback rule**: If not sure of app, presence of "Loan Agreement" and paid via "QR Ph" strictly assumes "Atome".
   - **GoTyme**: Teal/Green header, GoTyme Bank confirmation.
 
   - **SeaBank**: Orange/White header, SeaBank transfer.

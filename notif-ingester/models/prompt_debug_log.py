@@ -42,6 +42,9 @@ class PromptDebugLog(BaseModel):
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
 
+    # Estimated cost in USD
+    cost: Optional[float] = None
+
     # Auto-expire after 30 days
     ttl: int = Field(default=30 * 24 * 60 * 60, alias="_ttl")
 

@@ -1,23 +1,26 @@
 import React, { useState, useRef } from 'react'
-import { X, Upload, Image as ImageIcon, Sparkles, AlertCircle, Loader2, FileText, Brain } from 'lucide-react'
+import { X, Upload, Image as ImageIcon, Sparkles, AlertCircle, Loader2, FileText } from 'lucide-react'
 import { uuidv7 } from 'uuidv7'
 import { useUploadImage } from '@/hooks/useIngestions'
-import ReasoningDrawer from './ReasoningDrawer'
 import toast from 'react-hot-toast'
 
 interface ImageUploadModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess?: (ingestionId: string) => void
+  onSuccess?: (ingestionId: string, operationId?: string, streamReasoning?: boolean) => void
+  onStreamReasoningStart?: (operationId: string) => void
 }
 
-export default function ImageUploadModal({ isOpen, onClose, onSuccess }: ImageUploadModalProps) {
+export default function ImageUploadModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  onStreamReasoningStart,
+}: ImageUploadModalProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [description, setDescription] = useState('')
   const [streamReasoning, setStreamReasoning] = useState(true)
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-  const [currentOperationId, setCurrentOperationId] = useState<string>('')
   const [isDragging, setIsDragging] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -74,10 +77,9 @@ export default function ImageUploadModal({ isOpen, onClose, onSuccess }: ImageUp
     setErrorMsg(null)
 
     const opId = uuidv7()
-    setCurrentOperationId(opId)
 
     if (streamReasoning) {
-      setIsDrawerOpen(true)
+      onStreamReasoningStart?.(opId)
     }
 
     try {
@@ -90,7 +92,7 @@ export default function ImageUploadModal({ isOpen, onClose, onSuccess }: ImageUp
 
       toast.success('Receipt image queued for AI extraction!', { id: 'img-upload-toast' })
       if (onSuccess && res.ingestion_id) {
-        onSuccess(res.ingestion_id)
+        onSuccess(res.ingestion_id, opId, streamReasoning)
       }
       handleClose()
     } catch (err: any) {
@@ -251,16 +253,6 @@ export default function ImageUploadModal({ isOpen, onClose, onSuccess }: ImageUp
                   Stream Reasoning
                 </span>
               </label>
-              {currentOperationId && (
-                <button
-                  type="button"
-                  onClick={() => setIsDrawerOpen(true)}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:underline cursor-pointer"
-                >
-                  <Brain className={`w-3.5 h-3.5 ${isProcessing ? 'animate-pulse' : ''}`} />
-                  <span>{isProcessing ? 'View Live Thinking' : 'View Reasoning'}</span>
-                </button>
-              )}
             </div>
 
             <div className="flex items-center justify-end gap-2">
@@ -294,13 +286,6 @@ export default function ImageUploadModal({ isOpen, onClose, onSuccess }: ImageUp
           </div>
         </div>
       </div>
-
-      <ReasoningDrawer
-        isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
-        operationId={currentOperationId}
-        isPending={isProcessing}
-      />
     </>
   )
 }

@@ -60,9 +60,9 @@ class PreprocessingService:
         """Use AI to extract account/vendor information from text"""
         prompt = self.EXTRACTION_PROMPT.format(raw_msg=text)
         response_text = ""
-        in_tok, out_tok = None, None
+        in_tok, out_tok, cost = None, None, None
         try:
-            response_text, in_tok, out_tok = await self.extraction_provider.generate(
+            response_text, in_tok, out_tok, cost = await self.extraction_provider.generate(
                 prompt=prompt,
                 json_mode=True,
                 temperature=0.1,
@@ -88,7 +88,8 @@ class PreprocessingService:
                     prompt=prompt,
                     response_text=response_text,
                     input_tokens=in_tok,
-                    output_tokens=out_tok
+                    output_tokens=out_tok,
+                    cost=cost,
                 )
 
     async def _debug_log(
@@ -97,13 +98,17 @@ class PreprocessingService:
         prompt: str,
         response_text: str,
         input_tokens: Optional[int] = None,
-        output_tokens: Optional[int] = None
+        output_tokens: Optional[int] = None,
+        cost: Optional[float] = None,
     ) -> None:
         """Persist prompt debug log to CosmosDB and a local markdown file with YAML frontmatter."""
         try:
             response_json = json.loads(response_text)
         except Exception:
             response_json = None
+
+        from services.cost_calculator import resolve_or_calculate_cost
+        final_cost = resolve_or_calculate_cost(self.extraction_provider.provider_label, input_tokens, output_tokens, cost)
 
         log = PromptDebugLog(
             call_type=call_type,
@@ -113,6 +118,7 @@ class PreprocessingService:
             response_json=response_json,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cost=final_cost,
         )
 
         await self._debug_repo.add_async(log)
@@ -129,13 +135,20 @@ class PreprocessingService:
                 f"provider: '{log.provider}'",
                 f"input_tokens: {input_tokens if input_tokens is not None else 'null'}",
                 f"output_tokens: {output_tokens if output_tokens is not None else 'null'}",
+                f"cost_usd: {cost if cost is not None else 'null'}",
                 "---"
             ]
             yaml_header = "\n".join(yaml_lines)
             
+            cost_display = f"${cost:.6f}" if cost is not None else "N/A"
             md_content = f"""{yaml_header}
 
 # Prompt Debug Log: {call_type}
+
+## Usage & Cost
+- **Input Tokens**: {input_tokens if input_tokens is not None else 'N/A'}
+- **Output Tokens**: {output_tokens if output_tokens is not None else 'N/A'}
+- **Estimated Cost**: {cost_display}
 
 ## Prompt
 ```text

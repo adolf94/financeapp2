@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { uuidv7 } from 'uuidv7'
 import { useGetAccounts, useGetAccountGroups } from '@/hooks/useAccounts'
 import { useGetVendors, useCreateVendor } from '@/hooks/useVendors'
-import { useGetIngestionById, useUpdateIngestionVendor } from '@/hooks/useIngestions'
+import { useGetIngestionById } from '@/hooks/useIngestions'
 import { Transaction } from '@/hooks/useTransactions'
 import { PendingIngestion } from '@/hooks/useIngestions'
 
@@ -133,7 +133,6 @@ function AddTransactionModalContent() {
   const { data: dbVendors = [] } = useGetVendors()
 
   const createVendorMutation = useCreateVendor()
-  const updateIngestionVendorMutation = useUpdateIngestionVendor()
 
   const [isEditVendorOpen, setIsEditVendorOpen] = useState(false)
 
@@ -699,7 +698,6 @@ function AddTransactionModalContent() {
                   value={vendor}
                   onChange={(val) => {
                     setVendor(val)
-                    if (ingestion) updateIngestionVendorMutation.mutate({ id: ingestion.id, vendor: val })
                   }}
                   onCreate={(val) => {
                     const tags = suggestedVendorTags
@@ -710,7 +708,6 @@ function AddTransactionModalContent() {
                       {
                         onSuccess: () => {
                           setVendor(val)
-                          if (ingestion) updateIngestionVendorMutation.mutate({ id: ingestion.id, vendor: val })
                         },
                       }
                     )

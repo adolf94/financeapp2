@@ -167,4 +167,36 @@ describe('AddTransactionModal Reclassify Button', () => {
 
     expect(screen.getByText('Edit Vendor')).toBeDefined()
   })
+
+  it('preserves user modifications to form fields when vendor is changed', () => {
+    render(
+      <AddTransactionModal
+        isOpen={true}
+        onClose={vi.fn()}
+        ingestion={mockIngestion}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    // Initially amount is 500 from mockIngestion
+    const amountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
+    expect(amountInput.value).toBe('500')
+
+    // User modifies amount and note
+    fireEvent.change(amountInput, { target: { value: '1250' } })
+    expect(amountInput.value).toBe('1250')
+
+    const noteInput = screen.getByPlaceholderText('Note (optional)') as HTMLTextAreaElement
+    fireEvent.change(noteInput, { target: { value: 'Dinner with team' } })
+    expect(noteInput.value).toBe('Dinner with team')
+
+    // User changes vendor
+    const vendorInput = screen.getByPlaceholderText('Select or type vendor...') as HTMLInputElement
+    fireEvent.change(vendorInput, { target: { value: 'New Restaurant' } })
+
+    // User's modified amount and note must remain unchanged
+    expect(amountInput.value).toBe('1250')
+    expect(noteInput.value).toBe('Dinner with team')
+    expect(vendorInput.value).toBe('New Restaurant')
+  })
 })

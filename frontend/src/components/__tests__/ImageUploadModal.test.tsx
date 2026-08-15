@@ -59,8 +59,15 @@ describe('ImageUploadModal', () => {
     const onSuccess = vi.fn()
     const onClose = vi.fn()
 
+    const onStreamReasoningStart = vi.fn()
+
     render(
-      <ImageUploadModal isOpen={true} onClose={onClose} onSuccess={onSuccess} />,
+      <ImageUploadModal
+        isOpen={true}
+        onClose={onClose}
+        onSuccess={onSuccess}
+        onStreamReasoningStart={onStreamReasoningStart}
+      />,
       { wrapper: createWrapper() }
     )
 
@@ -76,6 +83,7 @@ describe('ImageUploadModal', () => {
     fireEvent.click(processBtn)
 
     await waitFor(() => {
+      expect(onStreamReasoningStart).toHaveBeenCalledWith(expect.any(String))
       expect(mockMutateAsync).toHaveBeenCalledWith(
         expect.objectContaining({
           file,
@@ -83,7 +91,7 @@ describe('ImageUploadModal', () => {
           streamReasoning: true,
         })
       )
-      expect(onSuccess).toHaveBeenCalledWith('img-ingestion-123')
+      expect(onSuccess).toHaveBeenCalledWith('img-ingestion-123', expect.any(String), true)
       expect(onClose).toHaveBeenCalled()
     })
   })

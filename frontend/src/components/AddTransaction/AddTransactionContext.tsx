@@ -195,7 +195,6 @@ export function AddTransactionProvider({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
 
   const [isFlashing, setIsFlashing] = useState(false)
-  const prevIngestionRef = useRef(ingestion)
   const submitTypeRef = useRef<'close' | 'more'>('close')
 
   const resetForm = useCallback(() => {
@@ -220,110 +219,88 @@ export function AddTransactionProvider({
     setMaxOccurrences('')
   }, [])
 
-  // Flash UI and update form fields when AI re-runs and changes suggestions
-  useEffect(() => {
-    if (ingestion?.ai_parsed !== prevIngestionRef.current?.ai_parsed) {
-      if (prevIngestionRef.current && ingestion) {
-        setIsFlashing(true)
-        setTimeout(() => setIsFlashing(false), 600)
-        
-        const parsed = ingestion.ai_parsed
-        if (parsed.transaction_type) {
-          const t = ['Income', 'Expense', 'Transfer'].includes(parsed.transaction_type) ? (parsed.transaction_type as any) : 'Expense'
-          setType(t)
-        }
-        if (parsed.amount) {
-          setTotalAmount(Math.abs(parsed.amount).toString())
-        }
-        if (parsed.vendor) {
-          setVendor(parsed.vendor.name || '')
-        }
-        if (parsed.summary || parsed.notes) {
-          setNote(parsed.summary || parsed.notes || '')
-        }
-        if (parsed.suggested_rule) {
-          setUserWhy(parsed.suggested_rule)
-        } else if (parsed.user_why) {
-          setUserWhy(parsed.user_why)
-        }
-        if (parsed.date) {
-          setDate(dayjs(parsed.date).format('YYYY-MM-DDTHH:mm'))
-        } else if (ingestion.received_at) {
-          setDate(dayjs(ingestion.received_at).format('YYYY-MM-DDTHH:mm'))
-        }
-        if (parsed.reference_number !== undefined) {
-          setReferenceNumber(parsed.reference_number || '')
-        }
+  const applyAiParsed = useCallback((parsed: any, receivedAt?: string) => {
+    if (!parsed) return
+    setIsFlashing(true)
+    setTimeout(() => setIsFlashing(false), 600)
 
-        // Pre-fill accounts based on transaction_type
-        if (parsed.transaction_type === 'Transfer') {
-          // Transfer: debit = receiving/to, credit = sending/source
-          if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
-          if (parsed.debit_account_id) setToAccountId(parsed.debit_account_id)
-        } else if (parsed.transaction_type === 'Income') {
-          // Income: debit = receiving/source account, credit = income category
-          if (parsed.debit_account_id) setSourceAccountId(parsed.debit_account_id)
-          if (parsed.credit_account_id) {
-            const acc = accountsRef.current.find((a) => a.id === parsed.credit_account_id)
-            setSplits([
-              {
-                id: generateId(),
-                categoryId: acc?.accountGroupId || '',
-                subCategoryId: parsed.credit_account_id,
-                amount: '',
-              },
-            ])
-          }
-        } else {
-          // Expense: debit = expense category, credit = source payment account
-          if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
-          if (parsed.debit_account_id) {
-            const acc = accountsRef.current.find((a) => a.id === parsed.debit_account_id)
-            setSplits([
-              {
-                id: generateId(),
-                categoryId: acc?.accountGroupId || '',
-                subCategoryId: parsed.debit_account_id,
-                amount: '',
-              },
-            ])
-          }
-        }
+    if (parsed.transaction_type) {
+      const t = ['Income', 'Expense', 'Transfer'].includes(parsed.transaction_type)
+        ? (parsed.transaction_type as any)
+        : 'Expense'
+      setType(t)
+    }
+    if (parsed.amount) {
+      setTotalAmount(Math.abs(parsed.amount).toString())
+    }
+    if (parsed.vendor) {
+      const vendorName = typeof parsed.vendor === 'string' ? parsed.vendor : parsed.vendor.name || ''
+      setVendor(vendorName)
+      setSelectedLookups(parsed.vendor.lookups || [])
+      setSelectedNewLookups(parsed.vendor.new_lookups || parsed.vendor.NewLookups || [])
+      if (parsed.vendor.is_recommendation) {
+        setSuggestedVendorType(parsed.vendor.type === 'Individual' ? 'Individual' : 'Business')
+        setSuggestedVendorTags((parsed.vendor.tags || []).join(', '))
       }
-      prevIngestionRef.current = ingestion
     }
-  }, [ingestion])
-
-  useEffect(() => {
-    if (!isOpen) return
-    setCreatedSuggestions(new Set())
-    setEditingSuggestion(null)
-    if (ingestion?.ai_parsed?.vendor) {
-      setVendor(ingestion.ai_parsed.vendor.name || '')
-      setSelectedLookups(ingestion.ai_parsed.vendor.lookups || [])
-      setSelectedNewLookups(ingestion.ai_parsed.vendor.new_lookups || ingestion.ai_parsed.vendor.NewLookups || [])
-    } else {
-      setVendor('')
-      setSelectedLookups([])
-      setSelectedNewLookups([])
+    if (parsed.summary || parsed.notes) {
+      setNote(parsed.summary || parsed.notes || '')
     }
-  }, [isOpen, ingestion?.id, ingestion?.ai_parsed?.vendor])
+    if (parsed.suggested_rule) {
+      setUserWhy(parsed.suggested_rule)
+    } else if (parsed.user_why) {
+      setUserWhy(parsed.user_why)
+    }
+    if (parsed.date) {
+      setDate(dayjs(parsed.date).format('YYYY-MM-DDTHH:mm'))
+    } else if (receivedAt) {
+      setDate(dayjs(receivedAt).format('YYYY-MM-DDTHH:mm'))
+    }
+    if (parsed.reference_number !== undefined) {
+      setReferenceNumber(parsed.reference_number || '')
+    }
 
-  useEffect(() => {
-    if (ingestion?.ai_parsed?.vendor?.is_recommendation) {
-      const type = ingestion.ai_parsed.vendor.type
-      if (type === 'Individual' || type === 'Business') {
-        setSuggestedVendorType(type)
-      } else {
-        setSuggestedVendorType('Business')
+    // Pre-fill accounts based on transaction_type
+    if (parsed.transaction_type === 'Transfer') {
+      if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
+      if (parsed.debit_account_id) setToAccountId(parsed.debit_account_id)
+    } else if (parsed.transaction_type === 'Income') {
+      if (parsed.debit_account_id) setSourceAccountId(parsed.debit_account_id)
+      if (parsed.credit_account_id) {
+        const acc = accountsRef.current.find((a) => a.id === parsed.credit_account_id)
+        setSplits([
+          {
+            id: generateId(),
+            categoryId: acc?.accountGroupId || '',
+            subCategoryId: parsed.credit_account_id,
+            amount: '',
+          },
+        ])
       }
-      const tags = ingestion.ai_parsed.vendor.tags || []
-      setSuggestedVendorTags(tags.join(', '))
     } else {
-      setSuggestedVendorType('Business')
-      setSuggestedVendorTags('')
+      if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
+      if (parsed.debit_account_id) {
+        const acc = accountsRef.current.find((a) => a.id === parsed.debit_account_id)
+        setSplits([
+          {
+            id: generateId(),
+            categoryId: acc?.accountGroupId || '',
+            subCategoryId: parsed.debit_account_id,
+            amount: '',
+          },
+        ])
+      }
     }
-  }, [ingestion?.id, ingestion?.ai_parsed?.vendor])
+  }, [])
+
+  // Update form fields only when reclassifyMutation explicitly returns new AI recommendations
+  const prevReclassifyDataRef = useRef<any>(null)
+  useEffect(() => {
+    if (reclassifyMutation.data && reclassifyMutation.data !== prevReclassifyDataRef.current) {
+      prevReclassifyDataRef.current = reclassifyMutation.data
+      applyAiParsed(reclassifyMutation.data.ai_parsed, reclassifyMutation.data.received_at)
+    }
+  }, [reclassifyMutation.data, applyAiParsed])
 
   const accountsRef = useRef(accounts)
   useEffect(() => {
@@ -401,65 +378,11 @@ export function AddTransactionProvider({
       } else {
         if (justOpened) {
           resetForm()
+          setCreatedSuggestions(new Set())
+          setEditingSuggestion(null)
           const parsed = ingestion?.ai_parsed
           if (parsed) {
-            if (parsed.transaction_type) {
-              const t = ['Income', 'Expense', 'Transfer'].includes(parsed.transaction_type) ? (parsed.transaction_type as any) : 'Expense'
-              setType(t)
-            }
-            if (parsed.amount) {
-              setTotalAmount(Math.abs(parsed.amount).toString())
-            }
-            if (parsed.vendor) {
-              setVendor(parsed.vendor.name || '')
-            }
-            if (parsed.summary || parsed.notes) {
-              setNote(parsed.summary || parsed.notes || '')
-            }
-            if (parsed.suggested_rule) {
-              setUserWhy(parsed.suggested_rule)
-            } else if (parsed.user_why) {
-              setUserWhy(parsed.user_why)
-            }
-            if (parsed.date) {
-              setDate(dayjs(parsed.date).format('YYYY-MM-DDTHH:mm'))
-            } else if (ingestion.received_at) {
-              setDate(dayjs(ingestion.received_at).format('YYYY-MM-DDTHH:mm'))
-            }
-            if (parsed.reference_number !== undefined) {
-              setReferenceNumber(parsed.reference_number || '')
-            }
-
-            if (parsed.transaction_type === 'Transfer') {
-              if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
-              if (parsed.debit_account_id) setToAccountId(parsed.debit_account_id)
-            } else if (parsed.transaction_type === 'Income') {
-              if (parsed.debit_account_id) setSourceAccountId(parsed.debit_account_id)
-              if (parsed.credit_account_id) {
-                const acc = accountsRef.current.find((a) => a.id === parsed.credit_account_id)
-                setSplits([
-                  {
-                    id: generateId(),
-                    categoryId: acc?.accountGroupId || '',
-                    subCategoryId: parsed.credit_account_id,
-                    amount: '',
-                  },
-                ])
-              }
-            } else {
-              if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
-              if (parsed.debit_account_id) {
-                const acc = accountsRef.current.find((a) => a.id === parsed.debit_account_id)
-                setSplits([
-                  {
-                    id: generateId(),
-                    categoryId: acc?.accountGroupId || '',
-                    subCategoryId: parsed.debit_account_id,
-                    amount: '',
-                  },
-                ])
-              }
-            }
+            applyAiParsed(parsed, ingestion?.received_at)
           }
         }
       }
@@ -469,7 +392,7 @@ export function AddTransactionProvider({
     } else {
       formInitializedForRef.current = null
     }
-  }, [isOpen, initialData, ingestion, resetForm])
+  }, [isOpen, initialData, ingestion, resetForm, applyAiParsed])
 
   // Sync categoryIds when accounts load
   useEffect(() => {

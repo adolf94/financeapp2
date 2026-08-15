@@ -60,8 +60,8 @@ class LlmProvider(ABC):
         thinking_budget: Optional[int] = None,
         image_bytes: bytes | None = None,
         mime_type: str | None = None,
-    ) -> Tuple[str, Optional[int], Optional[int]]:
-        """Send a prompt (and optional image) and return the raw text response, input tokens, and output tokens."""
+    ) -> Tuple[str, Optional[int], Optional[int], Optional[float]]:
+        """Send a prompt (and optional image) and return the raw text response, input tokens, output tokens, and cost (if provided)."""
 
     @abstractmethod
     async def generate_stream(
@@ -122,7 +122,7 @@ class GeminiProvider(LlmProvider):
         thinking_budget: Optional[int] = None,
         image_bytes: bytes | None = None,
         mime_type: str | None = None,
-    ) -> Tuple[str, Optional[int], Optional[int]]:
+    ) -> Tuple[str, Optional[int], Optional[int], Optional[float]]:
         config: dict = {"temperature": temperature}
         if json_mode:
             config["response_mime_type"] = "application/json"
@@ -152,7 +152,7 @@ class GeminiProvider(LlmProvider):
             input_tokens = getattr(response.usage_metadata, "prompt_token_count", None)
             output_tokens = getattr(response.usage_metadata, "candidates_token_count", None)
 
-        return response.text, input_tokens, output_tokens
+        return response.text, input_tokens, output_tokens, None
 
     async def generate_stream(
         self,
@@ -187,6 +187,11 @@ class GeminiProvider(LlmProvider):
             config=config,
         )
         for chunk in response_stream:
+            if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
+                in_tok = getattr(chunk.usage_metadata, "prompt_token_count", None)
+                out_tok = getattr(chunk.usage_metadata, "candidates_token_count", None)
+                if in_tok is not None or out_tok is not None:
+                    yield ("usage", (in_tok, out_tok))
             if chunk.text:
                 yield ("content", chunk.text)
 
@@ -201,6 +206,27 @@ class GeminiProvider(LlmProvider):
 # ---------------------------------------------------------------------------
 # OpenAI-compatible provider  (openai / openrouter / Qwen / Ollama / …)
 # ---------------------------------------------------------------------------
+
+def _extract_usage_and_cost(usage_obj) -> Tuple[Optional[int], Optional[int], Optional[float]]:
+    if not usage_obj:
+        return None, None, None
+    
+    in_tok = getattr(usage_obj, "prompt_tokens", None)
+    out_tok = getattr(usage_obj, "completion_tokens", None)
+    
+    cost = getattr(usage_obj, "cost", None)
+    if cost is None:
+        cost = getattr(usage_obj, "total_cost", None)
+    if cost is None and hasattr(usage_obj, "model_extra") and isinstance(usage_obj.model_extra, dict):
+        cost = usage_obj.model_extra.get("cost") or usage_obj.model_extra.get("total_cost")
+    
+    try:
+        cost_float = float(cost) if cost is not None else None
+    except (ValueError, TypeError):
+        cost_float = None
+
+    return in_tok, out_tok, cost_float
+
 
 class OpenAICompatibleProvider(LlmProvider):
     """Wraps the openai SDK.
@@ -234,7 +260,7 @@ class OpenAICompatibleProvider(LlmProvider):
         thinking_budget: Optional[int] = None,
         image_bytes: bytes | None = None,
         mime_type: str | None = None,
-    ) -> Tuple[str, Optional[int], Optional[int]]:
+    ) -> Tuple[str, Optional[int], Optional[int], Optional[float]]:
         import base64
         messages: list[dict] = []
         if system:
@@ -270,13 +296,9 @@ class OpenAICompatibleProvider(LlmProvider):
 
         response = await self.client.chat.completions.create(**kwargs)
         
-        input_tokens = None
-        output_tokens = None
-        if hasattr(response, "usage") and response.usage:
-            input_tokens = getattr(response.usage, "prompt_tokens", None)
-            output_tokens = getattr(response.usage, "completion_tokens", None)
+        input_tokens, output_tokens, cost = _extract_usage_and_cost(getattr(response, "usage", None))
 
-        return response.choices[0].message.content, input_tokens, output_tokens
+        return response.choices[0].message.content, input_tokens, output_tokens, cost
 
     async def generate_stream(
         self,
@@ -322,8 +344,15 @@ class OpenAICompatibleProvider(LlmProvider):
         if include_reasoning and is_openrouter:
             kwargs["extra_body"] = {"reasoning": {"effort": "medium"}}
 
+        kwargs["stream_options"] = {"include_usage": True}
+
         response_stream = await self.client.chat.completions.create(**kwargs)
         async for chunk in response_stream:
+            if hasattr(chunk, "usage") and chunk.usage:
+                in_tok, out_tok, cost = _extract_usage_and_cost(chunk.usage)
+                if in_tok is not None or out_tok is not None or cost is not None:
+                    yield ("usage", (in_tok, out_tok, cost))
+
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
