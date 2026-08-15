@@ -2,58 +2,38 @@ import { useAddTransaction } from './AddTransactionContext'
 import { uuidv7 } from 'uuidv7'
 
 export default function TransactionTypeTabs() {
-  const { mode, setMode, type, setType, setSplits, setToAccountId } = useAddTransaction()
+  const { mode, type, setType, setSplits, setToAccountId } = useAddTransaction()
+
+  if (mode !== 'Simple') return null
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Mode Toggle (Simple / Advanced) */}
-      <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-        <button
-          type="button"
-          onClick={() => setMode('Simple')}
-          className={`flex-1 py-1.5 rounded-lg font-semibold text-xs uppercase tracking-wide transition-all cursor-pointer ${
-            mode === 'Simple'
-              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm'
-              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          Simple
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode('Advanced')}
-          className={`flex-1 py-1.5 rounded-lg font-semibold text-xs uppercase tracking-wide transition-all cursor-pointer ${
-            mode === 'Advanced'
-              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm'
-              : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-          }`}
-        >
-          Advanced
-        </button>
-      </div>
+    <div className="grid grid-cols-3 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
+      {(['Expense', 'Income', 'Transfer'] as const).map((t) => {
+        const isActive = type === t
+        let activeStyle = 'bg-white dark:bg-slate-700 text-rose-600 dark:text-rose-400 font-bold shadow-xs'
+        if (t === 'Income') activeStyle = 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 font-bold shadow-xs'
+        if (t === 'Transfer') activeStyle = 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 font-bold shadow-xs'
 
-      {mode === 'Simple' && (
-        <div className="grid grid-cols-3 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-          {(['Expense', 'Income', 'Transfer'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => {
-                setType(t)
-                setSplits([{ id: uuidv7(), categoryId: '', subCategoryId: '', amount: '' }])
-                if (t !== 'Transfer') setToAccountId('')
-              }}
-              className={`py-2 rounded-lg font-medium text-sm transition-all cursor-pointer ${
-                type === t
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm'
-                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-      )}
+        return (
+          <button
+            key={t}
+            type="button"
+            onClick={() => {
+              setType(t)
+              setSplits([{ id: uuidv7(), categoryId: '', subCategoryId: '', amount: '' }])
+              if (t !== 'Transfer') setToAccountId('')
+            }}
+            className={`py-2 rounded-lg text-xs sm:text-sm transition-all cursor-pointer ${
+              isActive
+                ? activeStyle
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+            }`}
+          >
+            {t}
+          </button>
+        )
+      })}
     </div>
   )
 }
+

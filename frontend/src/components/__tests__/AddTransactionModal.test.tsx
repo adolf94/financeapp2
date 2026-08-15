@@ -105,7 +105,7 @@ describe('AddTransactionModal Reclassify Button', () => {
     fireEvent.click(sidebarBtn)
 
     // Verify confirmation modal is open
-    expect(screen.getByText('Re-run AI Classification')).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'Re-run AI Classification' })).toBeDefined()
 
     // Type a comment in the textarea
     const commentInput = screen.getByPlaceholderText(/Treat this as a Food & Dining expense/i)
