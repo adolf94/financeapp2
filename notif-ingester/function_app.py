@@ -202,8 +202,10 @@ async def PhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
 # ── Function 1.5: ImageHookFunction ─────────────────────────────────────────
 @app.route(route="image_hook", methods=["POST"])
 async def ImageHookFunction(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info(f"[image_hook] Received POST - content_type={req.headers.get('content-type', 'MISSING')} files_keys={list(req.files.keys()) if req.files else 'NO_FILES'}")
     user, err_resp = validate_api_key(req)
     if err_resp:
+        logging.warning(f"[image_hook] Auth rejected: {err_resp.status_code}")
         return err_resp
 
     user_id = user.get("sub", "default") if user else "default"

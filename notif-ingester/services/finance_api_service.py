@@ -418,15 +418,12 @@ class FinanceApiService:
             tx_type = "Expense"
             
         from datetime import datetime, timezone
+        from services.date_utils import parse_iso_or_local_to_utc
         
         tx_id = str(uuid7())
         
         # 1. Create the main Transaction document (EF Core format)
-        tx_date = parsed.date or ingestion.received_at or datetime.now(timezone.utc)
-        if tx_date.tzinfo is None:
-            tx_date = tx_date.replace(tzinfo=timezone.utc)
-        else:
-            tx_date = tx_date.astimezone(timezone.utc)
+        tx_date = parse_iso_or_local_to_utc(parsed.date) or parse_iso_or_local_to_utc(ingestion.received_at) or datetime.now(timezone.utc)
         tx_date_iso = tx_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
         vendor_lookups = []
@@ -438,7 +435,7 @@ class FinanceApiService:
         vendor_lookups = list(set([l for l in vendor_lookups if l]))
 
         tx_doc = {
-            "id": f"Transaction|{tx_id}",
+            "id": tx_id,
             "Id": tx_id,
             "UserId": ingestion.user_id,
             "Date": tx_date_iso,
@@ -457,7 +454,7 @@ class FinanceApiService:
         # 2. Create the LedgerEntry documents (EF Core format)
         credit_id = str(uuid7())
         credit_entry = {
-            "id": f"LedgerEntry|{credit_id}",
+            "id": credit_id,
             "Id": credit_id,
             "UserId": ingestion.user_id,
             "TransactionId": tx_id,
@@ -477,7 +474,7 @@ class FinanceApiService:
                 order_note = order.get("notes") or (order.get("vendor", {}).get("name") if isinstance(order.get("vendor"), dict) else order.get("vendor")) or parsed.notes
                 d_id = str(uuid7())
                 d_entry = {
-                    "id": f"LedgerEntry|{d_id}",
+                    "id": d_id,
                     "Id": d_id,
                     "UserId": ingestion.user_id,
                     "TransactionId": tx_id,
@@ -500,7 +497,7 @@ class FinanceApiService:
         else:
             debit_id = str(uuid7())
             debit_entry = {
-                "id": f"LedgerEntry|{debit_id}",
+                "id": debit_id,
                 "Id": debit_id,
                 "UserId": ingestion.user_id,
                 "TransactionId": tx_id,
@@ -732,16 +729,8 @@ class FinanceApiService:
             
             # Case 2: Match by amount + effective time window (5 mins)
             if amount is not None and around_time is not None:
-                if isinstance(around_time, str):
-                    try:
-                        around_dt = datetime.fromisoformat(around_time.replace("Z", "+00:00"))
-                    except Exception:
-                        around_dt = datetime.now(timezone.utc)
-                else:
-                    around_dt = around_time
-                    
-                if around_dt.tzinfo is None:
-                    around_dt = around_dt.replace(tzinfo=timezone.utc)
+                from services.date_utils import parse_iso_or_local_to_utc
+                around_dt = parse_iso_or_local_to_utc(around_time) or datetime.now(timezone.utc)
                     
                 min_dt = (around_dt - timedelta(minutes=window_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
                 max_dt = (around_dt + timedelta(minutes=window_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")

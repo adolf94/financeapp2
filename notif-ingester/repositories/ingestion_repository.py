@@ -73,35 +73,22 @@ class CosmosIngestionRepository(IIngestionRepository):
         async for item in items:
             results.append(PendingIngestion(**item))
 
+        from services.date_utils import parse_iso_or_local_to_utc
+
         def get_sort_key(item: PendingIngestion) -> datetime:
-            val = item.raw_payload.get("timestamp")
+            val = item.raw_payload.get("timestamp") if item.raw_payload else None
             if val is not None:
-                try:
-                    if isinstance(val, str) and val.isdigit():
-                        val = float(val)
-                    if isinstance(val, (int, float)):
-                        if val > 30000000000:
-                            return datetime.fromtimestamp(val / 1000, tz=timezone.utc)
-                        else:
-                            return datetime.fromtimestamp(val, tz=timezone.utc)
-                    elif isinstance(val, str):
-                        dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
-                        if dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=timezone.utc)
-                        return dt
-                except Exception:
-                    pass
+                parsed_dt = parse_iso_or_local_to_utc(val)
+                if parsed_dt:
+                    return parsed_dt
 
             if item.ai_parsed and item.ai_parsed.date:
-                dt = item.ai_parsed.date
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt
+                parsed_dt = parse_iso_or_local_to_utc(item.ai_parsed.date)
+                if parsed_dt:
+                    return parsed_dt
 
-            dt = item.received_at
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
+            parsed_dt = parse_iso_or_local_to_utc(item.received_at)
+            return parsed_dt or datetime.now(timezone.utc)
 
         results.sort(key=get_sort_key, reverse=True)
         return results[skip : skip + top]
@@ -134,18 +121,8 @@ class CosmosIngestionRepository(IIngestionRepository):
 
     async def find_by_amount_and_time_async(self, user_id: str, amount: float, around_time, window_minutes: int = 5) -> list[PendingIngestion]:
         from datetime import timedelta
-        if isinstance(around_time, str):
-            try:
-                around_dt = datetime.fromisoformat(around_time.replace("Z", "+00:00"))
-            except Exception:
-                around_dt = datetime.now(timezone.utc)
-        elif isinstance(around_time, datetime):
-            around_dt = around_time
-        else:
-            around_dt = datetime.now(timezone.utc)
-
-        if around_dt.tzinfo is None:
-            around_dt = around_dt.replace(tzinfo=timezone.utc)
+        from services.date_utils import parse_iso_or_local_to_utc
+        around_dt = parse_iso_or_local_to_utc(around_time) or datetime.now(timezone.utc)
 
         min_dt_iso = (around_dt - timedelta(minutes=window_minutes)).isoformat()
         max_dt_iso = (around_dt + timedelta(minutes=window_minutes)).isoformat()

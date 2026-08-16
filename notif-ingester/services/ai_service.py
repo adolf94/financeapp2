@@ -13,6 +13,7 @@ from prompts.sms_prompts import SMS_IS_FINANCIAL_PROMPT, SMS_EXTRACTION_PROMPT, 
 from prompts.app_prompts import APP_IS_FINANCIAL_PROMPT, APP_CLASSIFICATION_PROMPT
 from prompts.email_prompts import EMAIL_CLASSIFICATION_PROMPT, SHOPEE_MULTI_ORDER_PROMPT
 from prompts.image_prompts import IMAGE_CLASSIFICATION_PROMPT
+from services.image_optimizer import optimize_image_for_ai
 
 RUNBOOK_REVIEW_PROMPT = """
 You are a personal finance assistant. Your job is to review the user's transaction classification rules runbook (RUNBOOK.md) and propose updates to it, as well as account descriptions and vendor tags.
@@ -1103,6 +1104,14 @@ Return ONLY valid JSON matching this schema:
             "bank statement, or checkout screenshot. Extract all transaction details accurately into JSON."
         )
 
+        # Downscale & compress image prior to sending to vision LLM
+        opt_image_bytes, opt_mime_type = optimize_image_for_ai(
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+            max_dimension=1024,
+            quality=80,
+        )
+
         response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
             prompt=prompt,
@@ -1114,8 +1123,8 @@ Return ONLY valid JSON matching this schema:
             user_id=user_id,
             connection_id=connection_id,
             stream_reasoning_to_client=stream_reasoning_to_client,
-            image_bytes=image_bytes,
-            mime_type=mime_type,
+            image_bytes=opt_image_bytes,
+            mime_type=opt_mime_type,
         )
 
         await self._debug_log(
@@ -1150,14 +1159,23 @@ Return ONLY valid JSON matching this schema:
             filename=filename or "receipt_image",
             description_section=desc_section,
         )
+
+        # Downscale & compress image prior to sending to OCR
+        opt_image_bytes, opt_mime_type = optimize_image_for_ai(
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+            max_dimension=1024,
+            quality=80,
+        )
+
         try:
             response_text, in_tok, out_tok, cost = await self.classification_provider.generate(
                 prompt=prompt,
                 json_mode=True,
                 temperature=0.1,
                 thinking_budget=0,
-                image_bytes=image_bytes,
-                mime_type=mime_type,
+                image_bytes=opt_image_bytes,
+                mime_type=opt_mime_type,
             )
             await self._debug_log(
                 "preprocess_image_extract",
@@ -1178,6 +1196,9 @@ Return ONLY valid JSON matching this schema:
                 "potential_vendor_names": [],
                 "application": "",
                 "currency": "PHP",
+                "reference_number": None,
+                "amount": None,
+                "date": None,
             }
 
 

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useGetRecurringTransactions, useDeleteRecurringTransaction } from '@/hooks/useRecurringTransactions'
-import { Plus, Trash2, CalendarDays, ArrowRightLeft, ArrowUpRight, ArrowDownRight, RotateCw } from 'lucide-react'
+import { Plus, Trash2, CalendarDays, ArrowRightLeft, ArrowUpRight, ArrowDownRight, RotateCw, Pencil } from 'lucide-react'
 import dayjs from 'dayjs'
 import AddTransactionModal from './AddTransactionModal'
 import ConfirmationModal from './ui/ConfirmationModal'
+import RecurringTransactionModal from './RecurringTransactionModal'
+import { RecurringTransaction } from '@/hooks/useRecurringTransactions'
 
 export default function RecurringTransactionsList() {
   const { data: recurringTransactions = [], isLoading } = useGetRecurringTransactions()
@@ -11,6 +13,7 @@ export default function RecurringTransactionsList() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deleteCandidate, setDeleteCandidate] = useState<string | null>(null)
+  const [editCandidate, setEditCandidate] = useState<RecurringTransaction | null>(null)
 
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -85,15 +88,28 @@ export default function RecurringTransactionsList() {
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    if (tx.id) setDeleteCandidate(tx.id)
-                  }}
-                  className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-full transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setEditCandidate(tx)
+                    }}
+                    className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-full transition-colors"
+                    title="Edit schedule"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (tx.id) setDeleteCandidate(tx.id)
+                    }}
+                    className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-full transition-colors"
+                    title="Delete schedule"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               
               {/* Expandable visualization of occurrences */}
@@ -135,10 +151,18 @@ export default function RecurringTransactionsList() {
 
       <AddTransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
 
+      {editCandidate && (
+        <RecurringTransactionModal
+          isOpen={!!editCandidate}
+          onClose={() => setEditCandidate(null)}
+          recurringTx={editCandidate}
+        />
+      )}
+
       <ConfirmationModal
         isOpen={!!deleteCandidate}
         title="Delete Recurring Schedule"
-        message="Are you sure you want to delete this recurring schedule? This will stop future automatic transaction generation."
+        message="This will stop future automatic transaction generation. All previously created transactions are kept and won't be affected."
         onConfirm={() => {
           if (deleteCandidate) {
             deleteMutation.mutate(deleteCandidate)
@@ -150,3 +174,5 @@ export default function RecurringTransactionsList() {
     </div>
   )
 }
+
+

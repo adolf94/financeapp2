@@ -77,11 +77,13 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   "sender_account_name": string,
   "reference_number": string (reference number/transaction id/trace number if mentioned in the message),
   "application": string,
+  "date": "ISO8601 UTC string ending in 'Z' (e.g. '2026-08-15T12:13:00Z') or null if date is not mentioned in the message",
   "why": string{suggested_rule_field}
 }}
 
 Rules:
 - Apply the SMS Runbook rules ABOVE everything else.
+- date = Extract transaction date and time if mentioned and format strictly as an ISO8601 UTC string ending in 'Z' (e.g. 8:13 PM GMT+8 becomes 20:13:00 GMT+8 -> convert to UTC: '2026-08-15T12:13:00Z'). Assume transaction time is GMT+08:00 (Asia/Manila) unless another timezone is explicitly stated. If no date/time is mentioned, set null.
 - For transaction_type: "Expense" = money leaving user accounts; "Income" = money entering; "Transfer" = money moving between user's own accounts.
 - For Expense: debit = expense account, credit = source bank/cash account
 - For Income: debit = bank account, credit = income account

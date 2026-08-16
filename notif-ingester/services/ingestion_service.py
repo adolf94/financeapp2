@@ -313,34 +313,20 @@ class IngestionService:
 
     def _extract_effective_time(self, ingestion: PendingIngestion) -> datetime:
         """Extract the effective datetime from ai_parsed.date, raw_payload.timestamp, or received_at."""
+        from services.date_utils import parse_iso_or_local_to_utc
         if ingestion.ai_parsed and ingestion.ai_parsed.date:
-            dt = ingestion.ai_parsed.date
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
+            parsed_dt = parse_iso_or_local_to_utc(ingestion.ai_parsed.date)
+            if parsed_dt:
+                return parsed_dt
 
         raw_ts = ingestion.raw_payload.get("timestamp") if ingestion.raw_payload else None
         if raw_ts is not None:
-            try:
-                if isinstance(raw_ts, str) and raw_ts.isdigit():
-                    raw_ts = float(raw_ts)
-                if isinstance(raw_ts, (int, float)):
-                    if raw_ts > 30000000000:
-                        return datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc)
-                    else:
-                        return datetime.fromtimestamp(raw_ts, tz=timezone.utc)
-                elif isinstance(raw_ts, str):
-                    dt = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    return dt
-            except Exception:
-                pass
+            parsed_dt = parse_iso_or_local_to_utc(raw_ts)
+            if parsed_dt:
+                return parsed_dt
 
-        dt = ingestion.received_at
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
+        parsed_dt = parse_iso_or_local_to_utc(ingestion.received_at)
+        return parsed_dt or datetime.now(timezone.utc)
 
     async def detect_and_link_relations_async(self, ingestion: PendingIngestion) -> None:
         """
@@ -500,33 +486,12 @@ class IngestionService:
 
         # 3.6 Early relation lookup pre-classification
         logging.info("[process_hook_async] 3.6 Searching for related transactions pre-classify...")
-        pre_effective_time = hook.received_at
-        if extracted_info.date:
-            try:
-                dt = datetime.fromisoformat(extracted_info.date.replace("Z", "+00:00"))
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                pre_effective_time = dt
-            except Exception:
-                pass
-        elif hook.raw_payload and hook.raw_payload.get("timestamp"):
-            raw_ts = hook.raw_payload["timestamp"]
-            try:
-                if isinstance(raw_ts, (int, float)):
-                    if raw_ts > 30000000000:
-                        pre_effective_time = datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc)
-                    else:
-                        pre_effective_time = datetime.fromtimestamp(raw_ts, tz=timezone.utc)
-                elif isinstance(raw_ts, str):
-                    dt = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    pre_effective_time = dt
-            except Exception:
-                pass
-
-        if pre_effective_time.tzinfo is None:
-            pre_effective_time = pre_effective_time.replace(tzinfo=timezone.utc)
+        from services.date_utils import parse_iso_or_local_to_utc
+        pre_effective_time = parse_iso_or_local_to_utc(extracted_info.date)
+        if not pre_effective_time and hook.raw_payload and hook.raw_payload.get("timestamp"):
+            pre_effective_time = parse_iso_or_local_to_utc(hook.raw_payload["timestamp"])
+        if not pre_effective_time:
+            pre_effective_time = parse_iso_or_local_to_utc(hook.received_at) or datetime.now(timezone.utc)
 
         related_context = await self._build_related_context_async(
             user_id=hook.user_id,

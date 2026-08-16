@@ -68,9 +68,11 @@ namespace FinanceApp.Services
             if (existing == null)
                 throw new KeyNotFoundException($"Recurring transaction with ID {transaction.Id} not found.");
 
-            _context.Entry(existing).CurrentValues.SetValues(transaction);
-            existing.TemplateEntries = transaction.TemplateEntries;
-            existing.Occurrences = transaction.Occurrences;
+            // Only allow editing the three user-facing fields; preserve everything else server-side.
+            existing.TemplateNote = transaction.TemplateNote;
+            existing.EndDate = transaction.EndDate;
+            existing.MaxOccurrences = transaction.MaxOccurrences;
+            // Occurrences are never overwritten from client payload.
 
             await _context.SaveChangesAsync();
             return existing;

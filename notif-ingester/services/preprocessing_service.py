@@ -44,7 +44,7 @@ class PreprocessingService:
        - Look for words like "Paid", "Sent", "Amount", "Total", "Total Payment", "Charged", "₱", "PHP", "$".
        - For shopping or checkout emails (e.g., Shopee, Lazada), extract the GRAND TOTAL checkout / payment amount.
        - Return ONLY a numeric float or integer (e.g. 1250.50), NOT a string. Return null ONLY if no numeric amount exists in the text.
-    7. **Date**: ISO8601 string or date/time string if a timestamp or date is explicitly mentioned in the message text. Return null if none.
+    7. **Date**: Extract transaction date and time if mentioned and format strictly as an ISO8601 UTC string ending in 'Z' (e.g. 8:13 PM GMT+8 becomes 20:13:00 GMT+8 -> convert to UTC: '2026-08-15T12:13:00Z'). Assume the transaction time in the notification is Asia/Manila (GMT+08:00) unless another timezone is explicitly stated. Return null if none.
     8. **Is Multi Order**: Boolean (`true` or `false`). Set to `true` if this email/notification explicitly contains multiple (2 or more) separate merchant/seller orders paid in a single checkout. Otherwise `false`.
     
     CRITICAL FILTERING RULES:

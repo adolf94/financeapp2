@@ -21,6 +21,7 @@ from services.ai_service import AiService
 from services.finance_api_service import FinanceApiService
 from services.blob_storage_service import BlobStorageService
 from services.preprocessing_service import PreprocessingService
+from services.image_optimizer import optimize_image_for_ai
 from services.signalr_publisher import publish_signalr_message
 
 
@@ -254,10 +255,18 @@ class ImageProcessingService(IngestionService):
         accounts = await self._finance_api_service.get_accounts_async(user_id)
         vendors = await self._finance_api_service.get_vendors_async(user_id)
 
-        # 3. Pass 1: Pre-process OCR & lookup database vendor matches
-        vendor_matches, inferred_app, app_source, extracted_ocr_info = await self._preprocess_image_and_find_vendor_matches_async(
+        # 2.5 Compress & downscale image prior to sending to vision AI / OCR (saves tokens & bandwidth)
+        ai_image_bytes, ai_mime_type = optimize_image_for_ai(
             image_bytes=image_bytes,
             mime_type=mime_type,
+            max_dimension=1024,
+            quality=80,
+        )
+
+        # 3. Pass 1: Pre-process OCR & lookup database vendor matches
+        vendor_matches, inferred_app, app_source, extracted_ocr_info = await self._preprocess_image_and_find_vendor_matches_async(
+            image_bytes=ai_image_bytes,
+            mime_type=ai_mime_type,
             filename=filename,
             description=description or "",
             user_id=user_id,
@@ -271,20 +280,30 @@ class ImageProcessingService(IngestionService):
         # 3.6 Early relation context
         related_context = ""
         if extracted_ocr_info:
-            ocr_ref = getattr(extracted_ocr_info, "reference_number", None)
-            ocr_amt = getattr(extracted_ocr_info, "amount", None)
+            ocr_ref = extracted_ocr_info.get("reference_number")
+            raw_amt = extracted_ocr_info.get("amount")
+            ocr_amt = None
+            if raw_amt is not None:
+                try:
+                    ocr_amt = float(raw_amt)
+                except (ValueError, TypeError):
+                    ocr_amt = None
+
+            from services.date_utils import parse_iso_or_local_to_utc
+            effective_dt = parse_iso_or_local_to_utc(extracted_ocr_info.get("date")) or now
+
             related_context = await self._build_related_context_async(
                 user_id=user_id,
                 reference_number=ocr_ref,
                 amount=ocr_amt,
-                effective_time=now,
+                effective_time=effective_dt,
                 exclude_id=target_id
             )
 
         # 4. Pass 2: Classify image with multimodal AI with vendor match context and relations
         ai_parsed: AiParsedData = await self._ai_service.classify_image_async(
-            image_bytes=image_bytes,
-            mime_type=mime_type,
+            image_bytes=ai_image_bytes,
+            mime_type=ai_mime_type,
             similar_vectors=[],
             accounts=accounts,
             runbook_content=runbook_content,
@@ -392,17 +411,50 @@ class ImageProcessingService(IngestionService):
             reclassify_filename = ingestion.raw_payload.get("filename", "") if ingestion.raw_payload else ""
             reclassify_desc = ingestion.raw_payload.get("description", "") if ingestion.raw_payload else ""
 
-            vendor_matches, inferred_app, app_source, _ = await self._preprocess_image_and_find_vendor_matches_async(
+            # Compress & downscale image prior to sending to vision AI / OCR
+            ai_image_bytes, ai_mime_type = optimize_image_for_ai(
                 image_bytes=image_bytes,
                 mime_type=mime_type,
+                max_dimension=1024,
+                quality=80,
+            )
+
+            vendor_matches, inferred_app, app_source, extracted_ocr_info = await self._preprocess_image_and_find_vendor_matches_async(
+                image_bytes=ai_image_bytes,
+                mime_type=ai_mime_type,
                 filename=reclassify_filename,
                 description=reclassify_desc,
                 user_id=user_id,
             )
 
+            # Build related context during reclassification
+            related_context = ""
+            if extracted_ocr_info:
+                ocr_ref = extracted_ocr_info.get("reference_number") or (ingestion.ai_parsed.reference_number if ingestion.ai_parsed else None)
+                raw_amt = extracted_ocr_info.get("amount")
+                ocr_amt = None
+                if raw_amt is not None:
+                    try:
+                        ocr_amt = float(raw_amt)
+                    except (ValueError, TypeError):
+                        ocr_amt = None
+                if ocr_amt is None and ingestion.ai_parsed:
+                    ocr_amt = ingestion.ai_parsed.amount
+
+                from services.date_utils import parse_iso_or_local_to_utc
+                effective_dt = parse_iso_or_local_to_utc(extracted_ocr_info.get("date")) or self._extract_effective_time(ingestion)
+
+                related_context = await self._build_related_context_async(
+                    user_id=user_id,
+                    reference_number=ocr_ref,
+                    amount=ocr_amt,
+                    effective_time=effective_dt,
+                    exclude_id=ingestion.id
+                )
+
             ai_parsed = await self._ai_service.classify_image_async(
-                image_bytes=image_bytes,
-                mime_type=mime_type,
+                image_bytes=ai_image_bytes,
+                mime_type=ai_mime_type,
                 similar_vectors=[],
                 accounts=accounts,
                 runbook_content=runbook_content,
@@ -417,16 +469,15 @@ class ImageProcessingService(IngestionService):
                 connection_id=connection_id,
                 stream_reasoning_to_client=stream_reasoning,
                 user_corrections=user_corrections,
+                related_context=related_context,
             )
-
-
-
 
             lookups = self._build_lookups(ai_parsed, accounts)
             await self._apply_vendor_matching(ai_parsed, vendors, accounts, lookups, user_id)
 
             ingestion.ai_parsed = ai_parsed
             ingestion.status = "Pending"
+            await self.detect_and_link_relations_async(ingestion)
             await self._repo.update_async(ingestion)
             return ingestion
 

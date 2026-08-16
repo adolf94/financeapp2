@@ -263,6 +263,100 @@ async def test_image_processing_2pass_p2p_vendor_match():
     assert call_kwargs["inferred_app"] == "GCash"
 
 
+def test_optimize_image_for_ai_resizes_large_image():
+    import io
+    from PIL import Image
+    from services.image_optimizer import optimize_image_for_ai
+
+    # Create dummy 1080x2400 image (simulating phone screenshot)
+    img = Image.new("RGB", (1080, 2400), color=(10, 80, 200))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    original_png_bytes = buf.getvalue()
+
+    optimized_bytes, mime_type = optimize_image_for_ai(
+        image_bytes=original_png_bytes,
+        mime_type="image/png",
+        max_dimension=1024,
+        quality=80,
+    )
+
+    assert mime_type == "image/jpeg"
+    assert len(optimized_bytes) < len(original_png_bytes)
+
+    with Image.open(io.BytesIO(optimized_bytes)) as result_img:
+        assert max(result_img.size) <= 1024
+        assert result_img.size == (460, 1024)
+        assert result_img.format == "JPEG"
+
+
+def test_optimize_image_for_ai_handles_invalid_bytes_fallback():
+    from services.image_optimizer import optimize_image_for_ai
+
+    fake_bytes = b"non-image-binary-data"
+    result_bytes, result_mime = optimize_image_for_ai(fake_bytes, "image/png")
+    assert result_bytes == fake_bytes
+    assert result_mime == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_image_processing_builds_relation_context():
+    mock_repo = AsyncMock()
+    mock_repo.add_async = AsyncMock(side_effect=lambda x: x)
+    mock_repo.find_candidates_for_relation_async = AsyncMock(return_value=[])
+    mock_embedding = AsyncMock()
+    mock_vector = AsyncMock()
+    mock_ai = AsyncMock()
+    mock_finance = AsyncMock()
+    mock_finance.get_runbook_content_async.return_value = ""
+    mock_finance.get_accounts_async.return_value = []
+    mock_finance.get_vendors_async.return_value = []
+    mock_finance.search_vendors_by_lookups_async.return_value = (None, [])
+    mock_finance.search_all_vendor_matches_by_lookups_async.return_value = []
+    mock_finance.search_confirmed_ledger_entries_async.return_value = []
+    mock_blob = AsyncMock()
+    mock_blob.upload_image_async.return_value = ("img.png", "https://blob.example/img.png")
+
+    mock_ai.extract_image_info_async.return_value = {
+        "account_numbers": [],
+        "account_names": [],
+        "potential_vendor_names": ["Grab"],
+        "application": "Grab",
+        "currency": "PHP",
+        "reference_number": "REF-9999",
+        "amount": 350.0,
+        "date": "2026-08-16T12:00:00Z"
+    }
+
+    mock_ai.classify_image_async.return_value = AiParsedData(
+        is_financial=True,
+        amount=350.0,
+        reference_number="REF-9999",
+        transaction_type="Expense",
+        summary="Grab ride"
+    )
+
+    service = ImageProcessingService(
+        ingestion_repo=mock_repo,
+        embedding_service=mock_embedding,
+        vector_service=mock_vector,
+        ai_service=mock_ai,
+        finance_api_service=mock_finance,
+        blob_storage_service=mock_blob,
+    )
+
+    await service.process_image_async(
+        image_bytes=b"fake-bytes",
+        mime_type="image/png",
+        filename="grab.png",
+        user_id="user-1"
+    )
+
+    assert mock_repo.find_candidates_for_relation_async.call_count == 2
+    mock_finance.search_confirmed_ledger_entries_async.assert_called()
+
+
+
 
 
 

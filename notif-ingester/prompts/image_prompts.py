@@ -10,6 +10,9 @@ Extract the following information:
 3. **Potential Vendor Names**: Any merchant, store, biller, company, or person names mentioned.
 4. **Application**: The mobile app name (e.g. "GCash", "Maya", "BPI", "BDO", "UnionBank", "Grab", "Shopee", "Foodpanda", "Atome", etc.) if this is a screenshot, or "Physical Receipt" if this is a paper/POS receipt.
 5. **Currency**: 3-letter currency code (default "PHP").
+6. **Reference Number**: Any reference number, transaction ID, order number, or trace number if mentioned (e.g. "Ref No. 12345", "#260808R1R49PTC", "TXN9876"). Return null if none.
+7. **Amount**: Total positive numeric monetary amount charged/transacted/paid (e.g. 1500.00). Return ONLY a numeric float or integer, NOT a string. Return null ONLY if no numeric amount exists in the image.
+8. **Date**: Extract transaction date and time if visible and format strictly as an ISO8601 UTC string ending in 'Z' (e.g. 8:13 PM GMT+8 becomes 20:13:00 GMT+8 -> convert to UTC: '2026-08-15T12:13:00Z'). Assume time in screenshot is GMT+08:00 (Asia/Manila) unless another timezone is explicitly stated. Return null if none.
 
 Return ONLY valid JSON matching this schema:
 {{
@@ -18,7 +21,10 @@ Return ONLY valid JSON matching this schema:
   "potential_vendor_names": ["string"],
   "application": "string",
   "appname_source": "filename" | "ocr"  ,
-  "currency": "string"
+  "currency": "string",
+  "reference_number": "string" or null,
+  "amount": number or null,
+  "date": "string" or null
 }}
 """
 
