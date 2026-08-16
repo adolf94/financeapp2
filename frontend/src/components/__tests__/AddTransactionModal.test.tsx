@@ -30,6 +30,7 @@ vi.mock('@/hooks/useRecurringTransactions', () => ({
 const mockReclassifyMutate = vi.fn()
 vi.mock('@/hooks/useIngestions', () => ({
   useGetIngestionById: () => ({ data: null }),
+  useGetPendingIngestions: () => ({ data: [] }),
   useConfirmIngestion: () => ({ mutate: vi.fn() }),
   useReclassifyIngestion: () => ({
     mutate: mockReclassifyMutate,

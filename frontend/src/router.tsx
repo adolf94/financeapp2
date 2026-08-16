@@ -1,62 +1,52 @@
-import { createRouter, createRootRoute, createRoute } from '@tanstack/react-router'
+import { createRouter, createRootRoute, createRoute, lazyRouteComponent } from '@tanstack/react-router'
 import AppLayout from '@/layouts/AppLayout'
-import Dashboard from '@/pages/Dashboard'
-import Transactions from '@/pages/Transactions'
-import Accounts from '@/pages/Accounts'
-import AccountDetails from '@/pages/AccountDetails'
-import Settings from '@/pages/Settings'
-import CategoryDetails from '@/pages/CategoryDetails'
-import PendingIngestions from '@/pages/PendingIngestions'
 
 // Root layout route
 const rootRoute = createRootRoute({
   component: AppLayout,
 })
 
-// Page routes
+// Page routes (Lazy loaded to split bundles)
 const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: Dashboard,
+  component: lazyRouteComponent(() => import('@/pages/Dashboard')),
 })
 
 const transactionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/transactions',
-  component: Transactions,
+  component: lazyRouteComponent(() => import('@/pages/Transactions')),
 })
 
 const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/accounts',
-  component: Accounts,
+  component: lazyRouteComponent(() => import('@/pages/Accounts')),
 })
 
 const ingestionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/ingestions',
-  component: PendingIngestions,
+  component: lazyRouteComponent(() => import('@/pages/PendingIngestions')),
 })
 
 const accountDetailsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/accounts/$accountId',
-  component: () => {
-    // Lazy load or import directly. We will import directly above.
-    return <AccountDetails />
-  }
+  component: lazyRouteComponent(() => import('@/pages/AccountDetails')),
 })
 
 const categoryDetailsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/categories/$categoryId',
-  component: () => <CategoryDetails />
+  component: lazyRouteComponent(() => import('@/pages/CategoryDetails')),
 })
 
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
-  component: Settings,
+  component: lazyRouteComponent(() => import('@/pages/Settings')),
 })
 
 // Build the route tree
