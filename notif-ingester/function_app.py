@@ -461,7 +461,7 @@ async def GetIngestionByIdFunction(req: func.HttpRequest) -> func.HttpResponse:
 # ── Function 3.1b2: GetImageBlobFunction ──────────────────────────────
 @app.route(route="images/{ingestion_id}", methods=["GET"])
 async def GetImageBlobFunction(req: func.HttpRequest) -> func.HttpResponse:
-    user, err = validate_api_key(req)
+    user, err = _require_auth(req)
     if err:
         return err
 
