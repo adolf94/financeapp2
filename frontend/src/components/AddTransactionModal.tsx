@@ -1099,20 +1099,37 @@ function AddTransactionModalContent() {
               </button>
             ) : (
               <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  onClick={() => {
-                    submitTypeRef.current = 'close'
-                  }}
-                  className="flex-[2] min-h-[44px] sm:min-h-[48px] bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors cursor-pointer shadow-sm text-sm sm:text-base flex items-center justify-center gap-2"
-                >
-                  {isSubmitting && submitTypeRef.current === 'close' ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
-                  ) : (
-                    'Save & Close'
-                  )}
-                </button>
+                {ingestion && (ingestion.related_ingestion_ids?.length || (ingestion as any).RelatedIngestionIds?.length || ingestion.possible_related_ingestion_ids?.length || (ingestion as any).PossibleRelatedIngestionIds?.length) ? (
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      submitTypeRef.current = 'close'
+                    }}
+                    className="flex-[2] min-h-[44px] sm:min-h-[48px] bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors cursor-pointer shadow-sm text-sm sm:text-base flex items-center justify-center gap-2"
+                  >
+                    {isSubmitting && submitTypeRef.current === 'close' ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Merging & Saving...</>
+                    ) : (
+                      'Merge & Save'
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      submitTypeRef.current = 'close'
+                    }}
+                    className="flex-[2] min-h-[44px] sm:min-h-[48px] bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors cursor-pointer shadow-sm text-sm sm:text-base flex items-center justify-center gap-2"
+                  >
+                    {isSubmitting && submitTypeRef.current === 'close' ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
+                    ) : (
+                      'Save & Close'
+                    )}
+                  </button>
+                )}
                 <button
                   type="submit"
                   disabled={isSubmitting}

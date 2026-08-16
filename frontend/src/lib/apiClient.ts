@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { getUserManager } from '@adolf94/ar-auth-client'
+import { getUserManager, refreshAccessToken } from '@adolf94/ar-auth-client'
 
 const apiClient = axios.create({
   baseURL: window.authConfig?.apiBaseUrl ?? import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:7071/api',
@@ -14,7 +14,10 @@ apiClient.interceptors.request.use(async (config) => {
   if (!token) {
     try {
       const userManager = getUserManager()
-      const user = await userManager.getUser()
+      let user = await userManager.getUser()
+      if (user && (user.expired || (user.expires_at && user.expires_at <= Math.floor(Date.now() / 1000) + 30))) {
+        user = await refreshAccessToken()
+      }
       if (user && user.access_token) {
         token = user.access_token
       }

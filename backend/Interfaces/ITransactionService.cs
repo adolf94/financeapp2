@@ -10,5 +10,6 @@ namespace FinanceApp.Interfaces
         Task<Transaction> CreateTransactionAsync(string userId, Transaction transaction);
         Task<Transaction> UpdateTransactionAsync(string userId, Transaction transaction);
         Task DeleteTransactionAsync(string userId, string id);
+        Task<IEnumerable<LedgerEntry>> SearchLedgerEntriesAsync(string userId, string? referenceNumber, decimal? amount, DateTime? aroundDate, int windowMinutes = 5);
     }
 }

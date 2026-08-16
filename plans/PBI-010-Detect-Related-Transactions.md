@@ -1,7 +1,7 @@
 ---
 github_issue: 10
 github_url: https://github.com/adolf94/financeapp2/issues/10
-status: open
+status: complete
 ---
 # PBI 010: Detect Related Transactions Across Multiple Notification Types
 
@@ -67,30 +67,94 @@ Two ingestions (or an ingestion and an already confirmed transaction) are consid
 ### Model Updates
 
 #### Python (`notif-ingester/models/pending_ingestion.py`)
+`PendingIngestion` relation fields are **already implemented** ✅:
 ```python
 class PendingIngestion(BaseModel):
     # ... existing fields ...
     related_ingestion_ids: List[str] = Field(default_factory=list)  # Definite matches (same Reference Number)
     related_transaction_ids: List[str] = Field(default_factory=list)
-    possible_related_ingestion_ids: List[str] = Field(default_factory=list)  # Possible matches (same amount and time within 5m, even with differing/missing ref numbers)
+    possible_related_ingestion_ids: List[str] = Field(default_factory=list)  # Possible matches (same amount and time within 5m)
     possible_related_transaction_ids: List[str] = Field(default_factory=list)
     has_possible_confirmed_match: bool = False
 ```
+
+#### Python (`notif-ingester/services/preprocessing_service.py`)
+Extend `ExtractedAccountInfo` and `EXTRACTION_PROMPT` to also capture raw transaction details so the **pre-classify relation lookup** can run without waiting for the LLM classifier:
+```python
+@dataclass
+class ExtractedAccountInfo:
+    account_numbers: List[str]
+    account_names: List[str]
+    application: str
+    potential_vendor_names: List[str]
+    currency: str = "PHP"
+    reference_number: Optional[str] = None   # NEW — for definite relation matching
+    amount: Optional[float] = None           # NEW — for possible relation matching
+    date: Optional[str] = None               # NEW — ISO string; parsed to datetime for 5-min window
+```
+Update `EXTRACTION_PROMPT` to ask for these three additional fields (same AI call, just expanded schema).
 
 #### C# (`backend/Models/LedgerEntry.cs`)
 `LedgerEntry` already has `ReferenceNumber`. No new date field needed — date is inherited from parent `Transaction`. Use the `model-syncer` skill to ensure Python and C# models stay aligned.
 
 ### Ingestion Pipeline Logic
-In `IngestionService.process_hook_async`:
-1. Extract `reference_number`, `amount`, and effective timestamp (`resolved_time = ai_parsed.date or raw_payload.timestamp or received_at`) from the AI classification result and raw hook.
-2. **Query 1 — Pending ingestions**: Search CosmosDB `PendingIngestions` (PartitionKey = `user_id`, Status = `Pending`) for matches.
-3. **Query 2 — Confirmed LedgerEntries**: Call C# backend `/ledger-entries/search` for confirmed `LedgerEntry` records matching user + `reference_number` (within 30 days), or user + `amount` where parent `Transaction.Date` is within 5 minutes of `resolved_time`.
-4. Categorize relations:
-   - **Definite Relation** (`related_ingestion_ids`): Same non-empty `reference_number` (within 30 days).
-   - **Possible Relation** (`possible_related_ingestion_ids`): Different or missing `reference_number`, but `amount` is equal (normalized to 2dp) and effective timestamp (`date` / `timestamp` / `received_at`) is within **5 minutes**.
-   - **Confirmed Match** (`related_transaction_ids` + `has_possible_confirmed_match = true`): Confirmed `LedgerEntry` found matching reference number or amount + 5-minute time window.
-5. Link IDs accordingly.
-6. **Back-port (mandatory)**: Update all matched existing pending ingestions to append the new ingestion's ID to their corresponding relation list.
+
+#### Revised step order in `IngestionService.process_hook_async`
+
+```
+1. Embed raw message
+2. Vector search (similar past transactions)
+3. Fetch accounts, vendors, runbook
+3.5 Preprocess — extract account numbers, names, vendor hints,
+     currency, AND reference_number, amount, date  ← extended
+3.6 Early relation lookup (pre-classify)            ← NEW
+4. Classify via LLM  (with related context injected) ← enriched
+4.5 Vendor matching
+5. Create PendingIngestion
+6. Auto-confirm logic
+6.5 detect_and_link_relations_async (post-classify, uses ai_parsed values)
+7. Save
+```
+
+**Step 3.5 — Preprocessing (`PreprocessingService`)**
+- Same single AI call, expanded schema.
+- Extracts: `account_numbers`, `account_names`, `potential_vendor_names`, `currency`, `reference_number`, `amount`, `date`.
+- `date` is returned as an ISO string; resolved to `datetime` in the pipeline using the same `_extract_effective_time` fallback chain (`date → raw_payload.timestamp → received_at`).
+
+**Step 3.6 — Early relation lookup (new, pre-classify)**
+- Uses `extracted_info.reference_number`, `extracted_info.amount`, and resolved `effective_time`.
+- **Query 1 — Pending ingestions**: Search CosmosDB `PendingIngestions` (same user, Status=Pending, days_lookback=30).
+- **Query 2 — Confirmed LedgerEntries**: Call C# `/ledger-entries/search` with ref number or amount + time window.
+- Results are formatted as a **`related_context` string** (see below) — not yet persisted.
+- No mutations at this stage; linking happens in step 6.5 after the ingestion object exists.
+
+**Step 4 — Classify via LLM**
+- **Input format: single-shot structured JSON — NOT chat/multi-turn.**
+  - Classification always produces a deterministic JSON blob (`AiParsedData`). Chat format (role arrays) is reserved for conversational flows like the runbook editor (`RUNBOOK_CHAT_PROMPT`). Adding a context block to the existing prompt template is sufficient and keeps the output schema stable.
+- Inject `related_context` as a new block in `CLASSIFICATION_PROMPT`:
+  ```
+  Related Transactions Found (context only — do NOT duplicate confirmed entries):
+  {related_context}
+  ```
+  Example `related_context` value:
+  ```
+  - [DEFINITE] SMS notification matched ref# TXN20240815 — Amount: PHP 1,500.00 — GCash to Juan Dela Cruz
+  - [POSSIBLE]  App notification same amount (PHP 1,500.00) within 5 min — Credit: GCash Wallet
+  - [CONFIRMED] Ledger entry already confirmed for this amount — Transaction ID: abc-123
+  ```
+- The AI uses this to:
+  - Adjust `confidence` downward if a confirmed duplicate is found.
+  - Improve account mapping by reusing credit/debit accounts from related ingestions.
+  - Populate `reference_number` if it wasn't in the raw text but matched a known ref.
+
+**Step 6.5 — `detect_and_link_relations_async` (unchanged, post-classify)**
+- Runs after `PendingIngestion` object is created.
+- Uses final `ai_parsed.reference_number`, `ai_parsed.amount`, and `_extract_effective_time(ingestion)` — these are now richer because the classifier had related context.
+- Categorizes and persists:
+  - **Definite** (`related_ingestion_ids`): Same non-empty `reference_number` within 30 days.
+  - **Possible** (`possible_related_ingestion_ids`): Same `amount` (2dp), effective time within 5 min.
+  - **Confirmed match** (`related_transaction_ids` + `has_possible_confirmed_match = true`): LedgerEntry hit.
+- **Back-port (mandatory)**: Updates all matched existing pending ingestions to include the new ID.
 
 ---
 

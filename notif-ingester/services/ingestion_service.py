@@ -1,6 +1,7 @@
 import os
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Optional
 from models.phone_hook import PhoneHookMessage
 from models.pending_ingestion import PendingIngestion
@@ -123,9 +124,137 @@ class IngestionService:
         return list(dict.fromkeys(clean_lookups))
 
 
-    async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id: str = None, connection_id: str = None, stream_reasoning: bool = True, exchange_rate_info: str = "", user_corrections: Optional[dict] = None) -> 'AiParsedData':
-        """Classify a webhook and extract data."""
-        return await self._ai_service.classify_async(hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections)
+    def _format_candidate_summary(self, cand: PendingIngestion, cand_time: Optional[datetime] = None, time_offset_str: str = "") -> str:
+        app = (cand.notification_type or "notification").upper()
+        amt_str = f"₱{cand.ai_parsed.amount:,.2f}" if (cand.ai_parsed and cand.ai_parsed.amount is not None) else "N/A"
+        ref_str = f"Ref: {cand.ai_parsed.reference_number}" if (cand.ai_parsed and cand.ai_parsed.reference_number) else "No Ref"
+        
+        parts = [f"ID: {cand.id}", f"[{app}]", amt_str, ref_str]
+        
+        if cand_time:
+            parts.append(f"Time: {cand_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        if time_offset_str:
+            parts.append(f"({time_offset_str})")
+
+        sender_acc = cand.ai_parsed.sender_account_number if (cand.ai_parsed and cand.ai_parsed.sender_account_number) else None
+        if not sender_acc and cand.raw_payload and isinstance(cand.raw_payload, dict):
+            extracted = cand.raw_payload.get("extracted_info", {})
+            accs = extracted.get("account_numbers", [])
+            if accs:
+                sender_acc = accs[0]
+        if sender_acc:
+            parts.append(f"Card/Acc: {sender_acc}")
+
+        vendor_name = cand.ai_parsed.vendor.name if (cand.ai_parsed and cand.ai_parsed.vendor and cand.ai_parsed.vendor.name) else None
+        if vendor_name:
+            parts.append(f"Vendor: {vendor_name}")
+
+        credit_acc = cand.ai_parsed.credit_account_id if (cand.ai_parsed and cand.ai_parsed.credit_account_id) else None
+        if credit_acc:
+            parts.append(f"CreditAccId: {credit_acc}")
+
+        summary = cand.ai_parsed.summary if (cand.ai_parsed and cand.ai_parsed.summary) else cand.raw_msg
+        if summary:
+            # Keep summary concise
+            clean_summary = summary.replace("\n", " ").strip()
+            if len(clean_summary) > 80:
+                clean_summary = clean_summary[:77] + "..."
+            parts.append(f"Summary: \"{clean_summary}\"")
+
+        return " | ".join(parts)
+
+    async def _build_related_context_async(
+        self,
+        user_id: str,
+        reference_number: Optional[str],
+        amount: Optional[float],
+        effective_time: datetime,
+        exclude_id: Optional[str] = None
+    ) -> str:
+        """Query relations pre-classification and format human-readable context for AI."""
+        if not reference_number and amount is None:
+            return ""
+
+        context_lines = []
+        ref_num = (reference_number or "").strip()
+
+        # 1. Check candidate pending ingestions
+        candidates = await self._repo.find_candidates_for_relation_async(user_id, days_lookback=30)
+        seen_signatures = set()
+        matched_candidates = []
+
+        for cand in candidates:
+            if exclude_id and cand.id == exclude_id:
+                continue
+
+            cand_ref = (cand.ai_parsed.reference_number or "").strip() if cand.ai_parsed else ""
+            cand_amount = cand.ai_parsed.amount if cand.ai_parsed else None
+            cand_time = self._extract_effective_time(cand)
+
+            # Deduplicate repeated identical candidates (e.g. repeated test imports)
+            sig = (
+                cand.notification_type,
+                round(float(cand_amount), 2) if cand_amount is not None else None,
+                cand_ref.lower(),
+                cand_time.strftime("%Y-%m-%d %H:%M")
+            )
+            if sig in seen_signatures:
+                continue
+
+            is_definite = False
+            is_possible = False
+            time_offset_str = ""
+
+            if ref_num and cand_ref and ref_num.lower() == cand_ref.lower():
+                diff_secs = (effective_time - cand_time).total_seconds()
+                time_diff_days = abs(diff_secs) / (24 * 3600)
+                if time_diff_days <= 30:
+                    is_definite = True
+                    time_offset_str = f"{abs(int(diff_secs / 60))}m apart" if abs(diff_secs) < 3600 else f"{round(time_diff_days, 1)}d apart"
+
+            if not is_definite and amount is not None and cand_amount is not None:
+                if round(abs(float(amount)), 2) == round(abs(float(cand_amount)), 2):
+                    diff_secs = (effective_time - cand_time).total_seconds()
+                    time_diff_mins = abs(diff_secs) / 60.0
+                    if time_diff_mins <= 5.0:
+                        is_possible = True
+                        time_offset_str = f"{abs(int(diff_secs))}s apart" if abs(diff_secs) < 60 else f"{round(time_diff_mins, 1)}m apart"
+
+            if is_definite or is_possible:
+                seen_signatures.add(sig)
+                matched_candidates.append((is_definite, cand, cand_time, time_offset_str))
+
+        # Sort: Definite first, then by time closest to effective_time, limit to top 5
+        matched_candidates.sort(key=lambda x: (not x[0], abs((effective_time - x[2]).total_seconds())))
+        for is_definite, cand, cand_time, time_offset_str in matched_candidates[:5]:
+            summary = self._format_candidate_summary(cand, cand_time, time_offset_str)
+            if is_definite:
+                context_lines.append(f"- [DEFINITE MATCH (Same Ref)] {summary}")
+            else:
+                context_lines.append(f"- [POSSIBLE MATCH (Same Amount within 5m)] {summary}")
+
+        # 2. Check confirmed ledger entries
+        confirmed_matches = await self._finance_api_service.search_confirmed_ledger_entries_async(
+            user_id=user_id,
+            reference_number=ref_num if ref_num else None,
+            amount=amount,
+            around_time=effective_time,
+            window_minutes=5
+        )
+        if confirmed_matches:
+            for cm in confirmed_matches[:5]:
+                t_id = cm.get("transaction_id") or "unknown"
+                m_type = cm.get("match_type") or "reference_number or amount"
+                t_date = cm.get("date") or ""
+                t_desc = cm.get("description") or cm.get("notes") or ""
+                context_lines.append(f"- [CONFIRMED TRANSACTION MATCH] ID: {t_id} | Date: {t_date} | Matched via: {m_type} | Desc: {t_desc}")
+
+        return "\n".join(context_lines)
+
+    async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id: str = None, connection_id: str = None, stream_reasoning: bool = True, exchange_rate_info: str = "", user_corrections: Optional[dict] = None, related_context: str = "", extracted_info = None) -> 'AiParsedData':
+        return await self._ai_service.classify_async(
+            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections, related_context=related_context
+        )
 
     async def _apply_vendor_matching(self, ai_parsed: 'AiParsedData', vendors: list, accounts: list, lookups: list, user_id: str) -> None:
         """Apply vendor matching logic in-place on ai_parsed. Shared between process_hook_async and reclassify_ingestion_async."""
@@ -180,41 +309,135 @@ class IngestionService:
                     ai_parsed.vendor.lookups = db_lookups
                     ai_parsed.vendor.new_lookups = new_lookups
 
-    async def process_hook_async(self, hook: PhoneHookMessage) -> PendingIngestion:
-        logging.info("[process_hook_async] Starting...")
-        
-        # 0. Quick AI check if it's a financial transaction
-        logging.info("[process_hook_async] 0. Checking if financial transaction...")
-        
-        is_financial = await self._ai_service.is_financial_transaction_async(hook)
-        if not is_financial:
-            logging.info("[process_hook_async] Not a financial transaction. Skipping heavy extraction.")
-            # Create a basic AiParsedData with is_financial=False
-            ai_parsed = AiParsedData(is_financial=False)
-            
-            ingestion = PendingIngestion(
-                user_id=hook.user_id,
-                hook_id=hook.id,
-                received_at=hook.received_at,
-                raw_payload=hook.raw_payload,
-                raw_msg=hook.raw_msg,
-                ai_parsed=ai_parsed,
-                similarity_score=0.0,
-                top_matches=[],
-                month_key=hook.month_key,
-                partition_key=hook.partition_key,
-                notification_type=hook.notification_type
-            )
-            ingestion.status = "NonFinancial"
-            ingestion.ttl = 7 * 24 * 60 * 60  # 7 days
-            return await self._repo.add_async(ingestion)
 
-        # 1. Embed raw_msg
-        logging.info("[process_hook_async] 1. Embedding raw msg...")
-        query_embedding = await self._embedding_service.embed_async(hook.raw_msg)
+
+    def _extract_effective_time(self, ingestion: PendingIngestion) -> datetime:
+        """Extract the effective datetime from ai_parsed.date, raw_payload.timestamp, or received_at."""
+        if ingestion.ai_parsed and ingestion.ai_parsed.date:
+            dt = ingestion.ai_parsed.date
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+
+        raw_ts = ingestion.raw_payload.get("timestamp") if ingestion.raw_payload else None
+        if raw_ts is not None:
+            try:
+                if isinstance(raw_ts, str) and raw_ts.isdigit():
+                    raw_ts = float(raw_ts)
+                if isinstance(raw_ts, (int, float)):
+                    if raw_ts > 30000000000:
+                        return datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc)
+                    else:
+                        return datetime.fromtimestamp(raw_ts, tz=timezone.utc)
+                elif isinstance(raw_ts, str):
+                    dt = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt
+            except Exception:
+                pass
+
+        dt = ingestion.received_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
+    async def detect_and_link_relations_async(self, ingestion: PendingIngestion) -> None:
+        """
+        Detect relations with other pending/recent ingestions and confirmed transactions.
+        Back-ports links to matched existing pending ingestions.
+        """
+        if not ingestion.ai_parsed or ingestion.ai_parsed.is_financial is False:
+            return
+
+        ref_num = (ingestion.ai_parsed.reference_number or "").strip()
+        amount = ingestion.ai_parsed.amount
+        eff_time = self._extract_effective_time(ingestion)
+
+        # 1. Query candidate pending/recent ingestions for this user
+        candidates = await self._repo.find_candidates_for_relation_async(ingestion.user_id, days_lookback=30)
         
-        # 2. Find similar past transactions
-        logging.info("[process_hook_async] 2. Finding similar transactions...")
+        definite_ids = set(ingestion.related_ingestion_ids or [])
+        possible_ids = set(ingestion.possible_related_ingestion_ids or [])
+        
+        backport_updates = []
+
+        for candidate in candidates:
+            if candidate.id == ingestion.id:
+                continue
+
+            cand_ref = (candidate.ai_parsed.reference_number or "").strip() if candidate.ai_parsed else ""
+            cand_amount = candidate.ai_parsed.amount if candidate.ai_parsed else None
+            cand_time = self._extract_effective_time(candidate)
+
+            is_definite = False
+            is_possible = False
+
+            # Check Criteria 1: Reference Number Match (within 30 days)
+            if ref_num and cand_ref and ref_num.lower() == cand_ref.lower():
+                time_diff_days = abs((eff_time - cand_time).total_seconds()) / (24 * 3600)
+                if time_diff_days <= 30:
+                    is_definite = True
+
+            # Check Criteria 2: Amount & 5-minute time window
+            if not is_definite and amount is not None and cand_amount is not None:
+                if round(abs(float(amount)), 2) == round(abs(float(cand_amount)), 2):
+                    time_diff_mins = abs((eff_time - cand_time).total_seconds()) / 60.0
+                    if time_diff_mins <= 5.0:
+                        is_possible = True
+
+            if is_definite:
+                definite_ids.add(candidate.id)
+                # Prepare backport for candidate
+                cand_definite = set(candidate.related_ingestion_ids or [])
+                if ingestion.id not in cand_definite:
+                    cand_definite.add(ingestion.id)
+                    candidate.related_ingestion_ids = list(cand_definite)
+                    backport_updates.append(candidate)
+            elif is_possible:
+                possible_ids.add(candidate.id)
+                # Prepare backport for candidate
+                cand_possible = set(candidate.possible_related_ingestion_ids or [])
+                if ingestion.id not in cand_possible:
+                    cand_possible.add(ingestion.id)
+                    candidate.possible_related_ingestion_ids = list(cand_possible)
+                    backport_updates.append(candidate)
+
+        ingestion.related_ingestion_ids = list(definite_ids)
+        ingestion.possible_related_ingestion_ids = list(possible_ids)
+
+        # 2. Check against Confirmed Transactions / Ledger Entries
+        confirmed_matches = await self._finance_api_service.search_confirmed_ledger_entries_async(
+            user_id=ingestion.user_id,
+            reference_number=ref_num if ref_num else None,
+            amount=amount,
+            around_time=eff_time,
+            window_minutes=5
+        )
+
+        if confirmed_matches:
+            tx_ids = set(ingestion.related_transaction_ids or [])
+            for cm in confirmed_matches:
+                t_id = cm.get("transaction_id")
+                if t_id:
+                    tx_ids.add(t_id)
+            ingestion.related_transaction_ids = list(tx_ids)
+            ingestion.has_possible_confirmed_match = len(tx_ids) > 0
+
+        # Execute back-ports to CosmosDB
+        for cand_to_update in backport_updates:
+            try:
+                await self._repo.update_async(cand_to_update)
+            except Exception as e:
+                logging.warning(f"Failed to back-port relation link to {cand_to_update.id}: {e}")
+
+    async def process_hook_async(self, hook: PhoneHookMessage) -> PendingIngestion:
+        # 1. Embed raw message
+        logging.info(f"[process_hook_async] 1. Embedding raw message for hook {hook.id}...")
+        query_embedding = await self._embedding_service.embed_async(hook.raw_msg)
+
+        # 2. Vector search: find top-5 similar past transactions
+        logging.info("[process_hook_async] 2. Performing vector search...")
         similar_vectors = await self._vector_service.find_similar_async(
             query_embedding, hook.user_id, top_k=5
         )
@@ -223,27 +446,36 @@ class IngestionService:
         # 3. Fetch accounts and runbook
         logging.info("[process_hook_async] 3. Fetching accounts...")
         accounts = await self._finance_api_service.get_accounts_async(hook.user_id)
+        vendors = await self._finance_api_service.get_vendors_async(hook.user_id)
         
         logging.info("[process_hook_async] 3b. Fetching runbook...")
         runbook_content = await self._finance_api_service.get_runbook_content_async(hook.user_id, self._get_runbook_id())
         if not runbook_content:
             runbook_content = self._ai_service.get_default_runbook_content()
-
-        # 3c. Fetch vendors...
-        logging.info("[process_hook_async] 3c. Fetching vendors...")
-        vendors = await self._finance_api_service.get_vendors_async(hook.user_id)
         
-        # 3d. Pre-process notification to extract account info and find vendor matches
-        logging.info("[process_hook_async] 3d. Pre-processing notification...")
-        if "extracted_info" in hook.raw_payload:
+        # 3.5 Preprocessing: extract account numbers and potential vendor names
+        logging.info("[process_hook_async] 3.5 Preprocessing raw message...")
+        if hook.raw_payload and "extracted_info" in hook.raw_payload:
             logging.info("[process_hook_async] Bypassing extraction AI call (already present in payload)")
             extracted_info_dict = hook.raw_payload["extracted_info"]
+            raw_amt = extracted_info_dict.get("amount")
+            parsed_amount = None
+            if raw_amt is not None:
+                try:
+                    parsed_amount = float(raw_amt)
+                except (ValueError, TypeError):
+                    parsed_amount = None
+
             extracted_info = ExtractedAccountInfo(
                 account_numbers=extracted_info_dict.get("account_numbers", []),
                 account_names=extracted_info_dict.get("account_names", []),
                 application=self._preprocessing_service.extract_application(hook),
                 potential_vendor_names=extracted_info_dict.get("potential_vendor_names", []),
-                currency=extracted_info_dict.get("currency", "PHP") or "PHP"
+                currency=extracted_info_dict.get("currency", "PHP") or "PHP",
+                reference_number=extracted_info_dict.get("reference_number"),
+                amount=parsed_amount,
+                date=extracted_info_dict.get("date"),
+                is_multi_order=bool(extracted_info_dict.get("is_multi_order", False))
             )
         else:
             extracted_info = await self._preprocessing_service.process_hook(hook)
@@ -266,10 +498,48 @@ class IngestionService:
             if rate_str:
                 exchange_rate_info = f"\n{rate_str}\n"
 
-        # 4. Classify via LLM with vendor match context
-        logging.info("[process_hook_async] 4. Classifying via LLM with vendor context...")
+        # 3.6 Early relation lookup pre-classification
+        logging.info("[process_hook_async] 3.6 Searching for related transactions pre-classify...")
+        pre_effective_time = hook.received_at
+        if extracted_info.date:
+            try:
+                dt = datetime.fromisoformat(extracted_info.date.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                pre_effective_time = dt
+            except Exception:
+                pass
+        elif hook.raw_payload and hook.raw_payload.get("timestamp"):
+            raw_ts = hook.raw_payload["timestamp"]
+            try:
+                if isinstance(raw_ts, (int, float)):
+                    if raw_ts > 30000000000:
+                        pre_effective_time = datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc)
+                    else:
+                        pre_effective_time = datetime.fromtimestamp(raw_ts, tz=timezone.utc)
+                elif isinstance(raw_ts, str):
+                    dt = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    pre_effective_time = dt
+            except Exception:
+                pass
+
+        if pre_effective_time.tzinfo is None:
+            pre_effective_time = pre_effective_time.replace(tzinfo=timezone.utc)
+
+        related_context = await self._build_related_context_async(
+            user_id=hook.user_id,
+            reference_number=extracted_info.reference_number,
+            amount=extracted_info.amount,
+            effective_time=pre_effective_time,
+            exclude_id=hook.id
+        )
+
+        # 4. Classify via LLM with vendor match context and related transactions context
+        logging.info("[process_hook_async] 4. Classifying via LLM with vendor context and relations...")
         ai_parsed = await self._classify_hook_async(
-            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, stream_reasoning=False, exchange_rate_info=exchange_rate_info
+            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, stream_reasoning=False, exchange_rate_info=exchange_rate_info, related_context=related_context, extracted_info=extracted_info
         )
 
         # 4.5 Automatically map vendor from lookups or string match
@@ -328,9 +598,14 @@ class IngestionService:
             except Exception as e:
                 # If auto-confirm fails, fallback to Pending
                 ingestion.status = "Pending"
-                ingestion.notes = f"Auto-confirm failed: {str(e)}"
+                if ingestion.ai_parsed:
+                    ingestion.ai_parsed.notes = f"Auto-confirm failed: {str(e)}"
+                logging.warning(f"Auto-confirm failed for hook {hook.id}: {e}")
         else:
             ingestion.status = "Pending"
+
+        # 6.5 Detect & link related transactions across notification types and confirmed records
+        await self.detect_and_link_relations_async(ingestion)
 
         # 7. Save
         return await self._repo.add_async(ingestion)
@@ -392,6 +667,16 @@ class IngestionService:
             if rate_str:
                 exchange_rate_info = f"\n{rate_str}\n"
 
+        # 3.6 Early relation context
+        eff_time = self._extract_effective_time(ingestion)
+        related_context = await self._build_related_context_async(
+            user_id=user_id,
+            reference_number=extracted_info.reference_number or (ingestion.ai_parsed.reference_number if ingestion.ai_parsed else None),
+            amount=extracted_info.amount or (ingestion.ai_parsed.amount if ingestion.ai_parsed else None),
+            effective_time=eff_time,
+            exclude_id=ingestion.id
+        )
+
         # 4. Re-classify via LLM
         # Build a minimal hook-like object for classification
         from types import SimpleNamespace
@@ -400,7 +685,7 @@ class IngestionService:
             raw_payload=ingestion.raw_payload,
             user_id=user_id
         )
-        ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections)
+        ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections, related_context=related_context, extracted_info=extracted_info)
 
         # 4.5 Automatically map vendor from lookups or string match
         lookups = self._build_lookups(ai_parsed, accounts)
@@ -423,6 +708,9 @@ class IngestionService:
         ingestion.similarity_score = top_score
         ingestion.top_matches = matches
         ingestion.status = "Pending"
+
+        # Detect and link relations on reclassification
+        await self.detect_and_link_relations_async(ingestion)
 
         await self._repo.update_async(ingestion)
         return ingestion

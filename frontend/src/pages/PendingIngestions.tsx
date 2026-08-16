@@ -19,7 +19,7 @@ export default function PendingIngestions() {
   const [reasoningOpId, setReasoningOpId] = useState<string | null>(null)
   const [isReasoningDrawerOpen, setIsReasoningDrawerOpen] = useState(false)
   const [isReasoningPending, setIsReasoningPending] = useState(false)
-  
+
   const queryClient = useQueryClient()
   const { data: openedTransaction } = useGetTransactionById(openingTransactionId)
 
@@ -60,6 +60,32 @@ export default function PendingIngestions() {
     }
     if (!resolvedDate) {
       resolvedDate = confirmingIngestion.received_at
+    }
+
+    const multiOrders = confirmingIngestion.ai_parsed.multi_order_items || []
+    if (multiOrders.length > 1) {
+      const entries = [
+        {
+          accountId: confirmingIngestion.ai_parsed.credit_account_id || '',
+          amount: -(confirmingIngestion.ai_parsed.amount || 0),
+          note: confirmingIngestion.ai_parsed.notes || 'Shopee total'
+        },
+        ...multiOrders.map((o) => ({
+          accountId: o.debit_account_id || confirmingIngestion.ai_parsed.debit_account_id || '',
+          amount: o.amount || 0,
+          referenceNumber: o.reference_number || '',
+          note: o.notes || (typeof o.vendor === 'string' ? o.vendor : o.vendor?.name) || ''
+        }))
+      ]
+
+      return {
+        type: 'Journal',
+        vendor: confirmingIngestion.ai_parsed.vendor?.name || '',
+        note: confirmingIngestion.ai_parsed.summary || confirmingIngestion.ai_parsed.notes || '',
+        date: resolvedDate,
+        referenceNumber: confirmingIngestion.ai_parsed.reference_number || '',
+        entries
+      } as Transaction
     }
 
     return {
@@ -166,31 +192,28 @@ export default function PendingIngestions() {
         <div className="flex px-4 mt-4 gap-2 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setViewMode('Pending')}
-            className={`pb-3 px-4 font-semibold text-sm whitespace-nowrap transition-colors border-b-2 ${
-              viewMode === 'Pending'
+            className={`pb-3 px-4 font-semibold text-sm whitespace-nowrap transition-colors border-b-2 ${viewMode === 'Pending'
                 ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 dark:border-emerald-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
+              }`}
           >
             Pending
           </button>
           <button
             onClick={() => setViewMode('AutoConfirmed')}
-            className={`pb-3 px-4 font-semibold text-sm whitespace-nowrap transition-colors border-b-2 ${
-              viewMode === 'AutoConfirmed'
+            className={`pb-3 px-4 font-semibold text-sm whitespace-nowrap transition-colors border-b-2 ${viewMode === 'AutoConfirmed'
                 ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 dark:border-emerald-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
+              }`}
           >
             Auto-Confirmed
           </button>
           <button
             onClick={() => setViewMode('Confirmed')}
-            className={`pb-3 px-4 font-semibold text-sm whitespace-nowrap transition-colors border-b-2 ${
-              viewMode === 'Confirmed'
+            className={`pb-3 px-4 font-semibold text-sm whitespace-nowrap transition-colors border-b-2 ${viewMode === 'Confirmed'
                 ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 dark:border-emerald-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-            }`}
+              }`}
           >
             Confirmed
           </button>

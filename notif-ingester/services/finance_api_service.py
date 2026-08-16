@@ -1,4 +1,6 @@
 import os
+from datetime import datetime, timezone
+from typing import Optional
 from azure.cosmos.aio import CosmosClient
 from models.pending_ingestion import PendingIngestion
 from uuid_extensions import uuid7
@@ -303,7 +305,7 @@ class FinanceApiService:
             logging.warning(f"Error searching all vendor matches by lookups: {e}")
             return []
 
-    async def ensure_vendor_and_lookups_async(self, user_id: str, vendor_name: str, lookups: list[str], vendor_type: str = None) -> str | None:
+    async def ensure_vendor_and_lookups_async(self, user_id: str, vendor_name: str, lookups: list[str], vendor_type: str = None, transaction_date: Optional[datetime] = None) -> str | None:
         if not self.client or not vendor_name:
             return None
             
@@ -327,7 +329,11 @@ class FinanceApiService:
             existing_doc = item
             break
             
-        now_iso = datetime.now(timezone.utc).isoformat()
+        target_dt = transaction_date or datetime.now(timezone.utc)
+        if target_dt.tzinfo is None:
+            target_dt = target_dt.replace(tzinfo=timezone.utc)
+        target_iso = target_dt.isoformat()
+
         if not vendor_id:
             vendor_id = str(uuid7())
             doc = {
@@ -335,14 +341,27 @@ class FinanceApiService:
                 "UserId": user_id,
                 "Name": vendor_name,
                 "Tags": [],
-                "LastUsed": now_iso
+                "LastUsed": target_iso
             }
             if vendor_type:
                 doc["Type"] = vendor_type
             await vendor_container.create_item(doc)
         elif existing_doc:
-            existing_doc["LastUsed"] = now_iso
-            await vendor_container.upsert_item(existing_doc)
+            existing_last_used_str = existing_doc.get("LastUsed")
+            should_update = False
+            if not existing_last_used_str:
+                should_update = True
+            else:
+                try:
+                    existing_dt = datetime.fromisoformat(existing_last_used_str.replace("Z", "+00:00"))
+                    if target_dt > existing_dt:
+                        should_update = True
+                except Exception:
+                    should_update = True
+
+            if should_update:
+                existing_doc["LastUsed"] = target_iso
+                await vendor_container.upsert_item(existing_doc)
             
         if lookups:
             lookup_container = db.get_container_client("VendorLookups")
@@ -436,17 +455,6 @@ class FinanceApiService:
         await tx_container.create_item(tx_doc)
         
         # 2. Create the LedgerEntry documents (EF Core format)
-        debit_id = str(uuid7())
-        debit_entry = {
-            "id": f"LedgerEntry|{debit_id}",
-            "Id": debit_id,
-            "UserId": ingestion.user_id,
-            "TransactionId": tx_id,
-            "AccountId": parsed.debit_account_id,
-            "Amount": parsed.amount,
-            "$type": "LedgerEntry"
-        }
-        
         credit_id = str(uuid7())
         credit_entry = {
             "id": f"LedgerEntry|{credit_id}",
@@ -457,24 +465,70 @@ class FinanceApiService:
             "Amount": -parsed.amount,
             "$type": "LedgerEntry"
         }
-        
-        await tx_container.create_item(debit_entry)
         await tx_container.create_item(credit_entry)
-        
-        # 3. Update the Account balances
+
+        multi_orders = parsed.multi_order_items or []
+        if multi_orders and len(multi_orders) > 1:
+            # N Debit entries for multi-order Shopee checkout
+            for order in multi_orders:
+                order_amt = float(order.get("amount", 0))
+                order_acc = order.get("debit_account_id") or parsed.debit_account_id
+                order_ref = order.get("reference_number") or parsed.reference_number
+                order_note = order.get("notes") or (order.get("vendor", {}).get("name") if isinstance(order.get("vendor"), dict) else order.get("vendor")) or parsed.notes
+                d_id = str(uuid7())
+                d_entry = {
+                    "id": f"LedgerEntry|{d_id}",
+                    "Id": d_id,
+                    "UserId": ingestion.user_id,
+                    "TransactionId": tx_id,
+                    "AccountId": order_acc,
+                    "Amount": order_amt,
+                    "Note": order_note or "",
+                    "ReferenceNumber": order_ref,
+                    "$type": "LedgerEntry"
+                }
+                await tx_container.create_item(d_entry)
+
+                # Update individual debit account balance
+                try:
+                    debit_account = await accounts_container.read_item(order_acc, partition_key=ingestion.user_id)
+                    debit_account["CurrentBalance"] = debit_account.get("CurrentBalance", 0) + order_amt
+                    await accounts_container.replace_item(order_acc, debit_account)
+                except Exception as e:
+                    import logging
+                    logging.error(f"Failed to update debit account balance for {order_acc}: {e}")
+        else:
+            debit_id = str(uuid7())
+            debit_entry = {
+                "id": f"LedgerEntry|{debit_id}",
+                "Id": debit_id,
+                "UserId": ingestion.user_id,
+                "TransactionId": tx_id,
+                "AccountId": parsed.debit_account_id,
+                "Amount": parsed.amount,
+                "Note": parsed.notes or "",
+                "ReferenceNumber": parsed.reference_number,
+                "$type": "LedgerEntry"
+            }
+            await tx_container.create_item(debit_entry)
+
+            # Update single debit account balance
+            try:
+                debit_account = await accounts_container.read_item(parsed.debit_account_id, partition_key=ingestion.user_id)
+                debit_account["CurrentBalance"] = debit_account.get("CurrentBalance", 0) + parsed.amount
+                await accounts_container.replace_item(parsed.debit_account_id, debit_account)
+            except Exception as e:
+                import logging
+                logging.error(f"Failed to update single debit account balance: {e}")
+
+        # 3. Update Credit Account balance
         try:
-            # Debit Account
-            debit_account = await accounts_container.read_item(parsed.debit_account_id, partition_key=ingestion.user_id)
-            debit_account["CurrentBalance"] = debit_account.get("CurrentBalance", 0) + parsed.amount
-            await accounts_container.replace_item(parsed.debit_account_id, debit_account)
-            
-            # Credit Account
             credit_account = await accounts_container.read_item(parsed.credit_account_id, partition_key=ingestion.user_id)
             credit_account["CurrentBalance"] = credit_account.get("CurrentBalance", 0) - parsed.amount
             await accounts_container.replace_item(parsed.credit_account_id, credit_account)
         except Exception as e:
             import logging
-            logging.error(f"Failed to update account balances: {e}")
+            logging.error(f"Failed to update credit account balance: {e}")
             
         # 4. Ensure Vendor and Lookups
         lookups = []
@@ -486,7 +540,13 @@ class FinanceApiService:
         if parsed.application: lookups.append(parsed.application)
         
         if parsed.vendor and parsed.vendor.name:
-            await self.ensure_vendor_and_lookups_async(ingestion.user_id, parsed.vendor.name, lookups, parsed.vendor.type)
+            await self.ensure_vendor_and_lookups_async(
+                ingestion.user_id,
+                parsed.vendor.name,
+                lookups,
+                parsed.vendor.type,
+                transaction_date=parsed.date
+            )
             
         return tx_doc
 
@@ -602,3 +662,128 @@ class FinanceApiService:
             await container.delete_item(item="runbook-review-session", partition_key=user_id)
         except Exception:
             pass  # Already gone — that's fine
+
+    async def search_confirmed_ledger_entries_async(
+        self,
+        user_id: str,
+        reference_number: str = None,
+        amount: float = None,
+        around_time = None,
+        window_minutes: int = 5
+    ) -> list[dict]:
+        """
+        Search confirmed transactions and ledger entries by reference_number (past 30 days)
+        or amount + time window (+/- window_minutes around around_time).
+        Returns list of matching transaction records with their TransactionId.
+        """
+        if not self.client:
+            return []
+            
+        from datetime import datetime, timezone, timedelta
+        
+        db = self.client.get_database_client(self.db_name)
+        tx_container = db.get_container_client("Transactions")
+        
+        matches = []
+        try:
+            # Case 1: Match by reference_number in past 30 days
+            if reference_number and str(reference_number).strip():
+                ref_clean = str(reference_number).strip()
+                cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+                
+                # Query transactions or ledger entries by ReferenceNumber
+                # Direct check on Transaction docs
+                tx_query = (
+                    "SELECT c.id, c.Id, c.Date, c.ReferenceNumber, c.Vendor, c.Note FROM c "
+                    "WHERE c.UserId = @user_id AND c.ReferenceNumber = @ref AND c.Date >= @cutoff"
+                )
+                params = [
+                    {"name": "@user_id", "value": user_id},
+                    {"name": "@ref", "value": ref_clean},
+                    {"name": "@cutoff", "value": cutoff}
+                ]
+                async for item in tx_container.query_items(query=tx_query, parameters=params):
+                    tx_id = item.get("Id") or (item.get("id", "").replace("Transaction|", "") if item.get("id") else "")
+                    if tx_id:
+                        matches.append({
+                            "transaction_id": tx_id,
+                            "date": item.get("Date"),
+                            "reference_number": item.get("ReferenceNumber"),
+                            "match_type": "reference_number"
+                        })
+                
+                # Also check LedgerEntry docs if not found or in addition
+                le_query = (
+                    "SELECT c.id, c.Id, c.TransactionId, c.ReferenceNumber, c.Amount FROM c "
+                    "WHERE c.UserId = @user_id AND c.ReferenceNumber = @ref"
+                )
+                le_params = [
+                    {"name": "@user_id", "value": user_id},
+                    {"name": "@ref", "value": ref_clean}
+                ]
+                async for item in tx_container.query_items(query=le_query, parameters=le_params):
+                    tx_id = item.get("TransactionId")
+                    if tx_id and not any(m["transaction_id"] == tx_id for m in matches):
+                        matches.append({
+                            "transaction_id": tx_id,
+                            "reference_number": item.get("ReferenceNumber"),
+                            "match_type": "reference_number"
+                        })
+            
+            # Case 2: Match by amount + effective time window (5 mins)
+            if amount is not None and around_time is not None:
+                if isinstance(around_time, str):
+                    try:
+                        around_dt = datetime.fromisoformat(around_time.replace("Z", "+00:00"))
+                    except Exception:
+                        around_dt = datetime.now(timezone.utc)
+                else:
+                    around_dt = around_time
+                    
+                if around_dt.tzinfo is None:
+                    around_dt = around_dt.replace(tzinfo=timezone.utc)
+                    
+                min_dt = (around_dt - timedelta(minutes=window_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                max_dt = (around_dt + timedelta(minutes=window_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                
+                tx_time_query = (
+                    "SELECT c.id, c.Id, c.Date FROM c "
+                    "WHERE c.UserId = @user_id AND c.Date >= @min_date AND c.Date <= @max_date"
+                )
+                time_params = [
+                    {"name": "@user_id", "value": user_id},
+                    {"name": "@min_date", "value": min_dt},
+                    {"name": "@max_date", "value": max_dt}
+                ]
+                
+                candidate_tx_ids = []
+                async for item in tx_container.query_items(query=tx_time_query, parameters=time_params):
+                    tx_id = item.get("Id") or (item.get("id", "").replace("Transaction|", "") if item.get("id") else "")
+                    if tx_id:
+                        candidate_tx_ids.append(tx_id)
+                        
+                if candidate_tx_ids:
+                    # Query ledger entries for these transactions
+                    id_params = [{"name": f"@id{i}", "value": tid} for i, tid in enumerate(candidate_tx_ids)]
+                    id_names = ", ".join(p["name"] for p in id_params)
+                    id_params.append({"name": "@user_id", "value": user_id})
+                    
+                    le_query = f"SELECT c.TransactionId, c.Amount FROM c WHERE c.UserId = @user_id AND c.TransactionId IN ({id_names})"
+                    target_abs_amount = round(abs(float(amount)), 2)
+                    
+                    async for item in tx_container.query_items(query=le_query, parameters=id_params):
+                        entry_amount = item.get("Amount")
+                        if entry_amount is not None and round(abs(float(entry_amount)), 2) == target_abs_amount:
+                            tx_id = item.get("TransactionId")
+                            if tx_id and not any(m["transaction_id"] == tx_id for m in matches):
+                                matches.append({
+                                    "transaction_id": tx_id,
+                                    "amount": entry_amount,
+                                    "match_type": "time_and_amount"
+                                })
+        except Exception as e:
+            import logging
+            logging.error(f"Error searching confirmed ledger entries: {e}")
+            
+        return matches
+

@@ -26,7 +26,7 @@ interface RunbookReviewModalProps {
   onClose: () => void
   corrections: PendingIngestion[]
   currentRunbook: string
-  runbookType: 'app' | 'sms' | 'email'
+  runbookType: 'app' | 'sms' | 'email' | 'image'
 }
 
 export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunbook, runbookType }: RunbookReviewModalProps) {
@@ -117,6 +117,8 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
     setLocalVendorUpdates(prev => prev.map(u => u.vendor_id === vendorId ? { ...u, new_tags: newTags } : u))
   }
 
+  const runbookLabel = runbookType === 'sms' ? 'SMS' : runbookType === 'email' ? 'Email' : runbookType === 'image' ? 'Image' : 'App'
+
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 ${isMaximized ? 'p-0' : ''}`}>
       <div className={`bg-neutral-900 border border-neutral-800 shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${isMaximized ? 'w-full h-full rounded-none' : 'w-full max-w-6xl h-[85vh] rounded-xl'}`}>
@@ -125,7 +127,7 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
         <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border-b border-neutral-800 bg-neutral-900 z-10 gap-3">
           <div className="flex items-center gap-4">
             <div>
-              <h2 className="text-xl font-semibold text-white">Review {runbookType === 'sms' ? 'SMS' : runbookType === 'email' ? 'Email' : 'App'} Runbook Changes</h2>
+              <h2 className="text-xl font-semibold text-white">Review {runbookLabel} Runbook Changes</h2>
               {session?.updated_at && (
                 <p className="text-xs text-neutral-500 mt-0.5">
                   Session active · last updated {new Date(session.updated_at).toLocaleTimeString()}

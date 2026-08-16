@@ -342,9 +342,13 @@ async def ClassifyNotificationFunction(documents: func.DocumentList) -> None:
     image_ingestion_service = get_image_ingestion_service()
     hook_repo = CosmosHookRepository()
 
-    for doc in documents:
+    for doc_dict in documents:
         try:
             hook_msg = PhoneHookMessage(**doc_dict)
+
+            # Skip hooks that are already processed or in error state (prevents change-feed infinite loops)
+            if hook_msg.status in ["processed", "error", "skipped"]:
+                continue
 
             # Route to the appropriate pipeline based on notification type
             notif_type = _type_detector.detect_type(hook_msg)
@@ -581,6 +585,8 @@ async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
         transaction_id = body.get("transaction_id")
         user_confirmed = body.get("user_confirmed", {})
         skip_learning = body.get("skip_learning", False)
+        dismiss_related_ids = body.get("dismiss_related_ids", [])
+        dismiss_status = body.get("dismiss_status", "Duplicate") # Duplicate or Merged
     except ValueError:
         return func.HttpResponse("Invalid JSON", status_code=400)
         
@@ -593,6 +599,18 @@ async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
         ingestion.status = "Confirmed"
         ingestion.transaction_id = transaction_id
         await ingestion_service.ingestion_repo.update_async(ingestion)
+
+        # Handle dismissing related pending ingestions if specified
+        if dismiss_related_ids and isinstance(dismiss_related_ids, list):
+            for rel_id in dismiss_related_ids:
+                try:
+                    rel_ingestion = await ingestion_service.ingestion_repo.get_by_id_async(rel_id, user_id)
+                    if rel_ingestion and rel_ingestion.status == "Pending":
+                        rel_ingestion.status = dismiss_status
+                        rel_ingestion.transaction_id = transaction_id
+                        await ingestion_service.ingestion_repo.update_async(rel_ingestion)
+                except Exception as e:
+                    logging.warning(f"Failed to auto-dismiss related ingestion {rel_id}: {e}")
         
         # Trigger learning asynchronously if not skipped
         if not skip_learning:
@@ -980,19 +998,24 @@ async def GetRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
         runbook_id = "runbook-sms"
     elif r_type == "email":
         runbook_id = "runbook-email"
+    elif r_type == "image":
+        runbook_id = "runbook-image"
     else:
         runbook_id = "runbook"
     
     ingestion_service = get_ingestion_service()
     try:
         content = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
-        # If SMS/Email runbook is requested but empty, bootstrap it
+        # If SMS/Email/Image runbook is requested but empty, bootstrap it
         if r_type == "sms" and not content:
             sms_service = get_sms_ingestion_service()
             content = await sms_service._get_or_bootstrap_sms_runbook(user_id)
         elif r_type == "email" and not content:
             email_service = get_email_ingestion_service()
             content = await email_service._get_or_bootstrap_email_runbook(user_id)
+        elif r_type == "image" and not content:
+            image_service = get_image_ingestion_service()
+            content = await image_service._get_or_bootstrap_image_runbook(user_id)
             
         return func.HttpResponse(json.dumps({"content": content or ""}), status_code=200, mimetype="application/json")
     except Exception as e:
@@ -1002,7 +1025,7 @@ async def GetRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
 # ── Function 12.2: UpdateRunbookFunction ────────────────────────────────────
 @app.route(route="runbook", methods=["PUT"])
 async def UpdateRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
-    """Updates the runbook content (accepts ?type=sms or ?type=app)."""
+    """Updates the runbook content (accepts ?type=sms, ?type=email, ?type=image, or ?type=app)."""
     user, err = _require_auth(req)
     if err: return err
     user_id = user.get("sub", "default")
@@ -1012,6 +1035,8 @@ async def UpdateRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
         runbook_id = "runbook-sms"
     elif r_type == "email":
         runbook_id = "runbook-email"
+    elif r_type == "image":
+        runbook_id = "runbook-image"
     else:
         runbook_id = "runbook"
     
@@ -1057,6 +1082,8 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
             runbook_id = "runbook-sms"
         elif runbook_type == "email":
             runbook_id = "runbook-email"
+        elif runbook_type == "image":
+            runbook_id = "runbook-image"
         else:
             runbook_id = "runbook"
         current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
@@ -1067,6 +1094,9 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
             elif runbook_type == "email":
                 email_service = get_email_ingestion_service()
                 current_runbook = await email_service._get_or_bootstrap_email_runbook(user_id)
+            elif runbook_type == "image":
+                image_service = get_image_ingestion_service()
+                current_runbook = await image_service._get_or_bootstrap_image_runbook(user_id)
             else:
                 current_runbook = ingestion_service._ai_service.get_default_runbook_content()
             
@@ -1091,18 +1121,17 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
                 stream_reasoning=stream_reasoning
             )
 
-        now = datetime.now(timezone.utc).isoformat()
         session = {
             "id": "runbook-review-session",
             "UserId": user_id,
             "corrections": corrections,
             "runbook_type": runbook_type,
             "chat_history": [{"role": "ai", "text": ai_response.get("message", ""), "questions": ai_response.get("questions", [])}],
-            "proposed_runbook": ai_response.get("proposed_runbook", ""),
+            "proposed_runbook": ai_response.get("proposed_runbook", current_runbook),
             "account_description_updates": ai_response.get("account_description_updates", []),
             "vendor_updates": ai_response.get("vendor_updates", []),
-            "created_at": now,
-            "updated_at": now,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
             "partition_key": user_id
         }
         await ingestion_service._finance_api_service.save_runbook_session_async(user_id, session)
@@ -1147,12 +1176,25 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
         accounts = await ingestion_service._finance_api_service.get_accounts_async(user_id)
         vendors = await ingestion_service._finance_api_service.get_vendors_async(user_id)
         runbook_type = session.get("runbook_type", "app")
-        runbook_id = "runbook-sms" if runbook_type == "sms" else "runbook"
+        if runbook_type == "sms":
+            runbook_id = "runbook-sms"
+        elif runbook_type == "email":
+            runbook_id = "runbook-email"
+        elif runbook_type == "image":
+            runbook_id = "runbook-image"
+        else:
+            runbook_id = "runbook"
         current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
         if not current_runbook:
             if runbook_type == "sms":
                 sms_service = get_sms_ingestion_service()
                 current_runbook = await sms_service._get_or_bootstrap_sms_runbook(user_id)
+            elif runbook_type == "email":
+                email_service = get_email_ingestion_service()
+                current_runbook = await email_service._get_or_bootstrap_email_runbook(user_id)
+            elif runbook_type == "image":
+                image_service = get_image_ingestion_service()
+                current_runbook = await image_service._get_or_bootstrap_image_runbook(user_id)
             else:
                 current_runbook = ingestion_service._ai_service.get_default_runbook_content()
             
@@ -1259,6 +1301,8 @@ async def ApproveRunbookReviewFunction(req: func.HttpRequest) -> func.HttpRespon
             runbook_id = "runbook-sms"
         elif runbook_type == "email":
             runbook_id = "runbook-email"
+        elif runbook_type == "image":
+            runbook_id = "runbook-image"
         else:
             runbook_id = "runbook"
         await ingestion_service._finance_api_service.save_runbook_content_async(user_id, proposed_runbook, runbook_id=runbook_id)

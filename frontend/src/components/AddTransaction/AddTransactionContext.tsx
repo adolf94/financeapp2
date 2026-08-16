@@ -85,6 +85,12 @@ interface AddTransactionContextProps {
   skipLearning: boolean
   setSkipLearning: (skip: boolean) => void
 
+  // Related & Merge Management
+  mergeRelatedIds: string[]
+  setMergeRelatedIds: (ids: string[] | ((prev: string[]) => string[])) => void
+  confirmedMatchTxId: string | null
+  linkAndDismissIngestion: () => void
+
   // Recurring
   isRecurring: boolean
   setIsRecurring: (rec: boolean) => void
@@ -176,6 +182,14 @@ export function AddTransactionProvider({
   const [referenceNumber, setReferenceNumber] = useState('')
   const [userWhy, setUserWhy] = useState('')
   const [skipLearning, setSkipLearning] = useState(false)
+  const [mergeRelatedIds, setMergeRelatedIds] = useState<string[]>([])
+
+  const confirmedMatchTxId = useMemo(() => {
+    if (ingestion?.related_transaction_ids && ingestion.related_transaction_ids.length > 0) {
+      return ingestion.related_transaction_ids[0]
+    }
+    return null
+  }, [ingestion])
 
   const [isRecurring, setIsRecurring] = useState(false)
   const [frequency, setFrequency] = useState<'Daily' | 'Weekly' | 'Monthly' | 'Yearly'>('Monthly')
@@ -221,6 +235,27 @@ export function AddTransactionProvider({
     setMaxOccurrences('')
   }, [])
 
+  const linkAndDismissIngestion = useCallback(() => {
+    if (!ingestionId) return
+    const targetTxId = confirmedMatchTxId || 'matched-existing'
+    confirmIngestionMutation.mutate(
+      {
+        id: ingestionId,
+        transactionId: targetTxId,
+        userConfirmed: ingestion?.ai_parsed || {},
+        skipLearning: true,
+        dismissRelatedIds: mergeRelatedIds,
+        dismissStatus: 'Duplicate',
+      },
+      {
+        onSuccess: () => {
+          onClose()
+          resetForm()
+        },
+      }
+    )
+  }, [ingestionId, confirmedMatchTxId, ingestion, mergeRelatedIds, confirmIngestionMutation, onClose, resetForm])
+
   const applyAiParsed = useCallback((parsed: any, receivedAt?: string) => {
     if (!parsed) return
     setIsFlashing(true)
@@ -260,6 +295,43 @@ export function AddTransactionProvider({
     }
     if (parsed.reference_number !== undefined) {
       setReferenceNumber(parsed.reference_number || '')
+    }
+
+    // Multi-order pre-fill support
+    if (parsed.multi_order_items && parsed.multi_order_items.length > 1) {
+      setMode('Advanced')
+      setType('Expense')
+      const lines: JournalLine[] = []
+      // 1. Credit line (full amount, credit account if available)
+      const creditAcc = parsed.credit_account_id ? accountsRef.current.find((a) => a.id === parsed.credit_account_id) : null
+      lines.push({
+        id: generateId(),
+        categoryId: creditAcc?.accountGroupId || '',
+        subCategoryId: parsed.credit_account_id || '',
+        amount: Math.abs(parsed.amount || 0).toString(),
+        type: 'Credit',
+        note: parsed.notes || 'Shopee total',
+        referenceNumber: '',
+      })
+
+      // 2. N Debit lines (one per order)
+      for (const order of parsed.multi_order_items) {
+        const orderDebitAccId = order.debit_account_id || parsed.debit_account_id || ''
+        const debitAcc = orderDebitAccId ? accountsRef.current.find((a) => a.id === orderDebitAccId) : null
+        const orderVendorName = typeof order.vendor === 'string' ? order.vendor : order.vendor?.name || ''
+        const orderNote = order.notes || orderVendorName || ''
+        lines.push({
+          id: generateId(),
+          categoryId: debitAcc?.accountGroupId || '',
+          subCategoryId: orderDebitAccId,
+          amount: Math.abs(order.amount || 0).toString(),
+          type: 'Debit',
+          note: orderNote,
+          referenceNumber: order.reference_number || '',
+        })
+      }
+      setJournalLines(lines)
+      return
     }
 
     // Pre-fill accounts based on transaction_type
@@ -331,7 +403,9 @@ export function AddTransactionProvider({
         setType(initialData.type)
         setToAccountId('')
 
-        if (initialData.type === 'Journal') {
+        if (ingestion && ingestion.ai_parsed) {
+          applyAiParsed(ingestion.ai_parsed, ingestion.received_at)
+        } else if (initialData.type === 'Journal') {
           setJournalLines(
             initialData.entries.map((e) => {
               const acc = accountsRef.current.find((a) => a.id === e.accountId)
@@ -452,6 +526,8 @@ export function AddTransactionProvider({
               id: ingestionId,
               transactionId: data.id,
               skipLearning: skipLearning,
+              dismissRelatedIds: mergeRelatedIds,
+              dismissStatus: 'Duplicate',
               userConfirmed: {
                 vendor: vendor ? {
                   name: vendor,
@@ -664,6 +740,8 @@ export function AddTransactionProvider({
         {
           id: ingestionId,
           skipLearning: skipLearning,
+          dismissRelatedIds: mergeRelatedIds,
+          dismissStatus: 'Duplicate',
           userConfirmed: {
             vendor: type === 'Transfer' ? null : (vendor ? {
               name: vendor,
@@ -677,14 +755,14 @@ export function AddTransactionProvider({
               type === 'Transfer'
                 ? toAccountId
                 : type === 'Income'
-                ? sourceAccountId
-                : splits[0].subCategoryId,
+                  ? sourceAccountId
+                  : splits[0].subCategoryId,
             credit_account_id:
               type === 'Transfer'
                 ? sourceAccountId
                 : type === 'Income'
-                ? splits[0].subCategoryId
-                : sourceAccountId,
+                  ? splits[0].subCategoryId
+                  : sourceAccountId,
             notes: note || null,
             reference_number: referenceNumber || null,
             user_why: userWhy || null,
@@ -703,14 +781,14 @@ export function AddTransactionProvider({
     }
 
     const newTx: Partial<Transaction> = {
-        ...(initialData?.id ? { id: initialData.id } : {}),
-        type,
-        scheduleId: finalScheduleId,
-        entries,
-        vendor: type === 'Transfer' ? null : vendor.trim() || undefined,
-        note: note.trim() || undefined,
-        referenceNumber: referenceNumber.trim() || undefined,
-        date: dayjs(date).toISOString(),
+      ...(initialData?.id ? { id: initialData.id } : {}),
+      type,
+      scheduleId: finalScheduleId,
+      entries,
+      vendor: type === 'Transfer' ? null : vendor.trim() || undefined,
+      note: note.trim() || undefined,
+      referenceNumber: referenceNumber.trim() || undefined,
+      date: dayjs(date).toISOString(),
     }
 
     const mutation = initialData?.id ? updateTxMutation : createTxMutation
@@ -732,14 +810,14 @@ export function AddTransactionProvider({
               type === 'Transfer'
                 ? toAccountId
                 : type === 'Income'
-                ? sourceAccountId
-                : splits[0]?.subCategoryId || null,
+                  ? sourceAccountId
+                  : splits[0]?.subCategoryId || null,
             credit_account_id:
               type === 'Transfer'
                 ? sourceAccountId
                 : type === 'Income'
-                ? splits[0]?.subCategoryId || null
-                : sourceAccountId,
+                  ? splits[0]?.subCategoryId || null
+                  : sourceAccountId,
             notes: note || null,
             reference_number: referenceNumber || null,
             user_why: userWhy || null,
@@ -845,6 +923,10 @@ export function AddTransactionProvider({
       reclassifyMutation,
       skipLearning,
       setSkipLearning,
+      mergeRelatedIds,
+      setMergeRelatedIds,
+      confirmedMatchTxId,
+      linkAndDismissIngestion,
       isSubmitting:
         createTxMutation.isPending ||
         updateTxMutation.isPending ||
@@ -891,6 +973,9 @@ export function AddTransactionProvider({
       handleSubmit,
       reclassifyMutation,
       skipLearning,
+      mergeRelatedIds,
+      confirmedMatchTxId,
+      linkAndDismissIngestion,
       createTxMutation.isPending,
       updateTxMutation.isPending,
       confirmIngestionMutation.isPending,

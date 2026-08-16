@@ -1,17 +1,17 @@
 import { useState } from 'react'
-import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell, Mail, Image as ImageIcon } from 'lucide-react'
+import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell, Mail, Image as ImageIcon, Link2, AlertTriangle, ExternalLink } from 'lucide-react'
 import dayjs from 'dayjs'
 import { PendingIngestion } from '@/hooks/useIngestions'
 import { AccountGroup } from '@/hooks/useAccounts'
 import AuthenticatedReceiptImage from '@/components/AuthenticatedReceiptImage'
 
 interface PendingIngestionCardProps {
-
   ingestion: PendingIngestion
+  allPendingIngestions?: PendingIngestion[]
   getAccountName: (id?: string | null) => string
   groups: AccountGroup[]
   isProcessing: boolean
-  onQuickConfirm: (ingestion: PendingIngestion) => void
+  onQuickConfirm: (ingestion: PendingIngestion, dismissRelatedIds?: string[]) => void
   onDismiss: (id: string) => void
   onEditConfirm: (ingestion: PendingIngestion) => void
   onOpenTransaction?: (transactionId: string) => void
@@ -31,6 +31,7 @@ export function hasMasks(name?: string | null): boolean {
 
 export default function PendingIngestionCard({
   ingestion,
+  allPendingIngestions = [],
   getAccountName,
   groups,
   isProcessing,
@@ -52,6 +53,17 @@ export default function PendingIngestionCard({
   const suggestedType = ingestion.ai_parsed.vendor?.type
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+
+  // Resolve relation fields (support both camelCase and PascalCase)
+  const definiteRelatedIds = ingestion.related_ingestion_ids || ingestion.RelatedIngestionIds || []
+  const possibleRelatedIds = ingestion.possible_related_ingestion_ids || ingestion.PossibleRelatedIngestionIds || []
+  const confirmedTxIds = ingestion.related_transaction_ids || ingestion.RelatedTransactionIds || []
+  const hasConfirmedMatch = !!(ingestion.has_possible_confirmed_match || ingestion.HasPossibleConfirmedMatch || confirmedTxIds.length > 0)
+
+  const allRelatedPendingIds = Array.from(new Set([...definiteRelatedIds, ...possibleRelatedIds]))
+  const relatedPendingItems = allPendingIngestions.filter(item => allRelatedPendingIds.includes(item.id) && item.status === 'Pending')
+
+  const [selectedRelatedItem, setSelectedRelatedItem] = useState<PendingIngestion | null>(null)
 
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col gap-3 shadow-sm hover:shadow transition-shadow relative overflow-hidden">
@@ -205,6 +217,163 @@ export default function PendingIngestionCard({
         </div>
       )}
 
+      {/* Selected Related Ingestion Details Preview Modal */}
+      {selectedRelatedItem && (
+        <div className="fixed inset-0 bg-black/60 z-55 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-xl max-h-[85vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 animate-scale-up">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900/50 rounded-t-2xl">
+              <div className="flex-1 min-w-0 pr-4">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-950 dark:text-white text-base">
+                    Related {selectedRelatedItem.notification_type?.toUpperCase() || 'NOTIFICATION'}
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                    {dayjs(selectedRelatedItem.received_at).format('MMM DD, h:mm A')}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
+                  ID: {selectedRelatedItem.id}
+                </p>
+              </div>
+              <button 
+                onClick={() => setSelectedRelatedItem(null)} 
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1 flex flex-col gap-3 text-sm">
+              {/* Message / Summary */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-150 dark:border-slate-800/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Raw / Summary Content
+                </span>
+                <p className="text-slate-800 dark:text-slate-200 font-medium text-xs whitespace-pre-wrap leading-relaxed">
+                  {selectedRelatedItem.ai_parsed?.summary || selectedRelatedItem.raw_msg}
+                </p>
+              </div>
+
+              {/* Parsed Details Grid */}
+              <div className="grid grid-cols-2 gap-2.5 p-3 bg-slate-50/50 dark:bg-slate-950/30 rounded-xl border border-slate-150 dark:border-slate-800/60 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Amount</span>
+                  <span className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                    ₱{Number(selectedRelatedItem.ai_parsed?.amount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Vendor</span>
+                  <span className="font-medium text-slate-800 dark:text-slate-200">
+                    {selectedRelatedItem.ai_parsed?.vendor?.name || 'Unassigned'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">From (Credit) Acc</span>
+                  <span className="font-medium text-slate-800 dark:text-slate-200 truncate block">
+                    {getAccountName(selectedRelatedItem.ai_parsed?.credit_account_id)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">To (Debit) Acc</span>
+                  <span className="font-medium text-slate-800 dark:text-slate-200 truncate block">
+                    {getAccountName(selectedRelatedItem.ai_parsed?.debit_account_id)}
+                  </span>
+                </div>
+                {selectedRelatedItem.ai_parsed?.reference_number && (
+                  <div className="col-span-2">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Ref Number</span>
+                    <span className="font-medium text-slate-800 dark:text-slate-200">
+                      {selectedRelatedItem.ai_parsed.reference_number}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* AI Reasoning */}
+              {selectedRelatedItem.ai_parsed?.why && (
+                <div className="p-2.5 bg-indigo-50/70 dark:bg-indigo-950/20 rounded-xl border border-indigo-100 dark:border-indigo-900/40 text-xs">
+                  <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block mb-1">
+                    AI Reasoning
+                  </span>
+                  <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                    {selectedRelatedItem.ai_parsed.why}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 bg-slate-50/50 dark:bg-slate-900/50 rounded-b-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  const itemToEdit = selectedRelatedItem
+                  setSelectedRelatedItem(null)
+                  onEditConfirm(itemToEdit)
+                }}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer"
+              >
+                Edit & Confirm This Notification
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmed Match Warning Banner */}
+      {hasConfirmedMatch && (
+        <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-200 text-xs">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="font-medium">
+              A confirmed transaction for this amount already exists.
+            </span>
+          </div>
+          {confirmedTxIds.length > 0 && onOpenTransaction && (
+            <button
+              onClick={() => onOpenTransaction(confirmedTxIds[0])}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-semibold text-[10px] hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors cursor-pointer"
+            >
+              View <ExternalLink className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Related Pending Notifications Banner */}
+      {relatedPendingItems.length > 0 && (
+        <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-blue-900 dark:text-blue-200 flex items-center gap-1.5 text-[11px]">
+              <Link2 className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              Related Notifications ({relatedPendingItems.length})
+            </span>
+            <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">
+              {definiteRelatedIds.length > 0 ? 'Exact Ref Match' : 'Same Amount & Time'}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {relatedPendingItems.map(item => {
+              const type = item.notification_type || 'app'
+              return (
+                <button
+                  type="button"
+                  key={item.id}
+                  onClick={() => setSelectedRelatedItem(item)}
+                  title="Click to view related notification details"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800/60 text-slate-700 dark:text-slate-300 shadow-2xs hover:bg-blue-100/70 dark:hover:bg-blue-900/50 hover:border-blue-300 dark:hover:border-blue-700 hover:text-blue-700 dark:hover:text-blue-200 transition-all cursor-pointer"
+                >
+                  {type === 'sms' && <MessageSquare className="w-2.5 h-2.5 text-cyan-600" />}
+                  {type === 'email' && <Mail className="w-2.5 h-2.5 text-emerald-600" />}
+                  {type === 'image' && <ImageIcon className="w-2.5 h-2.5 text-purple-600" />}
+                  {type === 'app' && <Bell className="w-2.5 h-2.5 text-indigo-600" />}
+                  <span className="capitalize">{type}</span>
+                  <span className="text-slate-400 font-normal">({dayjs(item.received_at).format('h:mm A')})</span>
+                  <ExternalLink className="w-2.5 h-2.5 text-slate-400 ml-0.5" />
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Proposed transaction details */}
       <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 dark:bg-slate-950/50 rounded-xl text-xs border border-slate-100 dark:border-slate-800/60">
@@ -425,6 +594,41 @@ export default function PendingIngestionCard({
             </span>
           </div>
         )}
+        {ingestion.ai_parsed.multi_order_items && ingestion.ai_parsed.multi_order_items.length > 1 && (
+          <div className="flex flex-col gap-2 col-span-2 mt-1 pt-2 border-t border-slate-200 dark:border-slate-800">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider">
+                Multi-Order Breakdown ({ingestion.ai_parsed.multi_order_items.length} Orders)
+              </span>
+              <span className="text-[10px] text-slate-400">1 Ingestion → 1 Tx (N+1 Entries)</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {ingestion.ai_parsed.multi_order_items.map((order, idx) => {
+                const vendorName = typeof order.vendor === 'string' ? order.vendor : order.vendor?.name || order.notes || `Order #${idx + 1}`
+                return (
+                  <div
+                    key={idx}
+                    className="flex justify-between items-center p-2 rounded-lg bg-orange-50/50 dark:bg-orange-950/20 border border-orange-200/60 dark:border-orange-900/40 text-xs"
+                  >
+                    <div className="flex flex-col gap-0.5 min-w-0 pr-2">
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                        {vendorName}
+                      </span>
+                      {order.reference_number && (
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                          ID: {order.reference_number}
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-bold text-slate-900 dark:text-slate-100 shrink-0">
+                      ₱{Number(order.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
  
       {/* Action buttons */}
@@ -452,6 +656,17 @@ export default function PendingIngestionCard({
             <Edit className="w-4 h-4" strokeWidth={2} />
             Edit
           </button>
+          {relatedPendingItems.length > 0 && (
+            <button
+              onClick={() => onQuickConfirm(ingestion, relatedPendingItems.map(i => i.id))}
+              disabled={isProcessing || (!ingestion.ai_parsed.vendor?.matched && hasMasks(ingestion.ai_parsed.vendor?.name))}
+              title="Confirm this transaction and auto-mark related notifications as duplicate"
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer shadow-xs disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
+            >
+              <Check className="w-4 h-4" strokeWidth={2.5} />
+              Merge & Confirm
+            </button>
+          )}
           <button
             onClick={() => onQuickConfirm(ingestion)}
             disabled={isProcessing || (!ingestion.ai_parsed.vendor?.matched && hasMasks(ingestion.ai_parsed.vendor?.name))}

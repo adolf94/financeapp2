@@ -19,10 +19,14 @@ class ExtractedAccountInfo:
     application: str
     potential_vendor_names: List[str]
     currency: str = "PHP"
+    reference_number: Optional[str] = None
+    amount: Optional[float] = None
+    date: Optional[str] = None
+    is_multi_order: bool = False
 
 
 class PreprocessingService:
-    """Service for extracting account information and vendor hints from raw text before AI classification"""
+    """Service for extracting account information, vendor hints, and key transaction fields from raw text before AI classification"""
     
     # AI prompt for extracting account/vendor information
     EXTRACTION_PROMPT = """
@@ -35,6 +39,13 @@ class PreprocessingService:
     2. **Account Names**: Any account holder/merchant/person names mentioned (e.g., "John Doe", "Merchant Name")
     3. **Potential Vendor Names**: Any store/merchant/business names mentioned
     4. **Currency**: The 3-letter currency code of the transaction (e.g., PHP, USD, SGD). Default to 'PHP' if no currency is explicitly mentioned or if it is ambiguous.
+    5. **Reference Number**: Any reference number, transaction ID, order number, or trace number if mentioned (e.g. "Ref No. 12345", "#260808R1R49PTC", "TXN9876"). Return null if none.
+    6. **Amount**: Total positive numeric monetary amount charged/transacted/paid (e.g., 1500.00). 
+       - Look for words like "Paid", "Sent", "Amount", "Total", "Total Payment", "Charged", "₱", "PHP", "$".
+       - For shopping or checkout emails (e.g., Shopee, Lazada), extract the GRAND TOTAL checkout / payment amount.
+       - Return ONLY a numeric float or integer (e.g. 1250.50), NOT a string. Return null ONLY if no numeric amount exists in the text.
+    7. **Date**: ISO8601 string or date/time string if a timestamp or date is explicitly mentioned in the message text. Return null if none.
+    8. **Is Multi Order**: Boolean (`true` or `false`). Set to `true` if this email/notification explicitly contains multiple (2 or more) separate merchant/seller orders paid in a single checkout. Otherwise `false`.
     
     CRITICAL FILTERING RULES:
     - If this appears to be a FUND TRANSFER between accounts (e.g., bank transfer, e-wallet transfer, payment to another person):
@@ -46,7 +57,11 @@ class PreprocessingService:
       "account_numbers": ["string"],
       "account_names": ["string"],
       "potential_vendor_names": ["string"],
-      "currency": "string"
+      "currency": "string",
+      "reference_number": "string" or null,
+      "amount": number or null,
+      "date": "string" or null,
+      "is_multi_order": boolean
     }}
     """
     
@@ -79,7 +94,10 @@ class PreprocessingService:
                 "account_numbers": [],
                 "account_names": [],
                 "potential_vendor_names": [],
-                "currency": "PHP"
+                "currency": "PHP",
+                "reference_number": None,
+                "amount": None,
+                "date": None,
             }
         finally:
             if self._prompt_debug:
@@ -274,10 +292,22 @@ class PreprocessingService:
         self.logger.info(f"[PreprocessingService] Found {len(extracted_data.get('potential_vendor_names', []))} potential vendor names: {extracted_data.get('potential_vendor_names', [])}")
         self.logger.info(f"[PreprocessingService] Application: {application}")
         
+        raw_amt = extracted_data.get("amount")
+        parsed_amount = None
+        if raw_amt is not None:
+            try:
+                parsed_amount = float(raw_amt)
+            except (ValueError, TypeError):
+                parsed_amount = None
+
         return ExtractedAccountInfo(
             account_numbers=extracted_data.get("account_numbers", []),
             account_names=extracted_data.get("account_names", []),
             application=application,
             potential_vendor_names=extracted_data.get("potential_vendor_names", []),
-            currency=extracted_data.get("currency", "PHP") or "PHP"
+            currency=extracted_data.get("currency", "PHP") or "PHP",
+            reference_number=extracted_data.get("reference_number"),
+            amount=parsed_amount,
+            date=extracted_data.get("date"),
+            is_multi_order=bool(extracted_data.get("is_multi_order", False))
         )

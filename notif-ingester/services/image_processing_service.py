@@ -255,7 +255,7 @@ class ImageProcessingService(IngestionService):
         vendors = await self._finance_api_service.get_vendors_async(user_id)
 
         # 3. Pass 1: Pre-process OCR & lookup database vendor matches
-        vendor_matches, inferred_app, app_source, _ = await self._preprocess_image_and_find_vendor_matches_async(
+        vendor_matches, inferred_app, app_source, extracted_ocr_info = await self._preprocess_image_and_find_vendor_matches_async(
             image_bytes=image_bytes,
             mime_type=mime_type,
             filename=filename,
@@ -268,7 +268,20 @@ class ImageProcessingService(IngestionService):
         if description and not corrections.get("comment"):
             corrections["comment"] = description
 
-        # 4. Pass 2: Classify image with multimodal AI with vendor match context
+        # 3.6 Early relation context
+        related_context = ""
+        if extracted_ocr_info:
+            ocr_ref = getattr(extracted_ocr_info, "reference_number", None)
+            ocr_amt = getattr(extracted_ocr_info, "amount", None)
+            related_context = await self._build_related_context_async(
+                user_id=user_id,
+                reference_number=ocr_ref,
+                amount=ocr_amt,
+                effective_time=now,
+                exclude_id=target_id
+            )
+
+        # 4. Pass 2: Classify image with multimodal AI with vendor match context and relations
         ai_parsed: AiParsedData = await self._ai_service.classify_image_async(
             image_bytes=image_bytes,
             mime_type=mime_type,
@@ -286,6 +299,7 @@ class ImageProcessingService(IngestionService):
             connection_id=connection_id,
             stream_reasoning_to_client=stream_reasoning,
             user_corrections=corrections if corrections else None,
+            related_context=related_context,
         )
 
 
@@ -325,6 +339,8 @@ class ImageProcessingService(IngestionService):
 
         if ai_parsed.is_financial is False:
             ingestion.ttl = 7 * 24 * 60 * 60  # 7 days
+        else:
+            await self.detect_and_link_relations_async(ingestion)
 
         # 7. Save to CosmosDB
         saved_ingestion = await self._repo.add_async(ingestion)

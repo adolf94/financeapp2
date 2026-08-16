@@ -11,6 +11,7 @@ namespace FinanceApp.Interfaces
         Task UpdateTransactionAsync(Transaction transaction, IEnumerable<LedgerEntry> oldEntries);
         Task DeleteTransactionAsync(string userId, string id);
         Task LinkRecurringOccurrenceAsync(string userId, string scheduleId, string transactionId, DateTime date);
+        Task<IEnumerable<LedgerEntry>> SearchLedgerEntriesAsync(string userId, string? referenceNumber, decimal? amount, DateTime? aroundDate, int windowMinutes = 5);
         Task SaveChangesAsync();
     }
 }

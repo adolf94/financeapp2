@@ -45,7 +45,7 @@ export default function PendingIngestionsList({ filter, viewMode = 'Pending', on
     return accounts.find(a => a.id === id)?.name ?? 'Unknown Account'
   }
 
-  const handleQuickConfirm = (ingestion: PendingIngestion) => {
+  const handleQuickConfirm = (ingestion: PendingIngestion, dismissRelatedIds?: string[]) => {
     setProcessingIds(prev => [...prev, ingestion.id])
     confirmMutation.mutate({
       id: ingestion.id,
@@ -56,7 +56,9 @@ export default function PendingIngestionsList({ filter, viewMode = 'Pending', on
         debit_account_id: ingestion.ai_parsed.debit_account_id,
         credit_account_id: ingestion.ai_parsed.credit_account_id,
         notes: ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ''
-      }
+      },
+      dismissRelatedIds: dismissRelatedIds || [],
+      dismissStatus: 'Duplicate'
     }, {
       onSettled: () => {
         setProcessingIds(prev => prev.filter(id => id !== ingestion.id))
@@ -179,6 +181,7 @@ export default function PendingIngestionsList({ filter, viewMode = 'Pending', on
             <PendingIngestionCard
               key={ingestion.id}
               ingestion={ingestion}
+              allPendingIngestions={ingestionsWithTypes}
               getAccountName={getAccountName}
               groups={groups}
               isProcessing={processingIds.includes(ingestion.id)}

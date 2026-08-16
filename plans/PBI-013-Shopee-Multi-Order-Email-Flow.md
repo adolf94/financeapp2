@@ -88,11 +88,19 @@ Instead of creating N separate `PendingIngestion` records, the multi-order path 
 
 ### `ExtractedAccountInfo` (preprocessing_service.py)
 
-No changes — `is_multi_order` field is **not needed**. Detection is done by the LLM.
+`is_multi_order` is **not needed** — detection is done by the LLM. However, per PBI-010's updated preprocessing step, `ExtractedAccountInfo` now also carries:
+
+```python
+reference_number: Optional[str] = None   # extracted from raw text pre-classify
+amount: Optional[float] = None           # extracted from raw text pre-classify
+date: Optional[str] = None               # ISO string from raw text pre-classify
+```
+
+For Shopee emails, `amount` extracted here is the **total checkout amount** (what the preprocessing AI sees from the email body). This is the value used by step 3.6 (early relation lookup) to find the matching SMS/app notification — removing the need for a separate late-stage amount computation in `_resolve_source_account_async`.
 
 ### `PendingIngestion` (pending_ingestion.py)
 
-Ensure PBI-010 relation fields exist (add if not yet present):
+Relation fields are **already implemented** ✅ (done in PBI-010):
 
 ```python
 class PendingIngestion(BaseModel):
@@ -130,32 +138,48 @@ When confirming a Shopee multi-order ingestion, the C# backend receives:
 | File/Component | Change |
 |---|---|
 | `services/email_processing_service.py` | Always call `classify_email_shopee_async()` for Shopee emails; inspect response — if array → `_process_multi_order_async()`, if object → standard single path |
-| `services/email_processing_service.py` | Add `_process_multi_order_async(hook, orders, total_amount, accounts, runbook)` — builds **1 PendingIngestion** with multi-order metadata embedded; calls `_resolve_source_account_async()` |
-| `services/email_processing_service.py` | Add `_resolve_source_account_async(total_amount, received_at, user_id)` — queries pending ingestion repo (and optionally confirmed LedgerEntries), patches `credit_account_id`, back-ports link to matched SMS/app ingestion |
-| `repositories/ingestion_repository.py` | Add `find_by_amount_and_time_async(user_id, amount, around_time, window_minutes=5) -> List[PendingIngestion]` — reusable by PBI-010 general detection too |
-| `services/ai_service.py` | Add `classify_email_shopee_async()` — uses `SHOPEE_MULTI_ORDER_PROMPT`, handles response as either list (multi) or single object |
-| `prompts/email_prompts.py` | Add `SHOPEE_MULTI_ORDER_PROMPT` — instructs LLM to extract each order separately; also extract `total_checkout_amount` |
-| `models/pending_ingestion.py` | Ensure PBI-010 relation fields exist; add `multi_order_items: List[dict] = []` to `AiParsedData` for storing per-order breakdown |
+| `services/email_processing_service.py` | Add `_process_multi_order_async(hook, orders, total_amount, accounts, runbook)` — builds **1 PendingIngestion** with multi-order metadata embedded; uses `credit_account_id` resolved from step 3.6 `related_context` (see PBI-010 pipeline) |
+| `services/email_processing_service.py` | `_resolve_source_account_async()` is now a **thin wrapper** over PBI-010's step 3.6 early relation lookup. It reads the pre-resolved candidate from `related_context` rather than running its own independent query. Falls back to direct repo query only if step 3.6 produced no candidates. |
+| `repositories/ingestion_repository.py` | `find_by_amount_and_time_async(user_id, amount, around_time, window_minutes=5) -> List[PendingIngestion]` — already exists ✅; shared by PBI-010 step 3.6 and this PBI |
+| `services/ai_service.py` | `classify_email_shopee_async()` — uses `SHOPEE_MULTI_ORDER_PROMPT`; also receives `related_context` block (same as all other classify methods per PBI-010 step 4) |
+| `prompts/email_prompts.py` | `SHOPEE_MULTI_ORDER_PROMPT` — instructs LLM to extract each order separately; also extract `total_checkout_amount`; includes `{related_context}` placeholder |
+| `models/pending_ingestion.py` | Relation fields already present ✅; `multi_order_items: List[dict] = []` on `AiParsedData` for per-order breakdown |
 | `runbooks/shopee_email_runbook.md` *(new)* | Shopee-specific classification rules — always loaded when sender is Shopee |
 
 ---
 
 ## Source Account Resolution Logic
 
+Per the updated PBI-010 pipeline, **source account resolution is now driven by step 3.6 (early relation lookup)** which runs before the LLM classify call. For Shopee emails:
+
 ```
-# email.received_at = original send time from email Date header (not IMAP fetch time)
-total_payment = sum of all order Total Payments parsed from email
-candidates = repo.find_by_amount_and_time_async(user_id, total_payment, email.received_at, window=5)
+# Step 3.5 — Preprocessing extracts total_checkout_amount and email send time
+# (email.received_at = original send time from Date header, not IMAP fetch time)
+extracted_info.amount = total_checkout_amount   # from preprocessing AI
+extracted_info.date   = email send time (ISO)
 
-if candidates:
-    best = pick candidate with highest confidence / earliest received_at
-    credit_account_id = best.ai_parsed.credit_account_id  # e.g., BPI Credit Card
+# Step 3.6 — Early relation lookup (shared PBI-010 logic)
+candidates = repo.find_by_amount_and_time_async(
+    user_id, extracted_info.amount, resolved_effective_time, window=5
+)
+confirmed  = finance_api.search_confirmed_ledger_entries_async(...)
 
-    shopee_ingestion.ai_parsed.credit_account_id = credit_account_id  # applied to credit LedgerEntry on confirm
-    shopee_ingestion.possible_related_ingestion_ids.append(best.id)
+related_context = format_related_context(candidates, confirmed)
+# → e.g. "[POSSIBLE] GCash SMS, PHP 1250.00, within 3 min — Credit: BPI Credit Card"
 
-    best.possible_related_ingestion_ids.append(shopee_ingestion.id)
-    repo.update_async(best)  # back-port the link
+# Step 4 — Shopee classify receives related_context
+classify_email_shopee_async(..., related_context=related_context)
+# LLM uses this to infer credit_account_id from the matched SMS/app notification
+
+# Post-classify (_resolve_source_account_async thin wrapper)
+if not ai_parsed.credit_account_id and candidates:
+    best = candidates[0]
+    ai_parsed.credit_account_id = best.ai_parsed.credit_account_id
+
+shopee_ingestion.possible_related_ingestion_ids.append(best.id)
+best.possible_related_ingestion_ids.append(shopee_ingestion.id)
+repo.update_async(best)  # back-port the link
+# Full persist-and-link is handled by detect_and_link_relations_async in step 6.5
 ```
 
 ---
@@ -164,11 +188,14 @@ if candidates:
 
 | PBI-010 Concept | Usage in This PBI |
 |---|---|
-| `possible_related_ingestion_ids` | SMS/notif ingestion that revealed the card account, linked to the Shopee ingestion |
+| `ExtractedAccountInfo.amount` / `.date` | Preprocessing extracts total checkout amount + send time — feeds directly into step 3.6 early lookup |
+| Step 3.6 early relation lookup | Shared logic; finds matching SMS/app notification pre-classify; produces `related_context` |
+| `CLASSIFICATION_PROMPT` `{related_context}` block | `SHOPEE_MULTI_ORDER_PROMPT` also includes this placeholder — LLM infers `credit_account_id` from matched SMS |
+| `possible_related_ingestion_ids` | SMS/notif ingestion that revealed the card account, cross-linked to the Shopee ingestion |
 | `related_transaction_ids` | Populated after Shopee ingestion is confirmed (link to confirmed transaction) |
 | `LedgerEntry.ReferenceNumber` | Stores Order ID per debit entry — enables per-order duplicate detection on re-ingestion |
-| `find_by_amount_and_time_async` | New shared repo method — reusable by PBI-010 general detection |
-| Back-port linking | Source SMS/notif ingestion updated to link back to the Shopee ingestion |
+| `find_by_amount_and_time_async` | Shared repo method ✅ already implemented; used by both PBI-010 step 3.6 and this PBI |
+| Back-port linking | Handled by `detect_and_link_relations_async` in step 6.5 (post-classify) |
 | Email timestamp | `received_at` = original email send time (from `Date` header), not IMAP fetch time — ensures accurate 5-min window match |
 
 ---

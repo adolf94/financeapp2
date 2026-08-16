@@ -43,6 +43,13 @@ export interface AiParsedData {
   user_why?: string | null
   suggested_rule?: string | null
   is_auto_confirmed?: boolean | null
+  multi_order_items?: Array<{
+    amount: number
+    reference_number?: string | null
+    vendor?: AiVendorInfo | string | null
+    debit_account_id?: string | null
+    notes?: string | null
+  }> | null
 }
 
 export interface PendingIngestion {
@@ -61,6 +68,16 @@ export interface PendingIngestion {
   month_key: string
   partition_key: string
   notification_type: string
+  related_ingestion_ids?: string[]
+  related_transaction_ids?: string[]
+  possible_related_ingestion_ids?: string[]
+  possible_related_transaction_ids?: string[]
+  has_possible_confirmed_match?: boolean
+  RelatedIngestionIds?: string[]
+  RelatedTransactionIds?: string[]
+  PossibleRelatedIngestionIds?: string[]
+  PossibleRelatedTransactionIds?: string[]
+  HasPossibleConfirmedMatch?: boolean
   runbook_synced?: boolean
 }
 
@@ -109,7 +126,21 @@ export function useGetIngestionById(id?: string | null) {
 export function useConfirmIngestion() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ id, userConfirmed, transactionId, skipLearning }: { id: string; userConfirmed: Partial<AiParsedData>; transactionId?: string; skipLearning?: boolean }) => {
+    mutationFn: async ({
+      id,
+      userConfirmed,
+      transactionId,
+      skipLearning,
+      dismissRelatedIds,
+      dismissStatus = 'Duplicate'
+    }: {
+      id: string
+      userConfirmed: Partial<AiParsedData>
+      transactionId?: string
+      skipLearning?: boolean
+      dismissRelatedIds?: string[]
+      dismissStatus?: 'Duplicate' | 'Merged'
+    }) => {
       // Step 1: Create transaction in C#
       let txId = transactionId;
       if (!txId) {
@@ -123,7 +154,9 @@ export function useConfirmIngestion() {
       const pyResponse = await ingesterClient.post(`/ingestions/${id}/confirm-status`, {
         transaction_id: txId,
         user_confirmed: userConfirmed,
-        skip_learning: skipLearning || false
+        skip_learning: skipLearning || false,
+        dismiss_related_ids: dismissRelatedIds || [],
+        dismiss_status: dismissStatus
       })
       
       return pyResponse.data

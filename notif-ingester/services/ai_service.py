@@ -11,7 +11,7 @@ from services.llm_provider import LlmProvider, make_provider
 from repositories.prompt_debug_repository import IPromptDebugRepository, NoOpPromptDebugRepository
 from prompts.sms_prompts import SMS_IS_FINANCIAL_PROMPT, SMS_EXTRACTION_PROMPT, SMS_CLASSIFICATION_PROMPT
 from prompts.app_prompts import APP_IS_FINANCIAL_PROMPT, APP_CLASSIFICATION_PROMPT
-from prompts.email_prompts import EMAIL_CLASSIFICATION_PROMPT
+from prompts.email_prompts import EMAIL_CLASSIFICATION_PROMPT, SHOPEE_MULTI_ORDER_PROMPT
 from prompts.image_prompts import IMAGE_CLASSIFICATION_PROMPT
 
 RUNBOOK_REVIEW_PROMPT = """
@@ -629,6 +629,11 @@ Return ONLY valid JSON matching this schema:
             return data.get("is_financial", True) # Default to true if ambiguous
         except Exception as e:
             logging.error(f"Error checking if financial transaction: {e}")
+    def _format_related_context(self, related_context: str = "") -> str:
+        if not related_context or not related_context.strip():
+            return ""
+        return f"\nRelated Transactions Context (reference and cross-verification):\n{related_context.strip()}\n"
+
     def _format_user_corrections(self, user_corrections: Optional[dict], accounts: list[dict] = None) -> tuple[str, str]:
         if not user_corrections:
             return "", ""
@@ -687,7 +692,8 @@ Return ONLY valid JSON matching this schema:
         connection_id: str = None,
         stream_reasoning_to_client: bool = True,
         exchange_rate_info: str = "",
-        user_corrections: Optional[dict] = None
+        user_corrections: Optional[dict] = None,
+        related_context: str = ""
     ) -> AiParsedData:
         
         context = self._build_context(similar_vectors)
@@ -699,6 +705,7 @@ Return ONLY valid JSON matching this schema:
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
 
         user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
+        related_context_section = self._format_related_context(related_context)
 
         # Resolve a clean app name from the hook data
         app_name = hook.raw_payload.get("notif_pkg") or hook.raw_payload.get("sms_rcv_sender") or hook.raw_payload.get("sms_sender") or ""
@@ -719,6 +726,7 @@ Return ONLY valid JSON matching this schema:
             accounts=accounts_text,
             vendors=vendors_text,
             vendor_matches=vendor_matches_text,
+            related_context=related_context_section,
             user_corrections_section=user_corrections_section,
             suggested_rule_field=suggested_rule_field,
             exchange_rate_info=exchange_rate_info,
@@ -772,7 +780,8 @@ Return ONLY valid JSON matching this schema:
         connection_id: str = None,
         stream_reasoning_to_client: bool = True,
         exchange_rate_info: str = "",
-        user_corrections: Optional[dict] = None
+        user_corrections: Optional[dict] = None,
+        related_context: str = ""
     ) -> AiParsedData:
         """Classify using SMS-specific prompt (tailored for SMS banking messages)."""
         context = self._build_context(similar_vectors)
@@ -780,6 +789,7 @@ Return ONLY valid JSON matching this schema:
         vendors_text = self._format_vendors(vendors)
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
         user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
+        related_context_section = self._format_related_context(related_context)
 
         # Resolve SMS sender from payload
         app_name = (
@@ -805,6 +815,7 @@ Return ONLY valid JSON matching this schema:
             accounts=accounts_text,
             vendors=vendors_text,
             vendor_matches=vendor_matches_text,
+            related_context=related_context_section,
             user_corrections_section=user_corrections_section,
             suggested_rule_field=suggested_rule_field,
             exchange_rate_info=exchange_rate_info,
@@ -857,7 +868,8 @@ Return ONLY valid JSON matching this schema:
         connection_id: str = None,
         stream_reasoning_to_client: bool = True,
         exchange_rate_info: str = "",
-        user_corrections: Optional[dict] = None
+        user_corrections: Optional[dict] = None,
+        related_context: str = ""
     ) -> AiParsedData:
         """Classify using Email-specific prompt (tailored for email receipts/statements)."""
         context = self._build_context(similar_vectors)
@@ -865,6 +877,7 @@ Return ONLY valid JSON matching this schema:
         vendors_text = self._format_vendors(vendors)
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
         user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
+        related_context_section = self._format_related_context(related_context)
 
         sender = hook.raw_payload.get("sender") or ""
         subject = hook.raw_payload.get("subject") or ""
@@ -885,6 +898,7 @@ Return ONLY valid JSON matching this schema:
             accounts=accounts_text,
             vendors=vendors_text,
             vendor_matches=vendor_matches_text,
+            related_context=related_context_section,
             user_corrections_section=user_corrections_section,
             suggested_rule_field=suggested_rule_field,
             exchange_rate_info=exchange_rate_info,
@@ -926,6 +940,108 @@ Return ONLY valid JSON matching this schema:
 
         return AiParsedData(**data)
 
+    async def classify_email_shopee_async(
+        self,
+        hook: PhoneHookMessage,
+        similar_vectors: List[Tuple[TransactionVector, float]],
+        accounts: list[dict],
+        runbook_content: str,
+        vendors: list[dict] | list[str] = None,
+        vendor_matches: list[dict] = None,
+        operation_id: str = None,
+        connection_id: str = None,
+        stream_reasoning_to_client: bool = True,
+        exchange_rate_info: str = "",
+        user_corrections: Optional[dict] = None,
+        related_context: str = ""
+    ) -> AiParsedData:
+        """Classify Shopee email, detecting multi-order checkout or single-order."""
+        context = self._build_context(similar_vectors)
+        accounts_text = self._format_accounts(accounts)
+        vendors_text = self._format_vendors(vendors)
+        vendor_matches_text = self._format_vendor_matches(vendor_matches)
+        user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
+        related_context_section = self._format_related_context(related_context)
+
+        sender = hook.raw_payload.get("sender") or "Shopee"
+        subject = hook.raw_payload.get("subject") or ""
+        email_body = hook.raw_payload.get("markdown_content") or hook.raw_payload.get("body") or hook.raw_msg
+
+        prompt = SHOPEE_MULTI_ORDER_PROMPT.format(
+            runbook_content=runbook_content,
+            body=email_body,
+            sender=sender,
+            subject=subject,
+            accounts=accounts_text,
+            vendors=vendors_text,
+            vendor_matches=vendor_matches_text,
+            related_context=related_context_section,
+            user_corrections_section=user_corrections_section,
+            suggested_rule_field=suggested_rule_field,
+            exchange_rate_info=exchange_rate_info
+        )
+
+        system_instruction = "You are an expert personal finance assistant. Accurately extract all Shopee orders and payment amounts from the checkout email."
+
+        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
+            self.classification_provider,
+            prompt=prompt,
+            system=system_instruction,
+            json_mode=True,
+            include_reasoning=True,
+            target="reclassifyProgress",
+            operation_id=operation_id,
+            user_id=hook.user_id,
+            connection_id=connection_id,
+            stream_reasoning_to_client=stream_reasoning_to_client
+        )
+
+        await self._debug_log(
+            "classify_shopee",
+            self.classification_provider,
+            prompt,
+            response_text,
+            system=system_instruction,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            cost=cost,
+            notification_type="email",
+        )
+
+        raw_parsed = self._extract_json(response_text)
+
+        # Multi-order response handling (array response or dict with orders array)
+        if isinstance(raw_parsed, list):
+            orders = raw_parsed
+            total_amt = sum(float(o.get("amount", 0)) for o in orders)
+            primary_vendor = {"name": "Shopee", "type": "Business", "matched": True, "lookups": ["Shopee"], "tags": ["shopping", "ecommerce"]}
+            summary = f"Shopee checkout ({len(orders)} orders) totaling ₱{total_amt:,.2f}"
+            return AiParsedData(
+                is_financial=True,
+                vendor=primary_vendor,
+                amount=total_amt,
+                transaction_type="Expense",
+                notes=f"Shopee checkout ({len(orders)} orders)",
+                summary=summary,
+                confidence=0.95,
+                application="Shopee",
+                why=f"Multi-order Shopee checkout with {len(orders)} orders extracted.",
+                multi_order_items=orders
+            )
+        elif isinstance(raw_parsed, dict) and (raw_parsed.get("is_multi_order") or (raw_parsed.get("orders") and len(raw_parsed["orders"]) > 1)):
+            orders = raw_parsed.get("orders", [])
+            total_amt = raw_parsed.get("total_checkout_amount") or raw_parsed.get("amount") or sum(float(o.get("amount", 0)) for o in orders)
+            raw_parsed["amount"] = total_amt
+            raw_parsed["multi_order_items"] = orders
+            raw_parsed["application"] = "Shopee"
+            if not raw_parsed.get("summary"):
+                raw_parsed["summary"] = f"Shopee checkout ({len(orders)} orders) totaling ₱{total_amt:,.2f}"
+            return AiParsedData(**raw_parsed)
+        else:
+            if not raw_parsed.get("application"):
+                raw_parsed["application"] = "Shopee"
+            return AiParsedData(**raw_parsed)
+
     async def classify_image_async(
         self,
         image_bytes: bytes,
@@ -944,6 +1060,7 @@ Return ONLY valid JSON matching this schema:
         connection_id: str = None,
         stream_reasoning_to_client: bool = True,
         user_corrections: Optional[dict] = None,
+        related_context: str = ""
     ) -> AiParsedData:
         """Classify a financial receipt/statement using multimodal vision AI."""
         context = self._build_context(similar_vectors)
@@ -951,6 +1068,7 @@ Return ONLY valid JSON matching this schema:
         vendors_text = self._format_vendors(vendors)
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
         user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
+        related_context_section = self._format_related_context(related_context)
 
         from prompts.image_prompts import APP_BRANDING_GUIDELINES
         desc_section = f"User Note / Description: {description}" if description else ""
@@ -974,6 +1092,7 @@ Return ONLY valid JSON matching this schema:
             vendors=vendors_text,
             vendor_matches=vendor_matches_text,
             similar_context=context,
+            related_context=related_context_section,
             user_corrections_section=user_corrections_section,
             suggested_rule_field=suggested_rule_field,
         )
@@ -1092,7 +1211,7 @@ Return ONLY valid JSON matching this schema:
 """
         system_instruction = "You are a helpful assistant. Provide a concise summary and extract details."
         
-        response_text, in_tok, out_tok = await self.classification_provider.generate(
+        response_text, in_tok, out_tok, cost = await self.classification_provider.generate(
             prompt=prompt,
             system=system_instruction,
             json_mode=True,

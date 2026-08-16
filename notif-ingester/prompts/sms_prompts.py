@@ -111,7 +111,7 @@ Existing Vendors:
 
 Vendor Matches Found (via account number/name lookup):
 {vendor_matches}
-{user_corrections_section}
+{related_context}{user_corrections_section}
 
 ==================================================
 Now classify the following SMS transaction:

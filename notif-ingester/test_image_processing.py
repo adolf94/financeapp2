@@ -21,6 +21,7 @@ def test_image_classification_prompt_formatting():
         vendors="Existing vendors text",
         vendor_matches="Vendor matches text",
         similar_context="Similar context text",
+        related_context="",
         user_corrections_section="",
         suggested_rule_field="",
     )

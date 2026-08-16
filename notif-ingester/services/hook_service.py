@@ -1,6 +1,7 @@
 from models.phone_hook import PhoneHookMessage
 from repositories.hook_repository import IHookRepository
 from datetime import datetime, timezone
+from uuid_extensions import uuid7
 import json
 
 class HookService:

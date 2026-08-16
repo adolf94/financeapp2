@@ -17,3 +17,13 @@ class TransactionType(str, Enum):
     Expense = "Expense"
     Transfer = "Transfer"
     Journal = "Journal"
+
+class IngestionStatus(str, Enum):
+    Pending = "Pending"
+    AutoConfirmed = "AutoConfirmed"
+    Confirmed = "Confirmed"
+    Rejected = "Rejected"
+    NonFinancial = "NonFinancial"
+    Duplicate = "Duplicate"
+    Merged = "Merged"
+

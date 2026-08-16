@@ -69,6 +69,27 @@ namespace FinanceApp.Models
 
         [JsonPropertyName("date")]
         public DateTime? Date { get; set; }
+
+        [JsonPropertyName("multi_order_items")]
+        public List<MultiOrderItem>? MultiOrderItems { get; set; }
+    }
+
+    public class MultiOrderItem
+    {
+        [JsonPropertyName("amount")]
+        public decimal Amount { get; set; }
+
+        [JsonPropertyName("reference_number")]
+        public string? ReferenceNumber { get; set; }
+
+        [JsonPropertyName("vendor")]
+        public AiVendorInfo? Vendor { get; set; }
+
+        [JsonPropertyName("debit_account_id")]
+        public string? DebitAccountId { get; set; }
+
+        [JsonPropertyName("notes")]
+        public string? Notes { get; set; }
     }
 
     public class AiVendorInfo

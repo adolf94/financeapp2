@@ -10,7 +10,11 @@ def parse_connection_string(conn_str: str):
         if '=' in part:
             k, v = part.split('=', 1)
             dict_conn[k.strip()] = v.strip()
-    return dict_conn.get("Endpoint"), dict_conn.get("AccessKey")
+    endpoint = dict_conn.get("Endpoint")
+    port = dict_conn.get("Port")
+    if endpoint and port and f":{port}" not in endpoint:
+        endpoint = f"{endpoint}:{port}"
+    return endpoint, dict_conn.get("AccessKey")
 
 def generate_jwt_token(audience: str, access_key: str):
     payload = {

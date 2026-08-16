@@ -56,7 +56,17 @@ namespace FinanceApp.Services
             {
                 existing.Type = vendor.Type ?? existing.Type;
                 existing.Tags = vendor.Tags.Any() ? vendor.Tags : existing.Tags;
-                existing.LastUsed = vendor.LastUsed ?? existing.LastUsed ?? DateTime.UtcNow;
+                if (vendor.LastUsed.HasValue)
+                {
+                    if (!existing.LastUsed.HasValue || vendor.LastUsed.Value > existing.LastUsed.Value)
+                    {
+                        existing.LastUsed = vendor.LastUsed.Value;
+                    }
+                }
+                else if (!existing.LastUsed.HasValue)
+                {
+                    existing.LastUsed = DateTime.UtcNow;
+                }
                 await _repository.UpdateVendorAsync(userId, existing);
                 return existing;
             }
@@ -92,7 +102,17 @@ namespace FinanceApp.Services
             {
                 vendor.Tags = new List<string>();
             }
-            vendor.LastUsed ??= existing?.LastUsed ?? DateTime.UtcNow;
+            if (vendor.LastUsed.HasValue)
+            {
+                if (existing?.LastUsed.HasValue == true && existing.LastUsed.Value > vendor.LastUsed.Value)
+                {
+                    vendor.LastUsed = existing.LastUsed.Value;
+                }
+            }
+            else
+            {
+                vendor.LastUsed = existing?.LastUsed ?? DateTime.UtcNow;
+            }
             await _repository.UpdateVendorAsync(userId, vendor);
             return vendor;
         }

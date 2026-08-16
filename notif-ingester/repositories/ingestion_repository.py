@@ -19,6 +19,14 @@ class IIngestionRepository(ABC):
         pass
 
     @abstractmethod
+    async def find_candidates_for_relation_async(self, user_id: str, days_lookback: int = 30) -> list[PendingIngestion]:
+        pass
+
+    @abstractmethod
+    async def find_by_amount_and_time_async(self, user_id: str, amount: float, around_time, window_minutes: int = 5) -> list[PendingIngestion]:
+        pass
+
+    @abstractmethod
     async def update_async(self, ingestion: PendingIngestion) -> None:
         pass
 
@@ -97,6 +105,76 @@ class CosmosIngestionRepository(IIngestionRepository):
 
         results.sort(key=get_sort_key, reverse=True)
         return results[skip : skip + top]
+
+    async def find_candidates_for_relation_async(self, user_id: str, days_lookback: int = 30) -> list[PendingIngestion]:
+        container = await self._get_container()
+        # Query items for this user within the lookback window or currently pending
+        cutoff = datetime.now(timezone.utc).timestamp() - (days_lookback * 24 * 60 * 60)
+        cutoff_iso = datetime.fromtimestamp(cutoff, tz=timezone.utc).isoformat()
+        
+        query = (
+            "SELECT * FROM c "
+            "WHERE c.UserId = @user_id AND (c.received_at >= @cutoff OR c.status = 'Pending')"
+        )
+        parameters = [
+            {"name": "@user_id", "value": user_id},
+            {"name": "@cutoff", "value": cutoff_iso}
+        ]
+        items = container.query_items(
+            query=query,
+            parameters=parameters
+        )
+        results = []
+        async for item in items:
+            try:
+                results.append(PendingIngestion(**item))
+            except Exception:
+                pass
+        return results
+
+    async def find_by_amount_and_time_async(self, user_id: str, amount: float, around_time, window_minutes: int = 5) -> list[PendingIngestion]:
+        from datetime import timedelta
+        if isinstance(around_time, str):
+            try:
+                around_dt = datetime.fromisoformat(around_time.replace("Z", "+00:00"))
+            except Exception:
+                around_dt = datetime.now(timezone.utc)
+        elif isinstance(around_time, datetime):
+            around_dt = around_time
+        else:
+            around_dt = datetime.now(timezone.utc)
+
+        if around_dt.tzinfo is None:
+            around_dt = around_dt.replace(tzinfo=timezone.utc)
+
+        min_dt_iso = (around_dt - timedelta(minutes=window_minutes)).isoformat()
+        max_dt_iso = (around_dt + timedelta(minutes=window_minutes)).isoformat()
+
+        container = await self._get_container()
+        query = (
+            "SELECT * FROM c "
+            "WHERE c.UserId = @user_id AND c.received_at >= @min_time AND c.received_at <= @max_time"
+        )
+        parameters = [
+            {"name": "@user_id", "value": user_id},
+            {"name": "@min_time", "value": min_dt_iso},
+            {"name": "@max_time", "value": max_dt_iso}
+        ]
+        items = container.query_items(
+            query=query,
+            parameters=parameters
+        )
+        results = []
+        target_amount = round(abs(float(amount)), 2)
+        async for item in items:
+            try:
+                ing = PendingIngestion(**item)
+                cand_amount = ing.ai_parsed.amount if ing.ai_parsed else None
+                if cand_amount is not None and round(abs(float(cand_amount)), 2) == target_amount:
+                    results.append(ing)
+            except Exception:
+                pass
+        return results
 
     async def update_async(self, ingestion: PendingIngestion) -> None:
         container = await self._get_container()

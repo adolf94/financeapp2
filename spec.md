@@ -50,6 +50,17 @@ Users need a structured way to mirror their real-world financial accounts within
   7. **Learn:** On confirmation, `POST /ingestions/{id}/learn` embeds the confirmed transaction and stores a `TransactionVector` for future similarity lookups.
   8. **Historical Import:** `GET /historical-hooks` and `POST /historical-hooks/{id}/import` allow migrating past notifications from a legacy CosmosDB database into the new pipeline.
   9. **Multimodal Image Ingestion:** Receipt, invoice, and bank statement images can be uploaded via `POST /image_hook` (accepting `multipart/form-data` with Bearer auth). Images are stored in Azure Blob Storage (`receipt-images` container) for review/auditing, processed in a single inference step via multimodal AI (`ImageProcessingService` using `runbook-image`), and queued as `PendingIngestion` records (`notification_type = "image"`). Users can preview the receipt image alongside AI parsed fields in the UI before confirming.
+  10. **Related Transactions Detection Across Notification Types:**
+      - Automatically detects related notifications and cross-checks with confirmed ledger entries:
+        - **Definite Match:** Matching non-empty `reference_number` within a 30-day window.
+        - **Possible Match:** Same amount (absolute value, 2 decimal places) and effective timestamps within a **5-minute** window.
+        - **Confirmed Transaction Cross-Check:** Queries confirmed `LedgerEntry` records (by `reference_number` within 30 days or `amount` + `Transaction.Date` within 5-min window). Populates `related_transaction_ids` and flags `has_possible_confirmed_match: true`.
+      - **Back-Porting (Mandatory):** Matched existing pending ingestions are updated with links to newly ingested items.
+      - **User Actions:** UI displays related notification badges and duplicate warnings with a "Merge & Confirm" action that confirms the selected item and marks related pending items as `Duplicate` or `Merged`.
+  11. **Shopee Multi-Order Email Ingestion Flow:**
+      - **Multi-Order Detection:** Shopee payment confirmation emails are routed to `classify_email_shopee_async()` using `SHOPEE_MULTI_ORDER_PROMPT` to extract N orders in a single checkout.
+      - **1 Ingestion → 1 Transaction, N+1 LedgerEntries:** Maps 1 Shopee email to 1 `PendingIngestion` and 1 `Transaction` with 1 credit entry (total checkout amount) and N debit entries (one per order, each with its Order ID as `reference_number`).
+      - **Source Account Resolution:** Cross-references recent SMS/app notification candidates within a 5-minute window matching the total checkout amount to resolve the source credit card account ID (`credit_account_id`) and cross-links via `possible_related_ingestion_ids`.
 
 ### 2.5. Monthly Transaction List View
 - Chronological log of financial activity for a calendar month, accessed via the **Daily tab** (default) inside the Transactions page.
@@ -151,6 +162,7 @@ Users need a structured way to mirror their real-world financial accounts within
 - **Version:** API v1.
 - **Authentication:** OAuth via `@adolf94/ar-auth-client` on the frontend.
 - **Backend Authentication:** JWT validation and authorization via the `Ar.Auth.OpenId.AzureFunctions` middleware.
+- **Ledger Entries Search Endpoint:** `GET /ledger-entries/search` allows searching ledger entries by `referenceNumber` (within 30-day window) or `amount` + `around` date (+/- `windowMinutes`, default 5).
 - **Error Handling:** Consistent response envelopes for all errors.
 
 ### 4.5 Notification Ingester (Python Azure Functions)
@@ -164,14 +176,14 @@ Users need a structured way to mirror their real-world financial accounts within
   - `EmbeddingService` — Calls Google Gemini `text-embedding-004` to produce a 768-dimension float vector from notification text.
   - `VectorService` — Performs cosine-similarity search (via `numpy`) across all stored `TransactionVector` documents for a user to retrieve top-k matches.
   - `AiService` — Two-stage Gemini calls: (1) `is_financial_transaction_async` — lightweight check to filter non-financial notifications (strictly excludes advertisements and promotional offers regardless of monetary amounts); (2) `classify_async` — full structured JSON classification with notification + similar transactions + accounts + RUNBOOK.md context. Produces `AiParsedData` with enhanced fields: `vendor`, `amount`, `transaction_type`, `debit_account_id`, `credit_account_id`, `suggested_account_creation`, `notes`, `confidence`, `recipient_account_number/name`, `sender_account_number/name`, `application`, `why`, `user_why`, `is_financial`, `is_auto_confirmed`, `vendor_matched`. Also supports multimodal `classify_image_async` for receipts and screenshots.
-  - `FinanceApiService` — Directly queries CosmosDB containers (`Accounts`, `AccountGroups`, `Vendors`, `VendorLookups`) to resolve accounts and vendors. Creates confirmed transactions by writing directly to the `Transactions` container. Methods include `get_accounts_async`, `search_vendors_by_lookups_async`, `ensure_vendor_and_lookups_async`, `create_transaction_async`, `get_runbook_content_async`, `update_vendor_tags_async`.
-  - `IngestionService` — Orchestrates the full pipeline: financial-check → embed → vector-search → fetch-accounts+runbook → classify → vendor-match → auto-confirm-or-pending → save.
+  - `FinanceApiService` — Directly queries CosmosDB containers (`Accounts`, `AccountGroups`, `Vendors`, `VendorLookups`) to resolve accounts and vendors. Creates confirmed transactions by writing directly to the `Transactions` container. Methods include `get_accounts_async`, `search_vendors_by_lookups_async`, `ensure_vendor_and_lookups_async`, `create_transaction_async`, `get_runbook_content_async`, `update_vendor_tags_async`, `search_confirmed_ledger_entries_async`.
+  - `IngestionService` — Orchestrates the full pipeline: financial-check → embed → vector-search → fetch-accounts+runbook → classify → vendor-match → auto-confirm-or-pending → detect-and-link-relations → backport → save.
 - **HTTP Endpoints (`function_app.py`):**
   - `POST /phone_hook` — Receive raw notification, Bearer auth (`notif_ingestion` scope).
   - `POST /image_hook` — Upload receipt/statement image (`multipart/form-data`), store in Azure Blob Storage (`receipt-images`), classify via multimodal AI, and queue as `PendingIngestion`, Bearer auth (`notif_ingestion` scope).
   - `GET /image_hook/{blob_name}` — Retrieve SAS URL / receipt image stream for authorized preview, JWT auth.
   - `GET /ingestions` — List ingestions by status (default `Pending`), JWT auth.
-  - `POST /ingestions/{id}/confirm-status` — Mark as `Confirmed`, record `transaction_id`, trigger learn, JWT auth.
+  - `POST /ingestions/{id}/confirm-status` — Mark as `Confirmed`, record `transaction_id`, dismiss related duplicates if requested, trigger learn, JWT auth.
   - `POST /ingestions/{id}/reject` — Mark as `Rejected`, JWT auth.
   - `POST /ingestions/{id}/learn` — Embed and store `TransactionVector` for a confirmed ingestion, JWT auth.
   - `POST /ingestions/{id}/reclassify` — Re-run full AI classification pipeline with optional user corrections, comments, and `operationId` for real-time SignalR progress streaming, JWT auth.

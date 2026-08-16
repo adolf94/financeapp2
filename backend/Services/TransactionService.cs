@@ -159,6 +159,11 @@ namespace FinanceApp.Services
             await _transactionRepository.SaveChangesAsync();
         }
 
+        public async Task<IEnumerable<LedgerEntry>> SearchLedgerEntriesAsync(string userId, string? referenceNumber, decimal? amount, DateTime? aroundDate, int windowMinutes = 5)
+        {
+            return await _transactionRepository.SearchLedgerEntriesAsync(userId, referenceNumber, amount, aroundDate, windowMinutes);
+        }
+
         private async Task ApplyBalanceImpactAsync(string userId, Transaction transaction)
         {
             if (transaction.Entries == null || transaction.Entries.Count < 2)

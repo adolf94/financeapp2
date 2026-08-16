@@ -113,7 +113,7 @@ Existing Vendors:
 
 Vendor Matches Found:
 {vendor_matches}
-{user_corrections_section}
+{related_context}{user_corrections_section}
 
 Similar past transactions (for context):
 {similar_context}

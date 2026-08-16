@@ -27,3 +27,11 @@ Based on the `spec.md`, the following features are pending implementation:
 - [ ] **Backend:** Implement API endpoints to manage savings goals.
 - [ ] **Frontend:** Build a UI to create and manage goals.
 - [ ] **Frontend:** Update `useAnalysis.ts` to calculate real progress instead of using the hardcoded `goalProgress: 65` value.
+
+## 5. Shopee Multi-Order Email Flow (Section 2.4 / PBI-013)
+**Description:** Support multi-order Shopee checkout emails mapped to 1 ingestion, 1 transaction with N+1 ledger entries, and source account card resolution.
+- [x] **Ingester:** Add `SHOPEE_MULTI_ORDER_PROMPT` and `classify_email_shopee_async` in AI service.
+- [x] **Ingester:** Add `find_by_amount_and_time_async` in Cosmos repository for candidate resolution.
+- [x] **Ingester:** Add `_resolve_source_account_async` and Shopee email handling in `EmailProcessingService`.
+- [x] **Backend & Ingester:** Implement 1 Transaction with N+1 LedgerEntries in `TransactionFunctions.cs` and `FinanceApiService.cs`.
+- [x] **Frontend:** Add multi-order chip breakdown in `PendingIngestionCard` and auto-prefill journal lines in `AddTransactionContext`.

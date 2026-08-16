@@ -172,6 +172,61 @@ namespace FinanceApp.Repositories
             }
         }
 
+        public async Task<IEnumerable<LedgerEntry>> SearchLedgerEntriesAsync(string userId, string? referenceNumber, decimal? amount, DateTime? aroundDate, int windowMinutes = 5)
+        {
+            if (string.IsNullOrWhiteSpace(referenceNumber) && (!amount.HasValue || !aroundDate.HasValue))
+            {
+                return Enumerable.Empty<LedgerEntry>();
+            }
+
+            var query = _context.LedgerEntries
+                .WithPartitionKey(userId)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(referenceNumber))
+            {
+                // Reference number match in last 30 days
+                var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
+                var recentTxIds = await _context.Transactions
+                    .WithPartitionKey(userId)
+                    .Where(t => t.Date >= thirtyDaysAgo)
+                    .Select(t => t.Id)
+                    .ToListAsync();
+
+                if (!recentTxIds.Any())
+                    return Enumerable.Empty<LedgerEntry>();
+
+                return await query
+                    .Where(e => recentTxIds.Contains(e.TransactionId) && e.ReferenceNumber == referenceNumber)
+                    .ToListAsync();
+            }
+
+            if (amount.HasValue && aroundDate.HasValue)
+            {
+                var minDate = aroundDate.Value.AddMinutes(-windowMinutes);
+                var maxDate = aroundDate.Value.AddMinutes(windowMinutes);
+
+                var targetAbsAmount = Math.Abs(amount.Value);
+
+                var candidateTxIds = await _context.Transactions
+                    .WithPartitionKey(userId)
+                    .Where(t => t.Date >= minDate && t.Date <= maxDate)
+                    .Select(t => t.Id)
+                    .ToListAsync();
+
+                if (!candidateTxIds.Any())
+                    return Enumerable.Empty<LedgerEntry>();
+
+                var entries = await query
+                    .Where(e => candidateTxIds.Contains(e.TransactionId))
+                    .ToListAsync();
+
+                return entries.Where(e => Math.Abs(e.Amount) == targetAbsAmount).ToList();
+            }
+
+            return Enumerable.Empty<LedgerEntry>();
+        }
+
         public async Task SaveChangesAsync()
         {
             await _context.SaveChangesAsync();

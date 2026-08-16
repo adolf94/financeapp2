@@ -180,36 +180,62 @@ namespace FinanceApp.Functions
                 return new BadRequestObjectResult("Invalid ingestion data. Amount, DebitAccountId, and CreditAccountId are required.");
             }
 
+            var entries = new List<LedgerEntry>();
+            var txType = Enum.TryParse<TransactionType>(aiData.TransactionType, true, out var typeEnum) ? typeEnum : TransactionType.Expense;
+
+            // 1. Credit Entry for total amount
+            entries.Add(new LedgerEntry
+            {
+                Id = Guid.CreateVersion7().ToString(),
+                UserId = userId,
+                AccountId = aiData.CreditAccountId,
+                Amount = -aiData.Amount.Value, // Negative for credit
+                Note = ("Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) || "Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.Notes : null,
+                ReferenceNumber = ("Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) || "Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.ReferenceNumber : null
+            });
+
+            // 2. Debit Entries (multi-order N entries or standard single entry)
+            if (aiData.MultiOrderItems != null && aiData.MultiOrderItems.Count > 1)
+            {
+                foreach (var order in aiData.MultiOrderItems)
+                {
+                    var orderAcc = !string.IsNullOrWhiteSpace(order.DebitAccountId) ? order.DebitAccountId : aiData.DebitAccountId;
+                    var orderRef = !string.IsNullOrWhiteSpace(order.ReferenceNumber) ? order.ReferenceNumber : aiData.ReferenceNumber;
+                    var orderNote = !string.IsNullOrWhiteSpace(order.Notes) ? order.Notes : (order.Vendor?.Name ?? aiData.Notes);
+                    entries.Add(new LedgerEntry
+                    {
+                        Id = Guid.CreateVersion7().ToString(),
+                        UserId = userId,
+                        AccountId = orderAcc,
+                        Amount = order.Amount,
+                        Note = orderNote,
+                        ReferenceNumber = orderRef
+                    });
+                }
+            }
+            else
+            {
+                entries.Add(new LedgerEntry
+                {
+                    Id = Guid.CreateVersion7().ToString(),
+                    UserId = userId,
+                    AccountId = aiData.DebitAccountId,
+                    Amount = aiData.Amount.Value, // Positive for debit
+                    Note = (!"Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) && !"Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.Notes : null,
+                    ReferenceNumber = (!"Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) && !"Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.ReferenceNumber : null
+                });
+            }
+
             var transaction = new Transaction
             {
                 Id = Guid.CreateVersion7().ToString(),
                 UserId = userId,
                 Date = aiData.Date ?? DateTime.UtcNow,
                 Vendor = aiData.Vendor?.Name,
-                Type = Enum.TryParse<TransactionType>(aiData.TransactionType, true, out var typeEnum) ? typeEnum : TransactionType.Expense,
+                Type = txType,
                 Note = aiData.Notes ?? string.Empty,
                 ReferenceNumber = aiData.ReferenceNumber,
-                Entries = new List<LedgerEntry>
-                {
-                    new LedgerEntry
-                    {
-                        Id = Guid.CreateVersion7().ToString(),
-                        UserId = userId,
-                        AccountId = aiData.DebitAccountId,
-                        Amount = aiData.Amount.Value, // Positive for debit
-                        Note = (!"Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) && !"Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.Notes : null,
-                        ReferenceNumber = (!"Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) && !"Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.ReferenceNumber : null
-                    },
-                    new LedgerEntry
-                    {
-                        Id = Guid.CreateVersion7().ToString(),
-                        UserId = userId,
-                        AccountId = aiData.CreditAccountId,
-                        Amount = -aiData.Amount.Value, // Negative for credit
-                        Note = ("Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) || "Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.Notes : null,
-                        ReferenceNumber = ("Income".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase) || "Transfer".Equals(aiData.TransactionType, StringComparison.OrdinalIgnoreCase)) ? aiData.ReferenceNumber : null
-                    }
-                },
+                Entries = entries,
                 IsAutoConfirmed = aiData.IsAutoConfirmed ?? false,
                 IngestionId = aiData.IngestionId,
                 MatchedVendorLookups = (aiData.Vendor?.Lookups ?? new List<string>())
@@ -249,6 +275,36 @@ namespace FinanceApp.Functions
                 _logger.LogError(ex, "Error creating transaction from ingestion");
                 return new BadRequestObjectResult(ex.Message);
             }
+        }
+
+        [Function("SearchLedgerEntries")]
+        public async Task<IActionResult> SearchLedgerEntries(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "ledger-entries/search")] HttpRequest req, FunctionContext context)
+        {
+            string? userId = context.GetUserId();
+            if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+
+            string? referenceNumber = req.Query["referenceNumber"];
+            decimal? amount = null;
+            if (decimal.TryParse(req.Query["amount"], out var parsedAmount))
+            {
+                amount = parsedAmount;
+            }
+
+            DateTime? around = null;
+            if (DateTime.TryParse(req.Query["around"], out var parsedAround))
+            {
+                around = parsedAround;
+            }
+
+            int windowMinutes = 5;
+            if (int.TryParse(req.Query["windowMinutes"], out var parsedWindow))
+            {
+                windowMinutes = parsedWindow;
+            }
+
+            var entries = await _transactionService.SearchLedgerEntriesAsync(userId, referenceNumber, amount, around, windowMinutes);
+            return new OkObjectResult(entries);
         }
     }
 }

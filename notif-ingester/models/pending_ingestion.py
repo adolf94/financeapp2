@@ -45,6 +45,7 @@ class AiParsedData(BaseModel):
     is_auto_confirmed: Optional[bool] = False
     ingestion_id: Optional[str] = None
     date: Optional[datetime] = None
+    multi_order_items: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
 
 class SuggestedAccountCreation(BaseModel):
     type: Optional[str] = None
@@ -67,8 +68,13 @@ class PendingIngestion(BaseModel):
     status: str = "Pending"
     transaction_id: Optional[str] = None
     month_key: str
-    partition_key: str
+    partition_key: str = Field(default="default")
     notification_type: str = Field(default="unknown")
+    related_ingestion_ids: List[str] = Field(default_factory=list, alias="RelatedIngestionIds")
+    related_transaction_ids: List[str] = Field(default_factory=list, alias="RelatedTransactionIds")
+    possible_related_ingestion_ids: List[str] = Field(default_factory=list, alias="PossibleRelatedIngestionIds")
+    possible_related_transaction_ids: List[str] = Field(default_factory=list, alias="PossibleRelatedTransactionIds")
+    has_possible_confirmed_match: bool = Field(default=False, alias="HasPossibleConfirmedMatch")
     ttl: Optional[int] = Field(default=None, alias="_ttl")
     runbook_synced: bool = False
 

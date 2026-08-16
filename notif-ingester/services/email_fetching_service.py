@@ -229,7 +229,11 @@ def fetch_unread_emails():
             body["sender"] = sender
             body["emailId"] = f"{e_id_str}|{gmail_user}"
             sent_time = get_original_sent_time(msg)
-            body["timestamp"] = sent_time.strftime("%Y-%m-%dT%H:%M:%SZ") if sent_time else datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if sent_time:
+                sent_dt = sent_time if sent_time.tzinfo else sent_time.replace(tzinfo=datetime.timezone.utc)
+                body["timestamp"] = sent_dt.astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            else:
+                body["timestamp"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
             emails.append({
                 "email_id": e_id,

@@ -31,7 +31,7 @@ export type RunbookReviewSession = {
   proposed_runbook: string
   account_description_updates: AccountDescriptionUpdate[]
   vendor_updates: VendorUpdate[]
-  runbook_type?: 'app' | 'sms' | 'email'
+  runbook_type?: 'app' | 'sms' | 'email' | 'image'
   created_at: string
   updated_at: string
   partition_key: string
@@ -39,7 +39,7 @@ export type RunbookReviewSession = {
 
 // ── Corrections ────────────────────────────────────────────────────────────
 
-export function useGetRunbookCorrections(type: 'app' | 'sms' | 'email' = 'app') {
+export function useGetRunbookCorrections(type: 'app' | 'sms' | 'email' | 'image' = 'app') {
   return useQuery({
     queryKey: ['runbook_corrections', type],
     queryFn: async () => {
@@ -77,7 +77,7 @@ export function useGetRunbookSession() {
 export function useStartRunbookReview() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ corrections, runbookType, operationId, streamReasoning = true }: { corrections: PendingIngestion[], runbookType: 'app' | 'sms' | 'email', operationId: string, streamReasoning?: boolean }) => {
+    mutationFn: async ({ corrections, runbookType, operationId, streamReasoning = true }: { corrections: PendingIngestion[], runbookType: 'app' | 'sms' | 'email' | 'image', operationId: string, streamReasoning?: boolean }) => {
       const connId = (window as any).signalRConnectionId || ''
       const { data } = await ingesterClient.post<RunbookReviewSession>('/runbook/review/start', {
         corrections,
