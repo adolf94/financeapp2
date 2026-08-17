@@ -660,7 +660,7 @@ export default function PendingIngestionCard({
             <button
               onClick={() => onQuickConfirm(ingestion, relatedPendingItems.map(i => i.id))}
               disabled={isProcessing || (!ingestion.ai_parsed.vendor?.matched && hasMasks(ingestion.ai_parsed.vendor?.name))}
-              title="Confirm this transaction and auto-mark related notifications as duplicate"
+              title="Confirm this transaction and auto-mark related notifications as merged"
               className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer shadow-xs disabled:opacity-50 flex items-center justify-center gap-1.5 text-sm font-medium"
             >
               <Check className="w-4 h-4" strokeWidth={2.5} />

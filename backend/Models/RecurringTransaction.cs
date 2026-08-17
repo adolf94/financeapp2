@@ -8,6 +8,8 @@ namespace FinanceApp.Models
         public string Id { get; set; } = Guid.CreateVersion7().ToString();
         public string UserId { get; set; } = string.Empty;
 
+        public string Status { get; set; } = "Active"; // Active, Deleted, Archived
+        
         // Scheduling
         public string Frequency { get; set; } = "Monthly"; // Daily, Weekly, Monthly, Yearly
         public int Interval { get; set; } = 1;

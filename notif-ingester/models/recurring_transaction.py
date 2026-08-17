@@ -25,6 +25,7 @@ class RecurringTransactionOccurrence(BaseModel):
 class RecurringTransaction(BaseModel):
     id: str = Field(alias="Id")
     user_id: str = Field(alias="UserId")
+    status: str = Field(default="Active", alias="Status")
     frequency: str = Field(alias="Frequency")
     interval: int = Field(alias="Interval")
     start_date: datetime = Field(alias="StartDate")

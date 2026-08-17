@@ -238,6 +238,7 @@ namespace FinanceApp.Functions
                 Entries = entries,
                 IsAutoConfirmed = aiData.IsAutoConfirmed ?? false,
                 IngestionId = aiData.IngestionId,
+                MergedIngestionIds = aiData.MergedIngestionIds ?? new List<string>(),
                 MatchedVendorLookups = (aiData.Vendor?.Lookups ?? new List<string>())
                     .Concat(aiData.Vendor?.NewLookups ?? new List<string>())
                     .Distinct(StringComparer.OrdinalIgnoreCase)

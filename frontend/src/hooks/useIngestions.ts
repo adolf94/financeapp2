@@ -41,6 +41,7 @@ export interface AiParsedData {
   application?: string | null
   why?: string | null
   user_why?: string | null
+  reason?: string | null
   suggested_rule?: string | null
   is_auto_confirmed?: boolean | null
   multi_order_items?: Array<{
@@ -132,7 +133,7 @@ export function useConfirmIngestion() {
       transactionId,
       skipLearning,
       dismissRelatedIds,
-      dismissStatus = 'Duplicate'
+      dismissStatus = 'Merged'
     }: {
       id: string
       userConfirmed: Partial<AiParsedData>
@@ -144,8 +145,13 @@ export function useConfirmIngestion() {
       // Step 1: Create transaction in C#
       let txId = transactionId;
       if (!txId) {
-        // Pass ingestionId so it gets saved in Transaction.cs
-        const payload = { ...userConfirmed, ingestion_id: id }
+        // Pass ingestionId & merged_ingestion_ids so they get saved in Transaction.cs
+        const payload = {
+          ...userConfirmed,
+          ingestion_id: id,
+          merged_ingestion_ids: dismissRelatedIds || [],
+          MergedIngestionIds: dismissRelatedIds || [],
+        }
         const response = await apiClient.post(`/transactions/from-ingestion`, payload)
         txId = response.data.id
       }

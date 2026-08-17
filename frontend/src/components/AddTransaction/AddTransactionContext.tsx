@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo, useRef, ReactNode } from 'react'
 import { PendingIngestion, useConfirmIngestion, useLearnIngestion, useReclassifyIngestion } from '@/hooks/useIngestions'
 import { useCreateTransaction, useUpdateTransaction, Transaction, LedgerEntry } from '@/hooks/useTransactions'
 import { useCreateRecurringTransaction } from '@/hooks/useRecurringTransactions'
@@ -7,7 +7,13 @@ import { useGetAccounts } from '@/hooks/useAccounts'
 import { uuidv7 } from 'uuidv7'
 import dayjs from 'dayjs'
 
+import { useRecurringScheduleState } from './hooks/useRecurringScheduleState'
+import { useSuggestionsState, PendingNewAccountType, SuggestionData } from './hooks/useSuggestionsState'
+import { useIngestionPrefill } from './hooks/useIngestionPrefill'
+
 const generateId = () => uuidv7()
+
+export type { PendingNewAccountType, SuggestionData }
 
 export interface SplitLine {
   id: string
@@ -24,23 +30,6 @@ export interface JournalLine {
   type: 'Debit' | 'Credit'
   note?: string
   referenceNumber?: string
-}
-
-export interface PendingNewAccountType {
-  name: string
-  categoryId: string
-  type: string
-  splitId: string
-  description: string
-  tags: string[]
-}
-
-interface SuggestionData {
-  name: string
-  account_group: string
-  type: string
-  description: string
-  tags: string[]
 }
 
 interface AddTransactionContextProps {
@@ -98,6 +87,10 @@ interface AddTransactionContextProps {
   setFrequency: (freq: 'Daily' | 'Weekly' | 'Monthly' | 'Yearly') => void
   maxOccurrences: string
   setMaxOccurrences: (occ: string) => void
+  recurringEndDate: string
+  setRecurringEndDate: (date: string) => void
+  handleRecurringOccurrencesChange: (occ: string) => void
+  handleRecurringEndDateChange: (dateStr: string) => void
 
   // Suggestions & Sub-forms
   pendingNewAccount: PendingNewAccountType | null
@@ -183,6 +176,16 @@ export function AddTransactionProvider({
   const [userWhy, setUserWhy] = useState('')
   const [skipLearning, setSkipLearning] = useState(false)
   const [mergeRelatedIds, setMergeRelatedIds] = useState<string[]>([])
+  const [isReviewOpen, setIsReviewOpen] = useState(true)
+  const [confirmReclassifyOpen, setConfirmReclassifyOpen] = useState(false)
+  const [currentOperationId, setCurrentOperationId] = useState('')
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
+  const [isFlashing, setIsFlashing] = useState(false)
+  const submitTypeRef = useRef<'close' | 'more'>('close')
+
+  // Sub-hooks
+  const recurring = useRecurringScheduleState(date)
+  const suggestions = useSuggestionsState()
 
   const confirmedMatchTxId = useMemo(() => {
     if (ingestion?.related_transaction_ids && ingestion.related_transaction_ids.length > 0) {
@@ -190,28 +193,6 @@ export function AddTransactionProvider({
     }
     return null
   }, [ingestion])
-
-  const [isRecurring, setIsRecurring] = useState(false)
-  const [frequency, setFrequency] = useState<'Daily' | 'Weekly' | 'Monthly' | 'Yearly'>('Monthly')
-  const [maxOccurrences, setMaxOccurrences] = useState('')
-
-  const [pendingNewAccount, setPendingNewAccount] = useState<PendingNewAccountType | null>(null)
-  const [editingSuggestion, setEditingSuggestion] = useState<{
-    idx: number
-    data: SuggestionData
-  } | null>(null)
-  const [createdSuggestions, setCreatedSuggestions] = useState<Set<number>>(new Set())
-  const [suggestedVendorType, setSuggestedVendorType] = useState<'Individual' | 'Business'>(
-    'Business'
-  )
-  const [suggestedVendorTags, setSuggestedVendorTags] = useState('')
-  const [isReviewOpen, setIsReviewOpen] = useState(true)
-  const [confirmReclassifyOpen, setConfirmReclassifyOpen] = useState(false)
-  const [currentOperationId, setCurrentOperationId] = useState('')
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
-
-  const [isFlashing, setIsFlashing] = useState(false)
-  const submitTypeRef = useRef<'close' | 'more'>('close')
 
   const resetForm = useCallback(() => {
     setMode('Simple')
@@ -230,10 +211,37 @@ export function AddTransactionProvider({
     setUserWhy('')
     setSkipLearning(false)
     setDate(dayjs().format('YYYY-MM-DDTHH:mm'))
-    setIsRecurring(false)
-    setFrequency('Monthly')
-    setMaxOccurrences('')
-  }, [])
+    recurring.resetRecurringState()
+  }, [recurring])
+
+  // Ingestion & initialData prefill logic
+  useIngestionPrefill({
+    isOpen,
+    initialData,
+    ingestion,
+    accounts,
+    reclassifyData: reclassifyMutation.data,
+    resetForm,
+    resetSuggestionsState: suggestions.resetSuggestionsState,
+    setIsFlashing,
+    setMode,
+    setType,
+    setTotalAmount,
+    setSourceAccountId,
+    setToAccountId,
+    setSplits,
+    setJournalLines,
+    setVendor,
+    setSelectedLookups,
+    setSelectedNewLookups,
+    setDate,
+    setNote,
+    setReferenceNumber,
+    setUserWhy,
+    setIsRecurring: recurring.setIsRecurring,
+    setSuggestedVendorType: suggestions.setSuggestedVendorType,
+    setSuggestedVendorTags: suggestions.setSuggestedVendorTags,
+  })
 
   const linkAndDismissIngestion = useCallback(() => {
     if (!ingestionId) return
@@ -245,7 +253,7 @@ export function AddTransactionProvider({
         userConfirmed: ingestion?.ai_parsed || {},
         skipLearning: true,
         dismissRelatedIds: mergeRelatedIds,
-        dismissStatus: 'Duplicate',
+        dismissStatus: 'Merged',
       },
       {
         onSuccess: () => {
@@ -255,251 +263,6 @@ export function AddTransactionProvider({
       }
     )
   }, [ingestionId, confirmedMatchTxId, ingestion, mergeRelatedIds, confirmIngestionMutation, onClose, resetForm])
-
-  const applyAiParsed = useCallback((parsed: any, receivedAt?: string) => {
-    if (!parsed) return
-    setIsFlashing(true)
-    setTimeout(() => setIsFlashing(false), 600)
-
-    if (parsed.transaction_type) {
-      const t = ['Income', 'Expense', 'Transfer'].includes(parsed.transaction_type)
-        ? (parsed.transaction_type as any)
-        : 'Expense'
-      setType(t)
-    }
-    if (parsed.amount) {
-      setTotalAmount(Math.abs(parsed.amount).toString())
-    }
-    if (parsed.vendor) {
-      const vendorName = typeof parsed.vendor === 'string' ? parsed.vendor : parsed.vendor.name || ''
-      setVendor(vendorName)
-      setSelectedLookups(parsed.vendor.lookups || [])
-      setSelectedNewLookups(parsed.vendor.new_lookups || parsed.vendor.NewLookups || [])
-      if (parsed.vendor.is_recommendation) {
-        setSuggestedVendorType(parsed.vendor.type === 'Individual' ? 'Individual' : 'Business')
-        setSuggestedVendorTags((parsed.vendor.tags || []).join(', '))
-      }
-    }
-    if (parsed.summary || parsed.notes) {
-      setNote(parsed.summary || parsed.notes || '')
-    }
-    if (parsed.suggested_rule) {
-      setUserWhy(parsed.suggested_rule)
-    } else if (parsed.user_why) {
-      setUserWhy(parsed.user_why)
-    }
-    if (parsed.date) {
-      setDate(dayjs(parsed.date).format('YYYY-MM-DDTHH:mm'))
-    } else if (receivedAt) {
-      setDate(dayjs(receivedAt).format('YYYY-MM-DDTHH:mm'))
-    }
-    if (parsed.reference_number !== undefined) {
-      setReferenceNumber(parsed.reference_number || '')
-    }
-
-    // Multi-order pre-fill support
-    if (parsed.multi_order_items && parsed.multi_order_items.length > 1) {
-      setMode('Advanced')
-      setType('Expense')
-      const lines: JournalLine[] = []
-      // 1. Credit line (full amount, credit account if available)
-      const creditAcc = parsed.credit_account_id ? accountsRef.current.find((a) => a.id === parsed.credit_account_id) : null
-      lines.push({
-        id: generateId(),
-        categoryId: creditAcc?.accountGroupId || '',
-        subCategoryId: parsed.credit_account_id || '',
-        amount: Math.abs(parsed.amount || 0).toString(),
-        type: 'Credit',
-        note: parsed.notes || 'Shopee total',
-        referenceNumber: '',
-      })
-
-      // 2. N Debit lines (one per order)
-      for (const order of parsed.multi_order_items) {
-        const orderDebitAccId = order.debit_account_id || parsed.debit_account_id || ''
-        const debitAcc = orderDebitAccId ? accountsRef.current.find((a) => a.id === orderDebitAccId) : null
-        const orderVendorName = typeof order.vendor === 'string' ? order.vendor : order.vendor?.name || ''
-        const orderNote = order.notes || orderVendorName || ''
-        lines.push({
-          id: generateId(),
-          categoryId: debitAcc?.accountGroupId || '',
-          subCategoryId: orderDebitAccId,
-          amount: Math.abs(order.amount || 0).toString(),
-          type: 'Debit',
-          note: orderNote,
-          referenceNumber: order.reference_number || '',
-        })
-      }
-      setJournalLines(lines)
-      return
-    }
-
-    // Pre-fill accounts based on transaction_type
-    if (parsed.transaction_type === 'Transfer') {
-      if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
-      if (parsed.debit_account_id) setToAccountId(parsed.debit_account_id)
-    } else if (parsed.transaction_type === 'Income') {
-      if (parsed.debit_account_id) setSourceAccountId(parsed.debit_account_id)
-      if (parsed.credit_account_id) {
-        const acc = accountsRef.current.find((a) => a.id === parsed.credit_account_id)
-        setSplits([
-          {
-            id: generateId(),
-            categoryId: acc?.accountGroupId || '',
-            subCategoryId: parsed.credit_account_id,
-            amount: '',
-          },
-        ])
-      }
-    } else {
-      if (parsed.credit_account_id) setSourceAccountId(parsed.credit_account_id)
-      if (parsed.debit_account_id) {
-        const acc = accountsRef.current.find((a) => a.id === parsed.debit_account_id)
-        setSplits([
-          {
-            id: generateId(),
-            categoryId: acc?.accountGroupId || '',
-            subCategoryId: parsed.debit_account_id,
-            amount: '',
-          },
-        ])
-      }
-    }
-  }, [])
-
-  // Update form fields only when reclassifyMutation explicitly returns new AI recommendations
-  const prevReclassifyDataRef = useRef<any>(null)
-  useEffect(() => {
-    if (reclassifyMutation.data && reclassifyMutation.data !== prevReclassifyDataRef.current) {
-      prevReclassifyDataRef.current = reclassifyMutation.data
-      applyAiParsed(reclassifyMutation.data.ai_parsed, reclassifyMutation.data.received_at)
-    }
-  }, [reclassifyMutation.data, applyAiParsed])
-
-  const accountsRef = useRef(accounts)
-  useEffect(() => {
-    accountsRef.current = accounts
-  }, [accounts])
-
-  const formInitializedForRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    const dataStr = initialData ? JSON.stringify(initialData) : null
-    const justOpened = isOpen && !formInitializedForRef.current
-
-    if (isOpen) {
-      if (!justOpened && formInitializedForRef.current === dataStr) {
-        return
-      }
-      formInitializedForRef.current = dataStr
-
-      if (initialData) {
-        setMode(initialData.type === 'Journal' ? 'Advanced' : 'Simple')
-        setVendor(initialData.vendor || '')
-        setDate(dayjs(initialData.date).format('YYYY-MM-DDTHH:mm'))
-        setNote(initialData.note || '')
-        setReferenceNumber(initialData.referenceNumber || '')
-        setIsRecurring(!!initialData.scheduleId)
-        setType(initialData.type)
-        setToAccountId('')
-
-        if (ingestion && ingestion.ai_parsed) {
-          applyAiParsed(ingestion.ai_parsed, ingestion.received_at)
-        } else if (initialData.type === 'Journal') {
-          setJournalLines(
-            initialData.entries.map((e) => {
-              const acc = accountsRef.current.find((a) => a.id === e.accountId)
-              return {
-                id: generateId(),
-                categoryId: acc?.accountGroupId || '',
-                subCategoryId: e.accountId,
-                amount: Math.abs(e.amount).toString(),
-                type: e.amount > 0 ? 'Debit' : 'Credit',
-                note: e.note || '',
-                referenceNumber: e.referenceNumber || '',
-              }
-            })
-          )
-        } else {
-          if (initialData.type === 'Transfer') {
-            const srcEntry = initialData.entries.find((e) => e.amount < 0)
-            const dstEntry = initialData.entries.find((e) => e.amount > 0)
-            if (srcEntry && dstEntry) {
-              setSourceAccountId(srcEntry.accountId)
-              setToAccountId(dstEntry.accountId)
-              setTotalAmount(Math.abs(srcEntry.amount).toString())
-            }
-          } else {
-            const srcEntry = initialData.entries.find((e) =>
-              initialData.type === 'Expense' ? e.amount < 0 : e.amount > 0
-            )
-            const dstEntry = initialData.entries.find((e) =>
-              initialData.type === 'Expense' ? e.amount > 0 : e.amount < 0
-            )
-
-            if (srcEntry && dstEntry) {
-              setSourceAccountId(srcEntry.accountId)
-              setTotalAmount(Math.abs(srcEntry.amount).toString())
-
-              const account = accountsRef.current.find((a) => a.id === dstEntry.accountId)
-              setSplits([
-                {
-                  id: generateId(),
-                  categoryId: account?.accountGroupId || '',
-                  subCategoryId: dstEntry.accountId,
-                  amount: '',
-                },
-              ])
-            }
-          }
-        }
-      } else {
-        if (justOpened) {
-          resetForm()
-          setCreatedSuggestions(new Set())
-          setEditingSuggestion(null)
-          const parsed = ingestion?.ai_parsed
-          if (parsed) {
-            applyAiParsed(parsed, ingestion?.received_at)
-          }
-        }
-      }
-      if (justOpened) {
-        setUserWhy(ingestion?.user_confirmed?.user_why || '')
-      }
-    } else {
-      formInitializedForRef.current = null
-    }
-  }, [isOpen, initialData, ingestion, resetForm, applyAiParsed])
-
-  // Sync categoryIds when accounts load
-  useEffect(() => {
-    if (!isOpen || !initialData) return
-
-    setSplits((prev) =>
-      prev.map((split) => {
-        if (split.subCategoryId && !split.categoryId) {
-          const acc = accounts.find((a) => a.id === split.subCategoryId)
-          if (acc?.accountGroupId) {
-            return { ...split, categoryId: acc.accountGroupId }
-          }
-        }
-        return split
-      })
-    )
-
-    setJournalLines((prev) =>
-      prev.map((line) => {
-        if (line.subCategoryId && !line.categoryId) {
-          const acc = accounts.find((a) => a.id === line.subCategoryId)
-          if (acc?.accountGroupId) {
-            return { ...line, categoryId: acc.accountGroupId }
-          }
-        }
-        return line
-      })
-    )
-  }, [accounts, isOpen, initialData])
 
   const hasMasks = (name?: string) => {
     if (!name) return false
@@ -514,6 +277,7 @@ export function AddTransactionProvider({
       vendor,
       note,
       referenceNumber,
+      mergedIngestionIds: mergeRelatedIds,
       date: dayjs(date).toISOString(),
     }
 
@@ -527,7 +291,7 @@ export function AddTransactionProvider({
               transactionId: data.id,
               skipLearning: skipLearning,
               dismissRelatedIds: mergeRelatedIds,
-              dismissStatus: 'Duplicate',
+              dismissStatus: 'Merged',
               userConfirmed: {
                 vendor: vendor ? {
                   name: vendor,
@@ -616,11 +380,11 @@ export function AddTransactionProvider({
       }
 
       if (vendor && !dbVendors.some((v) => v.name.toLowerCase() === vendor.toLowerCase())) {
-        const tags = suggestedVendorTags
-          ? suggestedVendorTags.split(',').map((t) => t.trim()).filter(Boolean)
+        const tags = suggestions.suggestedVendorTags
+          ? suggestions.suggestedVendorTags.split(',').map((t) => t.trim()).filter(Boolean)
           : []
         createVendorMutation.mutate(
-          { name: vendor, type: suggestedVendorType, tags },
+          { name: vendor, type: suggestions.suggestedVendorType, tags },
           {
             onSettled: () => {
               saveAdvancedTransaction(entries)
@@ -652,14 +416,12 @@ export function AddTransactionProvider({
 
     if (type === 'Transfer') {
       if (!toAccountId) return
-      // For Transfer: copy note and referenceNumber to Credit (sourceAccountId)
       entries.push({
         accountId: sourceAccountId,
         amount: -parsedTotal,
         note: trimmedNote,
         referenceNumber: trimmedRef,
       })
-      // Debit (toAccountId)
       entries.push({
         accountId: toAccountId,
         amount: parsedTotal,
@@ -671,13 +433,11 @@ export function AddTransactionProvider({
         return
       }
 
-      // Credit entry (payment source account)
       entries.push({
         accountId: sourceAccountId,
         amount: -parsedTotal,
       })
 
-      // Debit entry (category / expense account): copy note & referenceNumber
       entries.push({
         accountId: categorySplit.subCategoryId,
         amount: parsedTotal,
@@ -691,13 +451,11 @@ export function AddTransactionProvider({
         return
       }
 
-      // Debit entry (deposit to account)
       entries.push({
         accountId: sourceAccountId,
         amount: parsedTotal,
       })
 
-      // Credit entry (category / income account): copy note & referenceNumber
       entries.push({
         accountId: categorySplit.subCategoryId,
         amount: -parsedTotal,
@@ -708,21 +466,22 @@ export function AddTransactionProvider({
 
     let finalScheduleId: string | undefined = undefined
 
-    if (isRecurring && !initialData) {
+    if (recurring.isRecurring && !initialData) {
       finalScheduleId = uuidv7()
       let nextDate = new Date(date)
-      if (frequency === 'Daily') nextDate.setDate(nextDate.getDate() + 1)
-      else if (frequency === 'Weekly') nextDate.setDate(nextDate.getDate() + 7)
-      else if (frequency === 'Monthly') nextDate.setMonth(nextDate.getMonth() + 1)
-      else if (frequency === 'Yearly') nextDate.setFullYear(nextDate.getFullYear() + 1)
+      if (recurring.frequency === 'Daily') nextDate.setDate(nextDate.getDate() + 1)
+      else if (recurring.frequency === 'Weekly') nextDate.setDate(nextDate.getDate() + 7)
+      else if (recurring.frequency === 'Monthly') nextDate.setMonth(nextDate.getMonth() + 1)
+      else if (recurring.frequency === 'Yearly') nextDate.setFullYear(nextDate.getFullYear() + 1)
 
       createRecurringTxMutation.mutate({
         id: finalScheduleId,
-        frequency,
+        frequency: recurring.frequency,
         interval: 1,
         startDate: dayjs(date).toISOString(),
+        endDate: recurring.recurringEndDate ? dayjs(recurring.recurringEndDate).toISOString() : undefined,
         nextOccurrenceDate: nextDate.toISOString(),
-        maxOccurrences: maxOccurrences ? parseInt(maxOccurrences) : undefined,
+        maxOccurrences: recurring.maxOccurrences ? parseInt(recurring.maxOccurrences) : undefined,
         templateType: type,
         templateNote: note,
         templateVendor: type === 'Transfer' ? undefined : vendor,
@@ -741,7 +500,7 @@ export function AddTransactionProvider({
           id: ingestionId,
           skipLearning: skipLearning,
           dismissRelatedIds: mergeRelatedIds,
-          dismissStatus: 'Duplicate',
+          dismissStatus: 'Merged',
           userConfirmed: {
             vendor: type === 'Transfer' ? null : (vendor ? {
               name: vendor,
@@ -788,6 +547,7 @@ export function AddTransactionProvider({
       vendor: type === 'Transfer' ? null : vendor.trim() || undefined,
       note: note.trim() || undefined,
       referenceNumber: referenceNumber.trim() || undefined,
+      mergedIngestionIds: mergeRelatedIds.length > 0 ? mergeRelatedIds : initialData?.mergedIngestionIds,
       date: dayjs(date).toISOString(),
     }
 
@@ -892,22 +652,26 @@ export function AddTransactionProvider({
       setReferenceNumber,
       userWhy,
       setUserWhy,
-      isRecurring,
-      setIsRecurring,
-      frequency,
-      setFrequency,
-      maxOccurrences,
-      setMaxOccurrences,
-      pendingNewAccount,
-      setPendingNewAccount,
-      editingSuggestion,
-      setEditingSuggestion,
-      createdSuggestions,
-      setCreatedSuggestions,
-      suggestedVendorType,
-      setSuggestedVendorType,
-      suggestedVendorTags,
-      setSuggestedVendorTags,
+      isRecurring: recurring.isRecurring,
+      setIsRecurring: recurring.setIsRecurring,
+      frequency: recurring.frequency,
+      setFrequency: recurring.setFrequency,
+      maxOccurrences: recurring.maxOccurrences,
+      setMaxOccurrences: recurring.setMaxOccurrences,
+      recurringEndDate: recurring.recurringEndDate,
+      setRecurringEndDate: recurring.setRecurringEndDate,
+      handleRecurringOccurrencesChange: recurring.handleRecurringOccurrencesChange,
+      handleRecurringEndDateChange: recurring.handleRecurringEndDateChange,
+      pendingNewAccount: suggestions.pendingNewAccount,
+      setPendingNewAccount: suggestions.setPendingNewAccount,
+      editingSuggestion: suggestions.editingSuggestion,
+      setEditingSuggestion: suggestions.setEditingSuggestion,
+      createdSuggestions: suggestions.createdSuggestions,
+      setCreatedSuggestions: suggestions.setCreatedSuggestions,
+      suggestedVendorType: suggestions.suggestedVendorType,
+      setSuggestedVendorType: suggestions.setSuggestedVendorType,
+      suggestedVendorTags: suggestions.suggestedVendorTags,
+      setSuggestedVendorTags: suggestions.setSuggestedVendorTags,
       isReviewOpen,
       setIsReviewOpen,
       confirmReclassifyOpen,
@@ -956,14 +720,17 @@ export function AddTransactionProvider({
       note,
       referenceNumber,
       userWhy,
-      isRecurring,
-      frequency,
-      maxOccurrences,
-      pendingNewAccount,
-      editingSuggestion,
-      createdSuggestions,
-      suggestedVendorType,
-      suggestedVendorTags,
+      recurring.isRecurring,
+      recurring.frequency,
+      recurring.maxOccurrences,
+      recurring.recurringEndDate,
+      recurring.handleRecurringOccurrencesChange,
+      recurring.handleRecurringEndDateChange,
+      suggestions.pendingNewAccount,
+      suggestions.editingSuggestion,
+      suggestions.createdSuggestions,
+      suggestions.suggestedVendorType,
+      suggestions.suggestedVendorTags,
       isReviewOpen,
       confirmReclassifyOpen,
       currentOperationId,
@@ -981,6 +748,15 @@ export function AddTransactionProvider({
       confirmIngestionMutation.isPending,
       createVendorMutation.isPending,
       createRecurringTxMutation.isPending,
+      recurring.setIsRecurring,
+      recurring.setFrequency,
+      recurring.setMaxOccurrences,
+      recurring.setRecurringEndDate,
+      suggestions.setPendingNewAccount,
+      suggestions.setEditingSuggestion,
+      suggestions.setCreatedSuggestions,
+      suggestions.setSuggestedVendorType,
+      suggestions.setSuggestedVendorTags,
     ]
   )
 

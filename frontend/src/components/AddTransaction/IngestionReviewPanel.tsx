@@ -191,7 +191,7 @@ export default function IngestionReviewPanel() {
           </div>
 
           <p className="text-[10px] text-slate-500 dark:text-slate-400">
-            Select notifications to merge (auto-dismiss as duplicate on save):
+            Select notifications to merge (auto-dismiss as merged on save):
           </p>
 
           <div className="flex flex-col gap-1.5">

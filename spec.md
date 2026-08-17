@@ -34,9 +34,11 @@ Users need a structured way to mirror their real-world financial accounts within
 - Automates data entry (Daily, Weekly, Monthly, Yearly).
 - Supports configuring `maxOccurrences` to automatically stop generation after a fixed number of transactions.
 - Uses `RecurringTransaction` entity featuring document embedding in Cosmos DB (nesting `templateEntries` and `occurrences` directly in the document).
+- **Status Lifecycle & Soft Delete:** Each recurring schedule includes a `Status` field (`Active`, `Deleted`, `Archived`). Deleting a schedule soft-deletes by setting `Status = "Deleted"`, stopping future generation while preserving historical occurrence logs. Active queries and background processors filter for `Status == "Active"`.
+- **Edit & Details View:** Editing a schedule displays full transaction template details (Type chip, total amount in PHP `₱`, vendor, and complete account ledger entry breakdown with debit/credit values and line notes/references).
 - When creating an initial transaction via `POST /transactions` with a `scheduleId`, the initial occurrence is automatically linked to the parent recurring schedule (`RecurringTransactionOccurrence`).
 - Handled efficiently in the background via a nightly Azure Functions `[TimerTrigger]`. 
-- Provides an automated view under the Transactions page, showcasing the scheduled history and expected end dates.
+- Provides an automated view under the Transactions page, showcasing the scheduled history, template amounts, and expected end dates.
 
 ### 2.4. Data Entry & Automation
 - **Smart Categorization:** Learns from manual entries to suggest categories based on past transaction vectors using cosine-similarity retrieval.

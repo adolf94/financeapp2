@@ -25,19 +25,23 @@ namespace FinanceApp.Services
         public async Task<IEnumerable<RecurringTransaction>> GetRecurringTransactionsAsync(string userId)
         {
             return await _context.RecurringTransactions
-                .Where(rt => rt.UserId == userId)
+                .Where(rt => rt.UserId == userId && (rt.Status == null || rt.Status == "Active"))
                 .ToListAsync();
         }
 
         public async Task<RecurringTransaction?> GetRecurringTransactionByIdAsync(string userId, string id)
         {
             return await _context.RecurringTransactions
-                .FirstOrDefaultAsync(rt => rt.Id == id && rt.UserId == userId);
+                .FirstOrDefaultAsync(rt => rt.Id == id && rt.UserId == userId && (rt.Status == null || rt.Status == "Active"));
         }
 
         public async Task<RecurringTransaction> CreateRecurringTransactionAsync(string userId, RecurringTransaction transaction)
         {
             transaction.UserId = userId;
+            if (string.IsNullOrEmpty(transaction.Status))
+            {
+                transaction.Status = "Active";
+            }
             
             // Initial setup for occurrences and next date if not set
             if (transaction.NextOccurrenceDate == default)
@@ -85,7 +89,8 @@ namespace FinanceApp.Services
                 
             if (existing != null)
             {
-                _context.RecurringTransactions.Remove(existing);
+                existing.Status = "Deleted";
+                _context.RecurringTransactions.Update(existing);
                 await _context.SaveChangesAsync();
             }
         }
@@ -95,7 +100,7 @@ namespace FinanceApp.Services
             var now = DateTime.UtcNow.Date;
             
             var dueSchedules = await _context.RecurringTransactions
-                .Where(rt => rt.NextOccurrenceDate <= now)
+                .Where(rt => (rt.Status == null || rt.Status == "Active") && rt.NextOccurrenceDate <= now)
                 .ToListAsync();
 
             foreach (var schedule in dueSchedules)

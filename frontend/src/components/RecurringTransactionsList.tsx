@@ -88,7 +88,24 @@ export default function RecurringTransactionsList() {
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-sm font-semibold tabular-nums ${
+                      tx.templateType === 'Income'
+                        ? 'text-emerald-500'
+                        : tx.templateType === 'Expense'
+                        ? 'text-rose-500'
+                        : tx.templateType === 'Journal'
+                        ? 'text-purple-600 dark:text-purple-400'
+                        : 'text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    {tx.templateType === 'Income' ? '+' : tx.templateType === 'Expense' ? '-' : ''}₱
+                    {(
+                      (tx.templateEntries ?? []).filter((e) => e.amount > 0).reduce((sum, e) => sum + e.amount, 0) ||
+                      (tx.templateEntries ?? []).reduce((sum, e) => sum + Math.abs(e.amount), 0) / 2
+                    ).toFixed(2)}
+                  </span>
                   <button
                     onClick={(e) => {
                       e.stopPropagation()

@@ -588,7 +588,7 @@ async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
         user_confirmed = body.get("user_confirmed", {})
         skip_learning = body.get("skip_learning", False)
         dismiss_related_ids = body.get("dismiss_related_ids", [])
-        dismiss_status = body.get("dismiss_status", "Duplicate") # Duplicate or Merged
+        dismiss_status = body.get("dismiss_status", "Merged") # Default to Merged
     except ValueError:
         return func.HttpResponse("Invalid JSON", status_code=400)
         

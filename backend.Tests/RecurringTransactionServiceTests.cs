@@ -152,5 +152,81 @@ namespace backend.Tests
             // Next occurrence date should still be advanced to avoid infinite loop on same day
             Assert.True(updatedRt.NextOccurrenceDate > oldNextDate);
         }
+
+        [Fact]
+        public async Task DeleteRecurringTransactionAsync_SoftDeletes_SetsStatusToDeleted()
+        {
+            // Arrange
+            var dbContext = GetInMemoryDbContext();
+            var service = new RecurringTransactionService(dbContext, _mockTransactionService.Object, _mockLogger.Object);
+
+            var recurringTx = new RecurringTransaction
+            {
+                Id = "rt-delete-1",
+                UserId = "user-1",
+                Status = "Active",
+                Frequency = "Monthly",
+                Interval = 1,
+                StartDate = DateTime.UtcNow
+            };
+
+            dbContext.RecurringTransactions.Add(recurringTx);
+            await dbContext.SaveChangesAsync();
+
+            // Act
+            await service.DeleteRecurringTransactionAsync("user-1", "rt-delete-1");
+
+            // Assert
+            var scheduleInDb = await dbContext.RecurringTransactions.FirstOrDefaultAsync(rt => rt.Id == "rt-delete-1");
+            Assert.NotNull(scheduleInDb);
+            Assert.Equal("Deleted", scheduleInDb.Status);
+
+            // GetRecurringTransactionsAsync should exclude soft-deleted items
+            var activeSchedules = await service.GetRecurringTransactionsAsync("user-1");
+            Assert.Empty(activeSchedules);
+
+            // GetRecurringTransactionByIdAsync should return null for soft-deleted items
+            var singleSchedule = await service.GetRecurringTransactionByIdAsync("user-1", "rt-delete-1");
+            Assert.Null(singleSchedule);
+        }
+
+        [Fact]
+        public async Task ProcessDueRecurringTransactionsAsync_Skips_WhenStatusDeletedOrArchived()
+        {
+            // Arrange
+            var dbContext = GetInMemoryDbContext();
+            var service = new RecurringTransactionService(dbContext, _mockTransactionService.Object, _mockLogger.Object);
+
+            var deletedTx = new RecurringTransaction
+            {
+                Id = "rt-del",
+                UserId = "user-1",
+                Status = "Deleted",
+                Frequency = "Monthly",
+                Interval = 1,
+                NextOccurrenceDate = DateTime.UtcNow.AddDays(-1),
+                Occurrences = new List<RecurringTransactionOccurrence>()
+            };
+
+            var archivedTx = new RecurringTransaction
+            {
+                Id = "rt-arch",
+                UserId = "user-1",
+                Status = "Archived",
+                Frequency = "Monthly",
+                Interval = 1,
+                NextOccurrenceDate = DateTime.UtcNow.AddDays(-1),
+                Occurrences = new List<RecurringTransactionOccurrence>()
+            };
+
+            dbContext.RecurringTransactions.AddRange(deletedTx, archivedTx);
+            await dbContext.SaveChangesAsync();
+
+            // Act
+            await service.ProcessDueRecurringTransactionsAsync();
+
+            // Assert
+            _mockTransactionService.Verify(s => s.CreateTransactionAsync(It.IsAny<string>(), It.IsAny<Transaction>()), Times.Never);
+        }
     }
 }

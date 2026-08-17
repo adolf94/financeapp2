@@ -20,6 +20,7 @@ export interface Transaction {
   entries: LedgerEntry[]
   isAutoConfirmed?: boolean
   ingestionId?: string | null
+  mergedIngestionIds?: string[]
 }
 
 export function useGetTransactions(startDate?: string, endDate?: string, accountGroupId?: string) {

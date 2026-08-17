@@ -67,6 +67,9 @@ namespace FinanceApp.Models
         [JsonPropertyName("ingestion_id")]
         public string? IngestionId { get; set; }
 
+        [JsonPropertyName("merged_ingestion_ids")]
+        public List<string>? MergedIngestionIds { get; set; }
+
         [JsonPropertyName("date")]
         public DateTime? Date { get; set; }
 

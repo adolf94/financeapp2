@@ -20,6 +20,7 @@ export interface RecurringLedgerEntry {
 export interface RecurringTransaction {
   id?: string
   userId?: string
+  status?: 'Active' | 'Deleted' | 'Archived'
   frequency: Frequency
   interval: number
   startDate: string

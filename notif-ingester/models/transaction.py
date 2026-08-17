@@ -15,6 +15,12 @@ class Transaction(BaseModel):
     vendor: Optional[str] = Field(default=None, alias="Vendor")
     transaction_type: TransactionType = Field(alias="Type")
     entries: List[LedgerEntry] = Field(default_factory=list, alias="Entries")
+    is_auto_confirmed: bool = Field(default=False, alias="IsAutoConfirmed")
+    ingestion_id: Optional[str] = Field(default=None, alias="IngestionId")
+    merged_ingestion_ids: List[str] = Field(default_factory=list, alias="MergedIngestionIds")
+    matched_vendor_lookups: List[str] = Field(default_factory=list, alias="MatchedVendorLookups")
+    new_vendor_lookups: List[str] = Field(default_factory=list, alias="NewVendorLookups")
 
     class Config:
         populate_by_name = True
+

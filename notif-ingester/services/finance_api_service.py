@@ -444,6 +444,7 @@ class FinanceApiService:
             "Note": parsed.notes or "",
             "IsAutoConfirmed": parsed.is_auto_confirmed if parsed.is_auto_confirmed is not None else False,
             "IngestionId": ingestion.id,
+            "MergedIngestionIds": ingestion.related_ingestion_ids or [],
             "MatchedVendorLookups": vendor_lookups,
             "NewVendorLookups": [],
             "$type": "Transaction"

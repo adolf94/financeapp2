@@ -1,5 +1,7 @@
-import { ArrowUpRight, ArrowDownRight, ArrowRightLeft, BookOpen, Smartphone, Bot, Pencil, Trash2 } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, ArrowRightLeft, BookOpen, Smartphone, Bot, Pencil, Trash2, Layers } from 'lucide-react'
+import { useState } from 'react'
 import { Transaction } from '@/hooks/useTransactions'
+import IngestionPreviewModal from '@/components/IngestionPreviewModal'
 
 interface TransactionCardProps {
   tx: Transaction
@@ -9,8 +11,17 @@ interface TransactionCardProps {
 }
 
 export default function TransactionCard({ tx, getAccountName, onEdit, onDelete }: TransactionCardProps) {
+  const [previewIngestionId, setPreviewIngestionId] = useState<string | null>(null)
+  const mergedIds = tx.mergedIngestionIds || []
+
   return (
     <li className="flex flex-col transition-colors duration-200">
+      {previewIngestionId && (
+        <IngestionPreviewModal
+          ingestionId={previewIngestionId}
+          onClose={() => setPreviewIngestionId(null)}
+        />
+      )}
       <div className="p-3 px-4 min-h-[60px] flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50">
         <div className="flex items-center gap-3">
           <div
@@ -42,7 +53,7 @@ export default function TransactionCard({ tx, getAccountName, onEdit, onDelete }
                   .join(', ') || 'Uncategorized'
               )}
             </div>
-            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+            <p className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-1">
               {
                 tx.type === 'Transfer'
                 ? (() => {
@@ -57,8 +68,51 @@ export default function TransactionCard({ tx, getAccountName, onEdit, onDelete }
                 : getAccountName(tx.entries.find(e => tx.type === 'Expense' ? e.amount < 0 : e.amount > 0)?.accountId ?? '')
               }
               {tx.vendor && ` • Vendor: ${tx.vendor}`}
-              {tx.ingestionId && !tx.isAutoConfirmed && <span className="ml-2 inline-flex items-center gap-0.5 text-[9px] uppercase font-bold tracking-wider text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded" title="Created from a notification"><Smartphone className="w-3 h-3" /> Linked</span>}
-              {tx.isAutoConfirmed && <span className="ml-2 inline-flex items-center gap-0.5 text-[9px] uppercase font-bold tracking-wider text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded" title="Auto-confirmed from notification"><Bot className="w-3 h-3" /> Auto</span>}
+              {tx.ingestionId && !tx.isAutoConfirmed && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPreviewIngestionId(tx.ingestionId!)
+                  }}
+                  className="ml-2 inline-flex items-center gap-0.5 text-[9px] uppercase font-bold tracking-wider text-indigo-500 hover:text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                  title="View linked source notification"
+                >
+                  <Smartphone className="w-3 h-3" /> Linked
+                </button>
+              )}
+              {tx.isAutoConfirmed && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (tx.ingestionId) setPreviewIngestionId(tx.ingestionId)
+                  }}
+                  className="ml-2 inline-flex items-center gap-0.5 text-[9px] uppercase font-bold tracking-wider text-blue-500 hover:text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                  title="Auto-confirmed from notification (click to preview)"
+                >
+                  <Bot className="w-3 h-3" /> Auto
+                </button>
+              )}
+              {mergedIds.length > 0 && (
+                <div className="inline-flex items-center gap-1 ml-1">
+                  {mergedIds.map((mergedId, index) => (
+                    <button
+                      key={mergedId}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setPreviewIngestionId(mergedId)
+                      }}
+                      className="inline-flex items-center gap-0.5 text-[9px] uppercase font-bold tracking-wider text-purple-600 hover:text-purple-700 bg-purple-50 hover:bg-purple-100 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                      title="Click to preview merged notification"
+                    >
+                      <Layers className="w-3 h-3" />
+                      {mergedIds.length > 1 ? `Merged #${index + 1}` : 'Merged'}
+                    </button>
+                  ))}
+                </div>
+              )}
             </p>
             {tx.note && <p className="text-sm text-slate-600 dark:text-slate-300 italic mt-0.5">{tx.note}</p>}
           </div>

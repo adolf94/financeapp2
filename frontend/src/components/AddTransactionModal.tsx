@@ -102,7 +102,9 @@ function AddTransactionModalContent() {
     frequency,
     setFrequency,
     maxOccurrences,
-    setMaxOccurrences,
+    recurringEndDate,
+    handleRecurringOccurrencesChange,
+    handleRecurringEndDateChange,
     suggestedVendorTags,
     suggestedVendorType,
     confirmReclassifyOpen,
@@ -1040,7 +1042,7 @@ function AddTransactionModalContent() {
                       </label>
 
                       {isRecurring && (
-                        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
+                        <div className="space-y-3 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
                           <div className="flex flex-col gap-1">
                             <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                               Frequency
@@ -1056,17 +1058,31 @@ function AddTransactionModalContent() {
                               <option value="Yearly">Yearly</option>
                             </select>
                           </div>
-                          <div className="flex flex-col gap-1">
-                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                              Max Times (Optional)
-                            </label>
-                            <input
-                              type="number"
-                              placeholder="Unlimited"
-                              value={maxOccurrences}
-                              onChange={(e) => setMaxOccurrences(e.target.value)}
-                              className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
-                            />
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                End Date <span className="text-slate-400 font-normal lowercase">(optional)</span>
+                              </label>
+                              <input
+                                type="date"
+                                value={recurringEndDate}
+                                onChange={(e) => handleRecurringEndDateChange(e.target.value)}
+                                className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
+                              />
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                Max Times <span className="text-slate-400 font-normal lowercase">(optional)</span>
+                              </label>
+                              <input
+                                type="number"
+                                min={1}
+                                placeholder="Unlimited"
+                                value={maxOccurrences}
+                                onChange={(e) => handleRecurringOccurrencesChange(e.target.value)}
+                                className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
+                              />
+                            </div>
                           </div>
                         </div>
                       )}
