@@ -66,7 +66,6 @@ export default function AddTransactionModal(props: AddTransactionModalProps) {
 
 function AddTransactionModalContent() {
   const {
-    onClose,
     initialData,
     ingestion,
     isLoadingIngestion,
@@ -121,6 +120,10 @@ function AddTransactionModalContent() {
     isDrawerOpen,
     setIsDrawerOpen,
     isSubmitting,
+    showDismissConfirm,
+    setShowDismissConfirm,
+    promptDismiss,
+    confirmDismiss,
   } = useAddTransaction()
 
   const [streamReasoning, setStreamReasoning] = useState(false)
@@ -285,7 +288,7 @@ function AddTransactionModalContent() {
     <>
       {/* Overlay */}
       <div
-        onClick={onClose}
+        onClick={promptDismiss}
         className="fixed inset-0 bg-black/40 z-50 transition-opacity duration-300"
       />
       {/* Bottom Sheet */}
@@ -369,7 +372,7 @@ function AddTransactionModalContent() {
               )}
               <button
                 type="button"
-                onClick={onClose}
+                onClick={promptDismiss}
                 className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <X className="w-5 h-5" strokeWidth={1.5} />
@@ -1309,6 +1312,19 @@ function AddTransactionModalContent() {
           onSaveSuccess={(updatedVendor) => {
             setVendor(updatedVendor.name)
           }}
+        />
+      )}
+
+      {showDismissConfirm && (
+        <ConfirmationModal
+          isOpen={showDismissConfirm}
+          title="Discard Changes?"
+          message="You have unsaved changes. Are you sure you want to dismiss and lose these changes?"
+          confirmLabel="Discard Changes"
+          cancelLabel="Keep Editing"
+          confirmVariant="danger"
+          onConfirm={confirmDismiss}
+          onCancel={() => setShowDismissConfirm(false)}
         />
       )}
     </>

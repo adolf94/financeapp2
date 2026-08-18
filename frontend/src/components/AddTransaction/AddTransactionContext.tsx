@@ -10,6 +10,7 @@ import dayjs from 'dayjs'
 import { useRecurringScheduleState } from './hooks/useRecurringScheduleState'
 import { useSuggestionsState, PendingNewAccountType, SuggestionData } from './hooks/useSuggestionsState'
 import { useIngestionPrefill } from './hooks/useIngestionPrefill'
+import { sanitizeAmount } from '@/components/ui/CalculatorInput'
 
 const generateId = () => uuidv7()
 
@@ -112,8 +113,13 @@ interface AddTransactionContextProps {
   isDrawerOpen: boolean
   setIsDrawerOpen: (open: boolean) => void
 
-  // Flashing
+  // Flashing & Dismiss Confirmation
   isFlashing: boolean
+  showDismissConfirm: boolean
+  setShowDismissConfirm: (show: boolean) => void
+  promptDismiss: () => void
+  confirmDismiss: () => void
+  isDirty: boolean
 
   // Actions
   resetForm: () => void
@@ -181,7 +187,9 @@ export function AddTransactionProvider({
   const [currentOperationId, setCurrentOperationId] = useState('')
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [isFlashing, setIsFlashing] = useState(false)
+  const [showDismissConfirm, setShowDismissConfirm] = useState(false)
   const submitTypeRef = useRef<'close' | 'more'>('close')
+  const initialValuesRef = useRef<any>(null)
 
   // Sub-hooks
   const recurring = useRecurringScheduleState(date)
@@ -214,6 +222,61 @@ export function AddTransactionProvider({
     recurring.resetRecurringState()
   }, [recurring])
 
+  const takeCurrentSnapshot = useCallback(() => {
+    return JSON.stringify({
+      mode,
+      type,
+      totalAmount,
+      sourceAccountId,
+      toAccountId,
+      splits: splits.map((s) => ({ categoryId: s.categoryId, subCategoryId: s.subCategoryId, amount: s.amount })),
+      journalLines: journalLines.map((l) => ({
+        categoryId: l.categoryId,
+        subCategoryId: l.subCategoryId,
+        amount: l.amount,
+        type: l.type,
+        note: l.note || '',
+        referenceNumber: l.referenceNumber || '',
+      })),
+      vendor,
+      selectedLookups,
+      selectedNewLookups,
+      date,
+      note,
+      referenceNumber,
+      userWhy,
+      skipLearning,
+      isRecurring: recurring.isRecurring,
+      frequency: recurring.frequency,
+      maxOccurrences: recurring.maxOccurrences,
+      recurringEndDate: recurring.recurringEndDate,
+    })
+  }, [
+    mode,
+    type,
+    totalAmount,
+    sourceAccountId,
+    toAccountId,
+    splits,
+    journalLines,
+    vendor,
+    selectedLookups,
+    selectedNewLookups,
+    date,
+    note,
+    referenceNumber,
+    userWhy,
+    skipLearning,
+    recurring.isRecurring,
+    recurring.frequency,
+    recurring.maxOccurrences,
+    recurring.recurringEndDate,
+  ])
+
+  const handleSnapshot = useCallback(() => {
+    initialValuesRef.current = takeCurrentSnapshot()
+  }, [takeCurrentSnapshot])
+
   // Ingestion & initialData prefill logic
   useIngestionPrefill({
     isOpen,
@@ -241,7 +304,28 @@ export function AddTransactionProvider({
     setIsRecurring: recurring.setIsRecurring,
     setSuggestedVendorType: suggestions.setSuggestedVendorType,
     setSuggestedVendorTags: suggestions.setSuggestedVendorTags,
+    onSnapshot: handleSnapshot,
   })
+
+  const isDirty = useMemo(() => {
+    if (!initialValuesRef.current) return false
+    return takeCurrentSnapshot() !== initialValuesRef.current
+  }, [takeCurrentSnapshot])
+
+  const promptDismiss = useCallback(() => {
+    if (isDirty) {
+      setShowDismissConfirm(true)
+    } else {
+      onClose()
+      if (!initialData?.id) resetForm()
+    }
+  }, [isDirty, onClose, initialData, resetForm])
+
+  const confirmDismiss = useCallback(() => {
+    setShowDismissConfirm(false)
+    onClose()
+    if (!initialData?.id) resetForm()
+  }, [onClose, initialData, resetForm])
 
   const linkAndDismissIngestion = useCallback(() => {
     if (!ingestionId) return
@@ -348,7 +432,7 @@ export function AddTransactionProvider({
 
       for (const line of journalLines) {
         if (!line.subCategoryId) continue
-        const amt = parseFloat(line.amount || '0')
+        const amt = parseFloat(sanitizeAmount(line.amount || '0'))
         if (amt === 0) continue
 
         const roundedAmt = Math.round(amt * 100) / 100
@@ -410,7 +494,7 @@ export function AddTransactionProvider({
     }
 
     const entries: LedgerEntry[] = []
-    const parsedTotal = parseFloat(totalAmount)
+    const parsedTotal = parseFloat(sanitizeAmount(totalAmount))
     const trimmedNote = note.trim() || undefined
     const trimmedRef = referenceNumber.trim() || undefined
 
@@ -681,6 +765,11 @@ export function AddTransactionProvider({
       isDrawerOpen,
       setIsDrawerOpen,
       isFlashing,
+      showDismissConfirm,
+      setShowDismissConfirm,
+      promptDismiss,
+      confirmDismiss,
+      isDirty,
       resetForm,
       handleSubmit,
       submitTypeRef,
@@ -736,6 +825,10 @@ export function AddTransactionProvider({
       currentOperationId,
       isDrawerOpen,
       isFlashing,
+      showDismissConfirm,
+      promptDismiss,
+      confirmDismiss,
+      isDirty,
       resetForm,
       handleSubmit,
       reclassifyMutation,

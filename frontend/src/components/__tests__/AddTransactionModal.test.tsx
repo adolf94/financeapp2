@@ -4,9 +4,17 @@ import AddTransactionModal from '../AddTransactionModal'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 // Mock the hooks
+const mockAccounts = [
+  { id: 'acc-wallet', name: 'GCash', accountGroupId: 'group-asset' },
+  { id: 'acc-food', name: 'Dining Out', accountGroupId: 'group-expense' },
+]
+const mockAccountGroups = [
+  { id: 'group-asset', name: 'Cash & Bank', accountType: 'Asset' },
+  { id: 'group-expense', name: 'Food & Dining', accountType: 'Expense' },
+]
 vi.mock('@/hooks/useAccounts', () => ({
-  useGetAccounts: () => ({ data: [] }),
-  useGetAccountGroups: () => ({ data: [] }),
+  useGetAccounts: () => ({ data: mockAccounts }),
+  useGetAccountGroups: () => ({ data: mockAccountGroups }),
   useCreateAccountGroup: () => ({ mutate: vi.fn() }),
   useCreateAccount: () => ({ mutate: vi.fn() }),
   useGenerateAccountDescription: () => ({ isPending: false }),
@@ -18,8 +26,9 @@ vi.mock('@/hooks/useVendors', () => ({
   useUpdateVendor: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
+const mockCreateTransactionMutate = vi.fn()
 vi.mock('@/hooks/useTransactions', () => ({
-  useCreateTransaction: () => ({ mutate: vi.fn() }),
+  useCreateTransaction: () => ({ mutate: mockCreateTransactionMutate }),
   useUpdateTransaction: () => ({ mutate: vi.fn() }),
 }))
 
@@ -200,5 +209,118 @@ describe('AddTransactionModal Reclassify Button', () => {
     expect(amountInput.value).toBe('1250')
     expect(noteInput.value).toBe('Dinner with team')
     expect(vendorInput.value).toBe('New Restaurant')
+  })
+
+  it('submits correctly when amount is pasted', () => {
+    render(
+      <AddTransactionModal
+        isOpen={true}
+        onClose={vi.fn()}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    // Select source account
+    const sourceSelect = screen.getByLabelText(/Pay From/i) as HTMLSelectElement
+    fireEvent.change(sourceSelect, { target: { value: 'acc-wallet' } })
+
+    // Select category (comboboxes)
+    const categoryInput = screen.getByPlaceholderText('Select Category...')
+    fireEvent.click(categoryInput)
+    fireEvent.mouseDown(screen.getByText('Food & Dining'))
+
+    const subCategoryInput = screen.getByPlaceholderText('Select Sub-Category...')
+    fireEvent.click(subCategoryInput)
+    fireEvent.mouseDown(screen.getByText('Dining Out'))
+
+    // Paste amount
+    const amountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
+    fireEvent.change(amountInput, { target: { value: '205.45' } })
+
+    // Click Save & Close
+    const saveBtn = screen.getByRole('button', { name: /Save & Close/i })
+    fireEvent.click(saveBtn)
+
+    expect(mockCreateTransactionMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'Expense',
+        entries: expect.arrayContaining([
+          expect.objectContaining({
+            accountId: 'acc-wallet',
+            amount: -205.45,
+          }),
+          expect.objectContaining({
+            accountId: 'acc-food',
+            amount: 205.45,
+          }),
+        ]),
+      }),
+      expect.anything()
+    )
+  })
+
+  it('closes immediately without confirmation when no edits are pending', () => {
+    const onCloseMock = vi.fn()
+    render(
+      <AddTransactionModal
+        isOpen={true}
+        onClose={onCloseMock}
+        ingestion={mockIngestion}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    const xButtons = document.querySelectorAll('button')
+    const headerCloseBtn = Array.from(xButtons).find((b) => b.querySelector('svg.lucide-x'))
+    if (headerCloseBtn) {
+      fireEvent.click(headerCloseBtn)
+    }
+
+    expect(onCloseMock).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Discard Changes?')).toBeNull()
+  })
+
+  it('shows confirmation dialog when closing with pending edits and cancels or confirms correctly', () => {
+    const onCloseMock = vi.fn()
+    render(
+      <AddTransactionModal
+        isOpen={true}
+        onClose={onCloseMock}
+        ingestion={mockIngestion}
+      />,
+      { wrapper: createWrapper() }
+    )
+
+    // Edit a field
+    const noteInput = screen.getByPlaceholderText('Note (optional)') as HTMLTextAreaElement
+    fireEvent.change(noteInput, { target: { value: 'Changed notes' } })
+
+    const xButtons = document.querySelectorAll('button')
+    const headerCloseBtn = Array.from(xButtons).find((b) => b.querySelector('svg.lucide-x'))
+    if (headerCloseBtn) {
+      fireEvent.click(headerCloseBtn)
+    }
+
+    // Confirmation dialog should be visible
+    expect(screen.getByText('Discard Changes?')).toBeDefined()
+    expect(screen.getByText(/You have unsaved changes/i)).toBeDefined()
+    expect(onCloseMock).not.toHaveBeenCalled()
+
+    // Click "Keep Editing"
+    const cancelBtn = screen.getByRole('button', { name: 'Keep Editing' })
+    fireEvent.click(cancelBtn)
+    expect(screen.queryByText('Discard Changes?')).toBeNull()
+    expect(onCloseMock).not.toHaveBeenCalled()
+
+    // Try closing again and confirm discard
+    if (headerCloseBtn) {
+      fireEvent.click(headerCloseBtn)
+    }
+    expect(screen.getByText('Discard Changes?')).toBeDefined()
+
+    const confirmBtn = screen.getByRole('button', { name: 'Discard Changes' })
+    fireEvent.click(confirmBtn)
+
+    expect(onCloseMock).toHaveBeenCalledTimes(1)
   })
 })

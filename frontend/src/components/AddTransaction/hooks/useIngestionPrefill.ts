@@ -34,6 +34,7 @@ interface UseIngestionPrefillParams {
   setIsRecurring: (rec: boolean) => void
   setSuggestedVendorType: (type: 'Individual' | 'Business') => void
   setSuggestedVendorTags: (tags: string) => void
+  onSnapshot?: (snapshot: any) => void
 }
 
 export function useIngestionPrefill({
@@ -62,6 +63,7 @@ export function useIngestionPrefill({
   setIsRecurring,
   setSuggestedVendorType,
   setSuggestedVendorTags,
+  onSnapshot,
 }: UseIngestionPrefillParams) {
   const accountsRef = useRef(accounts)
   useEffect(() => {
@@ -211,8 +213,11 @@ export function useIngestionPrefill({
     if (reclassifyData && reclassifyData !== prevReclassifyDataRef.current) {
       prevReclassifyDataRef.current = reclassifyData
       applyAiParsed(reclassifyData.ai_parsed, reclassifyData.received_at)
+      if (onSnapshot) {
+        onSnapshot(reclassifyData.ai_parsed)
+      }
     }
-  }, [reclassifyData, applyAiParsed])
+  }, [reclassifyData, applyAiParsed, onSnapshot])
 
   const formInitializedForRef = useRef<string | null>(null)
 
@@ -301,10 +306,13 @@ export function useIngestionPrefill({
       if (justOpened) {
         setUserWhy(ingestion?.user_confirmed?.user_why || '')
       }
+      if (onSnapshot) {
+        onSnapshot(initialData || ingestion?.ai_parsed || null)
+      }
     } else {
       formInitializedForRef.current = null
     }
-  }, [isOpen, initialData, ingestion])
+  }, [isOpen, initialData, ingestion, onSnapshot])
 
   // Sync categoryIds when accounts load
   useEffect(() => {

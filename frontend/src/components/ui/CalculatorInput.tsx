@@ -9,6 +9,19 @@ interface CalculatorInputProps {
   required?: boolean
 }
 
+export function sanitizeAmount(raw: string): string {
+  if (!raw) return ''
+  let cleaned = raw.trim().replace(/[₱$\s]/g, '')
+  // If comma was used as decimal separator (e.g. "205,45")
+  if (/,\d{1,2}$/.test(cleaned) && !cleaned.includes('.')) {
+    cleaned = cleaned.replace(',', '.')
+  } else {
+    // Standard thousands separator (e.g. "1,205.45" or "1,000")
+    cleaned = cleaned.replace(/,/g, '')
+  }
+  return cleaned
+}
+
 export default function CalculatorInput({ value, onChange, placeholder, className, required }: CalculatorInputProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [expression, setExpression] = useState(value)
@@ -55,6 +68,22 @@ export default function CalculatorInput({ value, onChange, placeholder, classNam
     }
   }
 
+  const handleInputChange = (rawVal: string) => {
+    const sanitized = sanitizeAmount(rawVal)
+    setExpression(sanitized)
+    if (!isOpen) onChange(sanitized)
+  }
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pastedText = e.clipboardData.getData('text')
+    if (pastedText) {
+      e.preventDefault()
+      const sanitized = sanitizeAmount(pastedText)
+      setExpression(sanitized)
+      onChange(sanitized)
+    }
+  }
+
   const append = (char: string) => {
     setExpression((prev) => prev + char)
   }
@@ -83,10 +112,8 @@ export default function CalculatorInput({ value, onChange, placeholder, classNam
           type="text"
           inputMode="decimal"
           value={isOpen ? expression : value}
-          onChange={(e) => {
-            setExpression(e.target.value)
-            if (!isOpen) onChange(e.target.value)
-          }}
+          onChange={(e) => handleInputChange(e.target.value)}
+          onPaste={handlePaste}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
           required={required}
