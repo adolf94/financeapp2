@@ -303,6 +303,80 @@ describe('AddTransactionModal', () => {
   })
 
   describe('Recurring Transactions', () => {
+    it('submits recurring advanced (Journal) transaction', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // Switch to Advanced mode
+      const advancedBtn = screen.getByRole('button', { name: 'Advanced' })
+      fireEvent.click(advancedBtn)
+      expect(screen.getByText('Journal Lines')).toBeDefined()
+
+      // Fill first journal line (Debit: Food & Dining > Dining Out)
+      const categoryInputs = screen.getAllByPlaceholderText('Category...')
+      fireEvent.click(categoryInputs[0])
+      fireEvent.mouseDown(screen.getByText('Food & Dining'))
+
+      const accountInputs = screen.getAllByPlaceholderText('Account...')
+      fireEvent.click(accountInputs[0])
+      fireEvent.mouseDown(screen.getByText('Dining Out'))
+
+      // Set amount for first line
+      const amountInputs = screen.getAllByPlaceholderText('0.00') as HTMLInputElement[]
+      fireEvent.change(amountInputs[0], { target: { value: '2000' } })
+
+      // Fill second journal line (Credit: Cash & Bank > GCash)
+      fireEvent.click(categoryInputs[1])
+      fireEvent.mouseDown(screen.getByText('Cash & Bank'))
+
+      fireEvent.click(accountInputs[1])
+      fireEvent.mouseDown(screen.getByText('GCash'))
+
+      // Switch second line to Credit
+      const crBtns = screen.getAllByRole('button', { name: 'Cr' })
+      fireEvent.click(crBtns[1])
+
+      fireEvent.change(amountInputs[1], { target: { value: '2000' } })
+
+      // Enable recurring
+      const recurringCheckbox = screen.getByRole('checkbox', { name: /Make this recurring/i })
+      fireEvent.click(recurringCheckbox)
+
+      // Set max occurrences to 4
+      const maxOccurrencesInput = screen.getByPlaceholderText('Unlimited') as HTMLInputElement
+      fireEvent.change(maxOccurrencesInput, { target: { value: '4' } })
+
+      // Submit
+      const saveBtn = screen.getByRole('button', { name: /Save & Close/i })
+      fireEvent.click(saveBtn)
+
+      // Recurring mutation called with templateType: 'Journal'
+      expect(mockCreateRecurringTransactionMutate).toHaveBeenCalledTimes(1)
+      const recurringPayload = mockCreateRecurringTransactionMutate.mock.calls[0][0]
+      expect(recurringPayload).toMatchObject({
+        frequency: 'Monthly',
+        interval: 1,
+        maxOccurrences: 4,
+        templateType: 'Journal',
+        templateEntries: expect.arrayContaining([
+          expect.objectContaining({ accountId: 'acc-food', amount: 2000 }),
+          expect.objectContaining({ accountId: 'acc-wallet', amount: -2000 }),
+        ]),
+      })
+
+      // Regular transaction linked via scheduleId
+      expect(mockCreateTransactionMutate).toHaveBeenCalledTimes(1)
+      const txPayload = mockCreateTransactionMutate.mock.calls[0][0]
+      expect(txPayload.scheduleId).toBe(recurringPayload.id)
+      expect(txPayload.type).toBe('Journal')
+    })
+
+
     it('toggles recurring transaction controls and updates date and max occurrences bidirectionally', () => {
       render(
         <AddTransactionModal

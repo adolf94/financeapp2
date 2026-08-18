@@ -422,9 +422,40 @@ export function AddTransactionProvider({
   }
 
   const saveAdvancedTransaction = (entries: LedgerEntry[]) => {
+    let finalScheduleId: string | undefined = undefined
+
+    if (recurring.isRecurring && !initialData) {
+      finalScheduleId = uuidv7()
+      let nextDate = new Date(date)
+      if (recurring.frequency === 'Daily') nextDate.setDate(nextDate.getDate() + 1)
+      else if (recurring.frequency === 'Weekly') nextDate.setDate(nextDate.getDate() + 7)
+      else if (recurring.frequency === 'Monthly') nextDate.setMonth(nextDate.getMonth() + 1)
+      else if (recurring.frequency === 'Yearly') nextDate.setFullYear(nextDate.getFullYear() + 1)
+
+      createRecurringTxMutation.mutate({
+        id: finalScheduleId,
+        frequency: recurring.frequency,
+        interval: 1,
+        startDate: dayjs(date).toISOString(),
+        endDate: recurring.recurringEndDate ? dayjs(recurring.recurringEndDate).toISOString() : undefined,
+        nextOccurrenceDate: nextDate.toISOString(),
+        maxOccurrences: recurring.maxOccurrences ? parseInt(recurring.maxOccurrences) : undefined,
+        templateType: 'Journal',
+        templateNote: note,
+        templateVendor: vendor || undefined,
+        templateEntries: entries.map((e) => ({
+          accountId: e.accountId,
+          amount: e.amount,
+          note: e.note,
+          referenceNumber: e.referenceNumber,
+        })),
+      })
+    }
+
     const transaction: Transaction = {
       ...(initialData?.id ? { id: initialData.id } : {}),
       type: 'Journal',
+      scheduleId: finalScheduleId,
       entries,
       vendor,
       note,
