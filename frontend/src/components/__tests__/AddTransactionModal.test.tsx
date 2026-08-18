@@ -217,6 +217,59 @@ describe('AddTransactionModal', () => {
       expect(noteInput.value).toBe('Dinner with team')
       expect(vendorInput.value).toBe('New Restaurant')
     })
+
+    it('switches between Simple and Advanced (Journal) mode on click', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // Starts in Simple mode with 0.00 calculator input
+      expect(screen.getByPlaceholderText('0.00')).toBeDefined()
+      expect(screen.queryByText('Journal Lines')).toBeNull()
+
+      // Switch to Advanced
+      const advancedBtn = screen.getByRole('button', { name: 'Advanced' })
+      fireEvent.click(advancedBtn)
+
+      // Journal lines UI should now be rendered
+      expect(screen.getByText('Journal Lines')).toBeDefined()
+      expect(screen.getByRole('button', { name: 'Add Line' })).toBeDefined()
+
+      // Switch back to Simple
+      const simpleBtn = screen.getByRole('button', { name: 'Simple' })
+      fireEvent.click(simpleBtn)
+
+      expect(screen.getByPlaceholderText('0.00')).toBeDefined()
+      expect(screen.queryByText('Journal Lines')).toBeNull()
+    })
+
+    it('switches transaction type between Expense, Income, and Transfer', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // Initially Expense: label is "Pay From"
+      expect(screen.getByText('Pay From')).toBeDefined()
+      expect(screen.queryByText('Transfer To')).toBeNull()
+
+      // Click Income tab: label changes to "Deposit To"
+      const incomeBtn = screen.getByRole('button', { name: 'Income' })
+      fireEvent.click(incomeBtn)
+      expect(screen.getByText('Deposit To')).toBeDefined()
+
+      // Click Transfer tab: destination account appears
+      const transferBtn = screen.getByRole('button', { name: 'Transfer' })
+      fireEvent.click(transferBtn)
+      expect(screen.getByText('Transfer To')).toBeDefined()
+    })
   })
 
   describe('Form Submission', () => {

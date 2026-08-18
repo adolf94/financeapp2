@@ -221,6 +221,11 @@ export function useIngestionPrefill({
 
   const formInitializedForRef = useRef<string | null>(null)
 
+  const onSnapshotRef = useRef(onSnapshot)
+  useEffect(() => {
+    onSnapshotRef.current = onSnapshot
+  }, [onSnapshot])
+
   // Only run initialization when modal opens or initialData / ingestion target changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -310,13 +315,13 @@ export function useIngestionPrefill({
       if (justOpened) {
         setUserWhy(ingestion?.user_confirmed?.user_why || '')
       }
-      if (onSnapshot) {
-        onSnapshot(initialData || ingestion?.ai_parsed || null)
+      if (onSnapshotRef.current) {
+        onSnapshotRef.current(initialData || ingestion?.ai_parsed || null)
       }
     } else {
       formInitializedForRef.current = null
     }
-  }, [isOpen, initialData, ingestion, onSnapshot])
+  }, [isOpen, initialData, ingestion])
 
   // Sync categoryIds when accounts load
   useEffect(() => {
