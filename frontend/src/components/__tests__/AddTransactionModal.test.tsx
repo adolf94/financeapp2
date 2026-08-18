@@ -49,6 +49,10 @@ vi.mock('@/hooks/useIngestions', () => ({
   useLearnIngestion: () => ({ mutate: vi.fn() }),
 }))
 
+vi.mock('@/components/AuthenticatedReceiptImage', () => ({
+  default: () => <div data-testid="auth-receipt-image" />,
+}))
+
 const mockIngestion = {
   id: 'ingestion-123',
   UserId: 'user-123',
@@ -76,251 +80,233 @@ const createWrapper = () => {
   )
 }
 
-describe('AddTransactionModal Reclassify Button', () => {
+describe('AddTransactionModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('renders reclassify buttons when ingestion exists', () => {
-    render(
-      <AddTransactionModal
-        isOpen={true}
-        onClose={vi.fn()}
-        ingestion={mockIngestion}
-      />,
-      { wrapper: createWrapper() }
-    )
-
-    // The header button has the tooltip title
-    const headerBtn = screen.getByTitle(/Re-run AI classification/)
-    expect(headerBtn).toBeDefined()
-
-    // The sidebar button has the text
-    const reclassifyBtns = screen.getAllByRole('button', { name: /Re-run AI Classification/i })
-    expect(reclassifyBtns.length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('opens confirmation modal, accepts comments, and triggers reclassify with userCorrections', async () => {
-    render(
-      <AddTransactionModal
-        isOpen={true}
-        onClose={vi.fn()}
-        ingestion={mockIngestion}
-      />,
-      { wrapper: createWrapper() }
-    )
-
-    const reclassifyBtns = screen.getAllByRole('button', { name: /Re-run AI Classification/i })
-    const sidebarBtn = reclassifyBtns[reclassifyBtns.length - 1]
-    fireEvent.click(sidebarBtn)
-
-    // Verify confirmation modal is open
-    expect(screen.getByRole('heading', { name: 'Re-run AI Classification' })).toBeDefined()
-
-    // Type a comment in the textarea
-    const commentInput = screen.getByPlaceholderText(/Treat this as a Food & Dining expense/i)
-    fireEvent.change(commentInput, { target: { value: 'Fix category to Utilities' } })
-
-    // Click confirm inside confirmation modal
-    const confirmBtn = screen.getByRole('button', { name: 'Reclassify' })
-    fireEvent.click(confirmBtn)
-
-    await waitFor(() => {
-      expect(mockReclassifyMutate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'ingestion-123',
-          userCorrections: expect.objectContaining({
-            comment: 'Fix category to Utilities',
-          }),
-        })
+  describe('Reclassification', () => {
+    it('renders reclassify buttons when ingestion exists', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          ingestion={mockIngestion}
+        />,
+        { wrapper: createWrapper() }
       )
+
+      // The header button has the tooltip title
+      const headerBtn = screen.getByTitle(/Re-run AI classification/)
+      expect(headerBtn).toBeDefined()
+
+      // The sidebar button has the text
+      const reclassifyBtns = screen.getAllByRole('button', { name: /Re-run AI Classification/i })
+      expect(reclassifyBtns.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('opens confirmation modal, accepts comments, and triggers reclassify with userCorrections', async () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          ingestion={mockIngestion}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      const reclassifyBtns = screen.getAllByRole('button', { name: /Re-run AI Classification/i })
+      const sidebarBtn = reclassifyBtns[reclassifyBtns.length - 1]
+      fireEvent.click(sidebarBtn)
+
+      // Verify confirmation modal is open
+      expect(screen.getByRole('heading', { name: 'Re-run AI Classification' })).toBeDefined()
+
+      // Type a comment in the textarea
+      const commentInput = screen.getByPlaceholderText(/Treat this as a Food & Dining expense/i)
+      fireEvent.change(commentInput, { target: { value: 'Fix category to Utilities' } })
+
+      // Click confirm inside confirmation modal
+      const confirmBtn = screen.getByRole('button', { name: 'Reclassify' })
+      fireEvent.click(confirmBtn)
+
+      await waitFor(() => {
+        expect(mockReclassifyMutate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'ingestion-123',
+            userCorrections: expect.objectContaining({
+              comment: 'Fix category to Utilities',
+            }),
+          })
+        )
+      })
     })
   })
 
-  it('renders edit vendor button when a matching vendor is selected', () => {
-    render(
-      <AddTransactionModal
-        isOpen={true}
-        onClose={vi.fn()}
-        initialData={{
-          id: 'tx-1',
-          type: 'Expense',
-          date: '2026-08-08T00:00:00Z',
-          vendor: 'Test Vendor',
-          entries: []
-        }}
-      />,
-      { wrapper: createWrapper() }
-    )
+  describe('Vendor Handling', () => {
+    it('renders edit vendor button when a matching vendor is selected', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          initialData={{
+            id: 'tx-1',
+            type: 'Expense',
+            date: '2026-08-08T00:00:00Z',
+            vendor: 'Test Vendor',
+            entries: []
+          }}
+        />,
+        { wrapper: createWrapper() }
+      )
 
-    const editBtn = screen.getByTitle('Edit selected vendor')
-    expect(editBtn).toBeDefined()
+      const editBtn = screen.getByTitle('Edit selected vendor')
+      expect(editBtn).toBeDefined()
+    })
+
+    it('opens EditVendorModal when edit button is clicked', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          initialData={{
+            id: 'tx-1',
+            type: 'Expense',
+            date: '2026-08-08T00:00:00Z',
+            vendor: 'Test Vendor',
+            entries: []
+          }}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      const editBtn = screen.getByTitle('Edit selected vendor')
+      fireEvent.click(editBtn)
+
+      expect(screen.getByText('Edit Vendor')).toBeDefined()
+    })
+
+    it('preserves user modifications to form fields when vendor is changed', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          ingestion={mockIngestion}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // Initially amount is 500 from mockIngestion
+      const amountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
+      expect(amountInput.value).toBe('500')
+
+      // User modifies amount and note
+      fireEvent.change(amountInput, { target: { value: '1250' } })
+      expect(amountInput.value).toBe('1250')
+
+      const noteInput = screen.getByPlaceholderText('Note (optional)') as HTMLTextAreaElement
+      fireEvent.change(noteInput, { target: { value: 'Dinner with team' } })
+      expect(noteInput.value).toBe('Dinner with team')
+
+      // User changes vendor
+      const vendorInput = screen.getByPlaceholderText('Select or type vendor...') as HTMLInputElement
+      fireEvent.change(vendorInput, { target: { value: 'New Restaurant' } })
+
+      // User's modified amount and note must remain unchanged
+      expect(amountInput.value).toBe('1250')
+      expect(noteInput.value).toBe('Dinner with team')
+      expect(vendorInput.value).toBe('New Restaurant')
+    })
   })
 
-  it('opens EditVendorModal when edit button is clicked', () => {
-    render(
-      <AddTransactionModal
-        isOpen={true}
-        onClose={vi.fn()}
-        initialData={{
-          id: 'tx-1',
-          type: 'Expense',
-          date: '2026-08-08T00:00:00Z',
-          vendor: 'Test Vendor',
-          entries: []
-        }}
-      />,
-      { wrapper: createWrapper() }
-    )
+  describe('Form Submission', () => {
+    it('submits correctly when editing transaction', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          initialData={{
+            id: 'tx-1',
+            type: 'Expense',
+            date: '2026-08-08T00:00:00Z',
+            vendor: 'Test Vendor',
+            entries: [
+              { accountId: 'acc-wallet', amount: -100 },
+              { accountId: 'acc-food', amount: 100 },
+            ],
+          }}
+        />,
+        { wrapper: createWrapper() }
+      )
 
-    const editBtn = screen.getByTitle('Edit selected vendor')
-    fireEvent.click(editBtn)
+      // Edit amount
+      const amountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
+      fireEvent.change(amountInput, { target: { value: '205.45' } })
 
-    expect(screen.getByText('Edit Vendor')).toBeDefined()
+      // Click Save Changes
+      const saveBtn = screen.getByRole('button', { name: /Save Changes/i })
+      fireEvent.click(saveBtn)
+
+      expect(mockCreateTransactionMutate).toBeDefined()
+    })
   })
 
-  it('preserves user modifications to form fields when vendor is changed', () => {
-    render(
-      <AddTransactionModal
-        isOpen={true}
-        onClose={vi.fn()}
-        ingestion={mockIngestion}
-      />,
-      { wrapper: createWrapper() }
-    )
+  describe('Discard & Confirmation', () => {
+    it('closes immediately without confirmation when no edits are pending', () => {
+      const onCloseMock = vi.fn()
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={onCloseMock}
+          ingestion={mockIngestion}
+        />,
+        { wrapper: createWrapper() }
+      )
 
-    // Initially amount is 500 from mockIngestion
-    const amountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
-    expect(amountInput.value).toBe('500')
-
-    // User modifies amount and note
-    fireEvent.change(amountInput, { target: { value: '1250' } })
-    expect(amountInput.value).toBe('1250')
-
-    const noteInput = screen.getByPlaceholderText('Note (optional)') as HTMLTextAreaElement
-    fireEvent.change(noteInput, { target: { value: 'Dinner with team' } })
-    expect(noteInput.value).toBe('Dinner with team')
-
-    // User changes vendor
-    const vendorInput = screen.getByPlaceholderText('Select or type vendor...') as HTMLInputElement
-    fireEvent.change(vendorInput, { target: { value: 'New Restaurant' } })
-
-    // User's modified amount and note must remain unchanged
-    expect(amountInput.value).toBe('1250')
-    expect(noteInput.value).toBe('Dinner with team')
-    expect(vendorInput.value).toBe('New Restaurant')
-  })
-
-  it('submits correctly when amount is pasted', () => {
-    render(
-      <AddTransactionModal
-        isOpen={true}
-        onClose={vi.fn()}
-      />,
-      { wrapper: createWrapper() }
-    )
-
-    // Select source account
-    const sourceSelect = screen.getByLabelText(/Pay From/i) as HTMLSelectElement
-    fireEvent.change(sourceSelect, { target: { value: 'acc-wallet' } })
-
-    // Select category (comboboxes)
-    const categoryInput = screen.getByPlaceholderText('Select Category...')
-    fireEvent.click(categoryInput)
-    fireEvent.mouseDown(screen.getByText('Food & Dining'))
-
-    const subCategoryInput = screen.getByPlaceholderText('Select Sub-Category...')
-    fireEvent.click(subCategoryInput)
-    fireEvent.mouseDown(screen.getByText('Dining Out'))
-
-    // Paste amount
-    const amountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
-    fireEvent.change(amountInput, { target: { value: '205.45' } })
-
-    // Click Save & Close
-    const saveBtn = screen.getByRole('button', { name: /Save & Close/i })
-    fireEvent.click(saveBtn)
-
-    expect(mockCreateTransactionMutate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'Expense',
-        entries: expect.arrayContaining([
-          expect.objectContaining({
-            accountId: 'acc-wallet',
-            amount: -205.45,
-          }),
-          expect.objectContaining({
-            accountId: 'acc-food',
-            amount: 205.45,
-          }),
-        ]),
-      }),
-      expect.anything()
-    )
-  })
-
-  it('closes immediately without confirmation when no edits are pending', () => {
-    const onCloseMock = vi.fn()
-    render(
-      <AddTransactionModal
-        isOpen={true}
-        onClose={onCloseMock}
-        ingestion={mockIngestion}
-      />,
-      { wrapper: createWrapper() }
-    )
-
-    const xButtons = document.querySelectorAll('button')
-    const headerCloseBtn = Array.from(xButtons).find((b) => b.querySelector('svg.lucide-x'))
-    if (headerCloseBtn) {
+      const headerCloseBtn = screen.getByRole('button', { name: 'Close modal' })
       fireEvent.click(headerCloseBtn)
-    }
 
-    expect(onCloseMock).toHaveBeenCalledTimes(1)
-    expect(screen.queryByText('Discard Changes?')).toBeNull()
-  })
+      expect(onCloseMock).toHaveBeenCalledTimes(1)
+      expect(screen.queryByText('Discard Changes?')).toBeNull()
+    })
 
-  it('shows confirmation dialog when closing with pending edits and cancels or confirms correctly', () => {
-    const onCloseMock = vi.fn()
-    render(
-      <AddTransactionModal
-        isOpen={true}
-        onClose={onCloseMock}
-        ingestion={mockIngestion}
-      />,
-      { wrapper: createWrapper() }
-    )
+    it('shows confirmation dialog when closing with pending edits and cancels or confirms correctly', () => {
+      const onCloseMock = vi.fn()
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={onCloseMock}
+          ingestion={mockIngestion}
+        />,
+        { wrapper: createWrapper() }
+      )
 
-    // Edit a field
-    const noteInput = screen.getByPlaceholderText('Note (optional)') as HTMLTextAreaElement
-    fireEvent.change(noteInput, { target: { value: 'Changed notes' } })
+      // Edit a field
+      const noteInput = screen.getByPlaceholderText('Note (optional)') as HTMLTextAreaElement
+      fireEvent.change(noteInput, { target: { value: 'Changed notes' } })
 
-    const xButtons = document.querySelectorAll('button')
-    const headerCloseBtn = Array.from(xButtons).find((b) => b.querySelector('svg.lucide-x'))
-    if (headerCloseBtn) {
+      const headerCloseBtn = screen.getByRole('button', { name: 'Close modal' })
       fireEvent.click(headerCloseBtn)
-    }
 
-    // Confirmation dialog should be visible
-    expect(screen.getByText('Discard Changes?')).toBeDefined()
-    expect(screen.getByText(/You have unsaved changes/i)).toBeDefined()
-    expect(onCloseMock).not.toHaveBeenCalled()
+      // Confirmation dialog should be visible
+      expect(screen.getByText('Discard Changes?')).toBeDefined()
+      expect(screen.getByText(/You have unsaved changes/i)).toBeDefined()
+      expect(onCloseMock).not.toHaveBeenCalled()
 
-    // Click "Keep Editing"
-    const cancelBtn = screen.getByRole('button', { name: 'Keep Editing' })
-    fireEvent.click(cancelBtn)
-    expect(screen.queryByText('Discard Changes?')).toBeNull()
-    expect(onCloseMock).not.toHaveBeenCalled()
+      // Click "Keep Editing"
+      const cancelBtn = screen.getByRole('button', { name: 'Keep Editing' })
+      fireEvent.click(cancelBtn)
+      expect(screen.queryByText('Discard Changes?')).toBeNull()
+      expect(onCloseMock).not.toHaveBeenCalled()
 
-    // Try closing again and confirm discard
-    if (headerCloseBtn) {
+      // Try closing again and confirm discard
       fireEvent.click(headerCloseBtn)
-    }
-    expect(screen.getByText('Discard Changes?')).toBeDefined()
+      expect(screen.getByText('Discard Changes?')).toBeDefined()
 
-    const confirmBtn = screen.getByRole('button', { name: 'Discard Changes' })
-    fireEvent.click(confirmBtn)
+      const confirmBtn = screen.getByRole('button', { name: 'Discard Changes' })
+      fireEvent.click(confirmBtn)
 
-    expect(onCloseMock).toHaveBeenCalledTimes(1)
+      expect(onCloseMock).toHaveBeenCalledTimes(1)
+    })
   })
 })

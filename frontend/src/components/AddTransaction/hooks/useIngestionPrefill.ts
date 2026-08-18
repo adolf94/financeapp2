@@ -224,7 +224,11 @@ export function useIngestionPrefill({
   // Only run initialization when modal opens or initialData / ingestion target changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const dataStr = initialData ? JSON.stringify(initialData) : null
+    const dataStr = initialData
+      ? `initial:${JSON.stringify(initialData)}`
+      : ingestion
+      ? `ingestion:${ingestion.id || JSON.stringify(ingestion)}`
+      : 'empty'
     const justOpened = isOpen && !formInitializedForRef.current
 
     if (isOpen) {

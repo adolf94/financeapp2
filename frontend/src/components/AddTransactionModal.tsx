@@ -373,6 +373,8 @@ function AddTransactionModalContent() {
               <button
                 type="button"
                 onClick={promptDismiss}
+                aria-label="Close modal"
+                title="Close modal"
                 className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 <X className="w-5 h-5" strokeWidth={1.5} />

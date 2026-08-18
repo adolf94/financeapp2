@@ -273,10 +273,6 @@ export function AddTransactionProvider({
     recurring.recurringEndDate,
   ])
 
-  const handleSnapshot = useCallback(() => {
-    initialValuesRef.current = takeCurrentSnapshot()
-  }, [takeCurrentSnapshot])
-
   // Ingestion & initialData prefill logic
   useIngestionPrefill({
     isOpen,
@@ -304,8 +300,80 @@ export function AddTransactionProvider({
     setIsRecurring: recurring.setIsRecurring,
     setSuggestedVendorType: suggestions.setSuggestedVendorType,
     setSuggestedVendorTags: suggestions.setSuggestedVendorTags,
-    onSnapshot: handleSnapshot,
   })
+
+  // Snapshot capture: snapshot initialized form values on first render when modal is open
+  const snapshotInitializedRef = useRef<string | null>(null)
+  const currentKey = isOpen
+    ? (initialData ? `init:${initialData.id}` : ingestion ? `ing:${ingestion.id}` : 'new')
+    : null
+
+  if (isOpen && currentKey && snapshotInitializedRef.current !== currentKey) {
+    snapshotInitializedRef.current = currentKey
+    // Construct initial snapshot from props directly to guarantee sync accuracy without waiting for effects
+    if (initialData) {
+      initialValuesRef.current = JSON.stringify({
+        mode: initialData.type === 'Journal' ? 'Advanced' : 'Simple',
+        type: initialData.type,
+        totalAmount: initialData.type === 'Journal' ? '' : (initialData.entries.find((e) => e.amount > 0)?.amount.toString() || ''),
+        sourceAccountId: initialData.type === 'Expense' ? (initialData.entries.find((e) => e.amount < 0)?.accountId || '') : '',
+        toAccountId: initialData.type === 'Transfer' ? (initialData.entries.find((e) => e.amount > 0)?.accountId || '') : '',
+        splits: initialData.type === 'Expense' ? initialData.entries.filter((e) => e.amount > 0).map((e) => ({ categoryId: accounts.find((a) => a.id === e.accountId)?.accountGroupId || '', subCategoryId: e.accountId, amount: '' })) : [{ categoryId: '', subCategoryId: '', amount: '' }],
+        journalLines: initialData.type === 'Journal' ? initialData.entries.map((e) => ({ categoryId: accounts.find((a) => a.id === e.accountId)?.accountGroupId || '', subCategoryId: e.accountId, amount: Math.abs(e.amount).toString(), type: e.amount > 0 ? 'Debit' : 'Credit', note: e.note || '', referenceNumber: e.referenceNumber || '' })) : [{ categoryId: '', subCategoryId: '', amount: '', type: 'Debit', note: '', referenceNumber: '' }, { categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' }],
+        vendor: initialData.vendor || '',
+        selectedLookups: [],
+        selectedNewLookups: [],
+        date: dayjs(initialData.date).format('YYYY-MM-DDTHH:mm'),
+        note: initialData.note || '',
+        referenceNumber: initialData.referenceNumber || '',
+        userWhy: '',
+        skipLearning: false,
+        isRecurring: !!initialData.scheduleId,
+        frequency: 'Monthly',
+        maxOccurrences: '',
+        recurringEndDate: '',
+      })
+    } else if (ingestion && ingestion.ai_parsed) {
+      const parsed = ingestion.ai_parsed
+      const rawType = parsed.transaction_type || ''
+      const t = (['Income', 'Expense', 'Transfer'].includes(rawType) ? rawType : 'Expense') as 'Income' | 'Expense' | 'Transfer'
+      const vendorName = typeof parsed.vendor === 'string' ? parsed.vendor : parsed.vendor?.name || ''
+      const debitAcc = parsed.debit_account_id ? accounts.find((a) => a.id === parsed.debit_account_id) : null
+      initialValuesRef.current = JSON.stringify({
+        mode: 'Simple',
+        type: t,
+        totalAmount: parsed.amount ? Math.abs(parsed.amount).toString() : '',
+        sourceAccountId: parsed.credit_account_id || '',
+        toAccountId: t === 'Transfer' ? (parsed.debit_account_id || '') : '',
+        splits: [{
+          categoryId: debitAcc?.accountGroupId || '',
+          subCategoryId: parsed.debit_account_id || '',
+          amount: '',
+        }],
+        journalLines: [
+          { categoryId: '', subCategoryId: '', amount: '', type: 'Debit', note: '', referenceNumber: '' },
+          { categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' },
+        ],
+        vendor: vendorName,
+        selectedLookups: parsed.vendor?.lookups || [],
+        selectedNewLookups: parsed.vendor?.new_lookups || parsed.vendor?.NewLookups || [],
+        date: parsed.date ? dayjs(parsed.date).format('YYYY-MM-DDTHH:mm') : (ingestion.received_at ? dayjs(ingestion.received_at).format('YYYY-MM-DDTHH:mm') : dayjs().format('YYYY-MM-DDTHH:mm')),
+        note: parsed.summary || parsed.notes || '',
+        referenceNumber: parsed.reference_number || '',
+        userWhy: ingestion.user_confirmed?.user_why || parsed.suggested_rule || parsed.user_why || '',
+        skipLearning: false,
+        isRecurring: false,
+        frequency: 'Monthly',
+        maxOccurrences: '',
+        recurringEndDate: '',
+      })
+    } else {
+      initialValuesRef.current = takeCurrentSnapshot()
+    }
+  } else if (!isOpen && snapshotInitializedRef.current !== null) {
+    snapshotInitializedRef.current = null
+    initialValuesRef.current = null
+  }
 
   const isDirty = useMemo(() => {
     if (!initialValuesRef.current) return false
