@@ -1,15 +1,9 @@
-import { useMemo, useState, useRef, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import {
   RefreshCw,
   RotateCcw,
   X,
-  Trash2,
-  Plus,
   Loader2,
-  Info,
-  MessageSquare,
-  CheckCircle2,
-  AlertCircle,
   Sparkles,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -29,6 +23,11 @@ import {
   useAddTransaction,
 } from './AddTransaction/AddTransactionContext'
 import TransactionTypeTabs from './AddTransaction/TransactionTypeTabs'
+import AccountSelectField from './AddTransaction/AccountSelectField'
+import CategorySplitGrid from './AddTransaction/CategorySplitGrid'
+import JournalEntrySection from './AddTransaction/JournalEntrySection'
+import RecurringScheduleSection from './AddTransaction/RecurringScheduleSection'
+import ReclassifyConfirmModal from './AddTransaction/ReclassifyConfirmModal'
 import InlineAccountCreateForm from './AddTransaction/InlineAccountCreateForm'
 import IngestionReviewPanel from './AddTransaction/IngestionReviewPanel'
 import ReasoningDrawer from './ReasoningDrawer'
@@ -126,21 +125,6 @@ function AddTransactionModalContent() {
     confirmDismiss,
   } = useAddTransaction()
 
-  const [streamReasoning, setStreamReasoning] = useState(false)
-  const [reclassifyComment, setReclassifyComment] = useState('')
-  const [showJournalGuide, setShowJournalGuide] = useState(false)
-  const [expandedMemoLineIds, setExpandedMemoLineIds] = useState<Set<string>>(new Set())
-  const journalGuideRef = useRef<HTMLDivElement>(null)
-
-  const toggleMemo = (lineId: string) => {
-    setExpandedMemoLineIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(lineId)) next.delete(lineId)
-      else next.add(lineId)
-      return next
-    })
-  }
-
   const { debitTotal, creditTotal, balanceDiff } = useMemo(() => {
     const dr = journalLines
       .filter((l) => l.type === 'Debit')
@@ -188,20 +172,6 @@ function AddTransactionModalContent() {
       ])
     }
   }
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (journalGuideRef.current && !journalGuideRef.current.contains(event.target as Node)) {
-        setShowJournalGuide(false)
-      }
-    }
-    if (showJournalGuide) {
-      document.addEventListener('mousedown', handleClickOutside)
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [showJournalGuide])
 
   const queryClient = useQueryClient()
   const { data: accounts = [] } = useGetAccounts()
@@ -413,459 +383,57 @@ function AddTransactionModalContent() {
                       </div>
 
                       {/* Source Account (Payment Account) */}
-                      <div className="flex flex-col gap-1">
-                        <label
-                          htmlFor="source-account-select"
-                          className="text-xs font-semibold text-slate-500 uppercase tracking-wider"
-                        >
-                          {type === 'Income' ? 'Deposit To' : 'Pay From'}
-                        </label>
-                        <select
-                          id="source-account-select"
-                          value={sourceAccountId}
-                          onChange={(e) => setSourceAccountId(e.target.value)}
-                          required
-                          className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
-                        >
-                          <option value="">Select Account...</option>
-                          {Array.from(new Set(paymentAccounts.map((a) => a.accountGroupId)))
-                            .sort((a, b) => {
-                              const gA = accountGroups.find((g) => g.id === a)?.name || ''
-                              const gB = accountGroups.find((g) => g.id === b)?.name || ''
-                              return gA.localeCompare(gB)
-                            })
-                            .map((groupId) => {
-                              const group = accountGroups.find((g) => g.id === groupId)
-                              const groupAccounts = paymentAccounts.filter(
-                                (a) => a.accountGroupId === groupId
-                              )
-                              if (!group || groupAccounts.length === 0) return null
-                              return (
-                                <optgroup key={group.id} label={group.name}>
-                                  {groupAccounts.map((a) => (
-                                    <option key={a.id} value={a.id}>
-                                      {a.name}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              )
-                            })}
-                        </select>
-                      </div>
+                      <AccountSelectField
+                        id="source-account-select"
+                        label={type === 'Income' ? 'Deposit To' : 'Pay From'}
+                        value={sourceAccountId}
+                        onChange={setSourceAccountId}
+                        accounts={paymentAccounts}
+                        accountGroups={accountGroups}
+                        required
+                      />
 
                       {/* Destination Account (Only for Transfer) */}
                       {type === 'Transfer' && (
-                        <div className="flex flex-col gap-1">
-                          <label
-                            htmlFor="destination-account-select"
-                            className="text-xs font-semibold text-slate-500 uppercase tracking-wider"
-                          >
-                            Transfer To
-                          </label>
-                          <select
-                            id="destination-account-select"
-                            value={toAccountId}
-                            onChange={(e) => setToAccountId(e.target.value)}
-                            required
-                            className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
-                          >
-                            <option value="">Select Destination Account...</option>
-                            {Array.from(
-                              new Set(
-                                paymentAccounts
-                                  .filter((a) => a.id !== sourceAccountId)
-                                  .map((a) => a.accountGroupId)
-                              )
-                            )
-                              .sort((a, b) => {
-                                const gA = accountGroups.find((g) => g.id === a)?.name || ''
-                                const gB = accountGroups.find((g) => g.id === b)?.name || ''
-                                return gA.localeCompare(gB)
-                              })
-                              .map((groupId) => {
-                                const group = accountGroups.find((g) => g.id === groupId)
-                                const groupAccounts = paymentAccounts.filter(
-                                  (a) => a.accountGroupId === groupId && a.id !== sourceAccountId
-                                )
-                                if (!group || groupAccounts.length === 0) return null
-                                return (
-                                  <optgroup key={group.id} label={group.name}>
-                                    {groupAccounts.map((a) => (
-                                      <option key={a.id} value={a.id}>
-                                        {a.name}
-                                      </option>
-                                    ))}
-                                  </optgroup>
-                                )
-                              })}
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Splits (Category & SubCategory in Unified 2-Col Grid) */}
+                        <AccountSelectField
+                          id="destination-account-select"
+                          label="Transfer To"
+                          value={toAccountId}
+                          onChange={setToAccountId}
+                          accounts={paymentAccounts}
+                          accountGroups={accountGroups}
+                          excludeAccountId={sourceAccountId}
+                          placeholder="Select Destination Account..."
+                          required
+                        />
+                      )}                      {/* Splits (Category & SubCategory in Unified 2-Col Grid) */}
                       {type !== 'Transfer' && (
-                        <div className="flex flex-col gap-2">
-                          <div className="flex justify-between items-center">
-                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                              Category & Subcategory
-                            </label>
-                          </div>
-
-                          {splits.map((split) => {
-                            const subCategoryOptions = accounts
-                              .filter((a) => a.accountGroupId === split.categoryId)
-                              .sort((a, b) => a.name.localeCompare(b.name))
-                            return (
-                              <div
-                                key={split.id}
-                                className="grid grid-cols-1 sm:grid-cols-2 gap-2"
-                              >
-                                <Combobox
-                                  options={categoryGroups.map((g) => ({ value: g.id, label: g.name }))}
-                                  value={split.categoryId}
-                                  onChange={(val) => updateSplit(split.id, { categoryId: val })}
-                                  placeholder="Select Category..."
-                                  className="w-full"
-                                />
-
-                                <Combobox
-                                  options={subCategoryOptions.map((a) => ({
-                                    value: a.id!,
-                                    label: a.name,
-                                  }))}
-                                  value={split.subCategoryId}
-                                  onChange={(val) => updateSplit(split.id, { subCategoryId: val })}
-                                  placeholder="Select Sub-Category..."
-                                  className="w-full"
-                                  disabled={!split.categoryId}
-                                  onCreate={(val) => {
-                                    const group = accountGroups.find((g) => g.id === split.categoryId)
-                                    setPendingNewAccount({
-                                      name: val,
-                                      categoryId: split.categoryId,
-                                      type: group?.accountType || 'Expense',
-                                      splitId: split.id,
-                                      description: '',
-                                      tags: [],
-                                    })
-                                  }}
-                                />
-                              </div>
-                            )
-                          })}
-                        </div>
+                        <CategorySplitGrid
+                          splits={splits}
+                          categoryGroups={categoryGroups}
+                          accounts={accounts}
+                          accountGroups={accountGroups}
+                          onUpdateSplit={updateSplit}
+                          onPendingNewAccount={setPendingNewAccount}
+                        />
                       )}
                     </>
                   ) : (
                     /* Advanced Mode: Journal Entry */
-                    <div className="flex flex-col gap-3">
-                      <div className="flex justify-between items-center mt-2">
-                        <div className="relative inline-flex items-center" ref={journalGuideRef}>
-                          <div className="flex items-center gap-1.5">
-                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                              Journal Lines
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => setShowJournalGuide((prev) => !prev)}
-                              title="Debit & Credit Guide"
-                              className={`inline-flex items-center justify-center p-1 rounded-md transition-colors cursor-pointer ${
-                                showJournalGuide
-                                  ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400'
-                                  : 'text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                              }`}
-                            >
-                              <Info className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-
-                          {/* Short & Simple Popover: Common Patterns */}
-                          {showJournalGuide && (
-                            <div className="absolute left-0 top-full mt-1.5 z-50 w-72 sm:w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl p-3 text-xs animate-in fade-in zoom-in-95 duration-100">
-                              <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-slate-100 dark:border-slate-800">
-                                <span className="font-semibold text-slate-900 dark:text-slate-100 text-xs">
-                                  Common Transaction Patterns
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowJournalGuide(false)}
-                                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-
-                              <div className="flex flex-col gap-1.5 text-[11px]">
-                                <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 flex flex-col gap-0.5">
-                                  <span className="font-medium text-slate-800 dark:text-slate-200">Expense via Cash / Bank</span>
-                                  <div className="text-[10px] text-slate-600 dark:text-slate-300">
-                                    <span className="text-blue-600 dark:text-blue-400 font-semibold">Debit:</span> Expense
-                                    <span className="mx-1.5 text-slate-400">|</span>
-                                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Credit:</span> Asset (Bank/Cash)
-                                  </div>
-                                </div>
-
-                                <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 flex flex-col gap-0.5">
-                                  <span className="font-medium text-slate-800 dark:text-slate-200">Expense via Credit Card</span>
-                                  <div className="text-[10px] text-slate-600 dark:text-slate-300">
-                                    <span className="text-blue-600 dark:text-blue-400 font-semibold">Debit:</span> Expense
-                                    <span className="mx-1.5 text-slate-400">|</span>
-                                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Credit:</span> Liability (Card)
-                                  </div>
-                                </div>
-
-                                <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 flex flex-col gap-0.5">
-                                  <span className="font-medium text-slate-800 dark:text-slate-200">Receive Income / Salary</span>
-                                  <div className="text-[10px] text-slate-600 dark:text-slate-300">
-                                    <span className="text-blue-600 dark:text-blue-400 font-semibold">Debit:</span> Asset (Bank)
-                                    <span className="mx-1.5 text-slate-400">|</span>
-                                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Credit:</span> Income
-                                  </div>
-                                </div>
-
-                                <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 flex flex-col gap-0.5">
-                                  <span className="font-medium text-slate-800 dark:text-slate-200">Pay Credit Card Bill</span>
-                                  <div className="text-[10px] text-slate-600 dark:text-slate-300">
-                                    <span className="text-blue-600 dark:text-blue-400 font-semibold">Debit:</span> Liability (Card)
-                                    <span className="mx-1.5 text-slate-400">|</span>
-                                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Credit:</span> Asset (Bank)
-                                  </div>
-                                </div>
-
-                                <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 flex flex-col gap-0.5">
-                                  <span className="font-medium text-slate-800 dark:text-slate-200">Transfer between Accounts</span>
-                                  <div className="text-[10px] text-slate-600 dark:text-slate-300">
-                                    <span className="text-blue-600 dark:text-blue-400 font-semibold">Debit:</span> To Account (Asset)
-                                    <span className="mx-1.5 text-slate-400">|</span>
-                                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Credit:</span> From Account (Asset)
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {journalLines.map((line) => (
-                        <div
-                          key={line.id}
-                          className="flex flex-col gap-2 p-2.5 bg-slate-50/80 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-xl transition-all"
-                        >
-                          <div className="flex gap-2">
-                            <Combobox
-                              options={accountGroups
-                                .slice()
-                                .sort((a, b) => {
-                                  const typeOrder: Record<string, number> = {
-                                    Asset: 1,
-                                    Bank: 2,
-                                    Cash: 3,
-                                    CreditCard: 4,
-                                    Investment: 5,
-                                    Income: 6,
-                                    Expense: 7,
-                                    Liability: 8,
-                                    Equity: 9,
-                                  }
-                                  const orderA = a.accountType ? (typeOrder[a.accountType] || 99) : 99
-                                  const orderB = b.accountType ? (typeOrder[b.accountType] || 99) : 99
-                                  if (orderA !== orderB) return orderA - orderB
-                                  return a.name.localeCompare(b.name)
-                                })
-                                .map((g) => ({
-                                  value: g.id,
-                                  label: g.name,
-                                  group: g.accountType,
-                                }))}
-                              value={line.categoryId}
-                              onChange={(val) => updateJournalLine(line.id, { categoryId: val })}
-                              placeholder="Category..."
-                              className="flex-1 text-xs sm:text-sm"
-                            />
-                            <Combobox
-                              options={accounts
-                                .filter((a) => a.accountGroupId === line.categoryId)
-                                .sort((a, b) => a.name.localeCompare(b.name))
-                                .map((a) => ({ value: a.id!, label: a.name }))}
-                              value={line.subCategoryId}
-                              onChange={(val) => updateJournalLine(line.id, { subCategoryId: val })}
-                              placeholder="Account..."
-                              className="flex-1 text-xs sm:text-sm"
-                              disabled={!line.categoryId}
-                              onCreate={(val) => {
-                                const group = accountGroups.find((g) => g.id === line.categoryId)
-                                setPendingNewAccount({
-                                  name: val,
-                                  categoryId: line.categoryId,
-                                  type: group?.accountType || 'Expense',
-                                  splitId: line.id,
-                                  description: '',
-                                  tags: [],
-                                })
-                              }}
-                            />
-                          </div>
-
-                          <div className="flex gap-2 items-center w-full">
-                            {/* Segmented Dr / Cr Pill */}
-                            <div className="inline-flex p-0.5 bg-slate-200/80 dark:bg-slate-800 rounded-lg shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => updateJournalLine(line.id, { type: 'Debit' })}
-                                className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                                  line.type === 'Debit'
-                                    ? 'bg-blue-600 text-white shadow-sm'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                }`}
-                              >
-                                Dr
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => updateJournalLine(line.id, { type: 'Credit' })}
-                                className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                                  line.type === 'Credit'
-                                    ? 'bg-emerald-600 text-white shadow-sm'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                                }`}
-                              >
-                                Cr
-                              </button>
-                            </div>
-
-                            {/* Amount Input */}
-                            <div className="flex-1 relative">
-                              <CalculatorInput
-                                placeholder="0.00"
-                                value={line.amount}
-                                onChange={(val) => {
-                                  const num = parseFloat(val)
-                                  if (num < 0) {
-                                    updateJournalLine(line.id, {
-                                      amount: Math.abs(num).toString(),
-                                      type: line.type === 'Debit' ? 'Credit' : 'Debit',
-                                    })
-                                  } else {
-                                    updateJournalLine(line.id, { amount: val })
-                                  }
-                                }}
-                                required
-                                className="w-full min-h-[38px] px-3 pr-8 text-right bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-sm font-semibold focus:outline-none focus:border-blue-600 text-slate-900 dark:text-slate-100"
-                              />
-                            </div>
-
-                            {/* Memo / Details Toggle Icon Button */}
-                            <button
-                              type="button"
-                              onClick={() => toggleMemo(line.id)}
-                              title={line.note || line.referenceNumber ? 'Edit line details (note/ref)' : 'Add line note / ref #'}
-                              className={`p-2 rounded-lg transition-colors cursor-pointer shrink-0 ${
-                                line.note || line.referenceNumber || expandedMemoLineIds.has(line.id)
-                                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800'
-                                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800 border border-transparent'
-                              }`}
-                            >
-                              <MessageSquare className="w-4 h-4" strokeWidth={1.5} />
-                            </button>
-
-                            {/* Delete Line Button */}
-                            {journalLines.length > 2 && (
-                              <button
-                                type="button"
-                                onClick={() => removeJournalLine(line.id)}
-                                title="Remove line"
-                                className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer shrink-0"
-                              >
-                                <Trash2 className="w-4 h-4" strokeWidth={1.5} />
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Collapsible Memo / Note & Reference Field */}
-                          {(Boolean(line.note) || Boolean(line.referenceNumber) || expandedMemoLineIds.has(line.id)) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
-                              <input
-                                type="text"
-                                placeholder="Line memo / note (optional)..."
-                                value={line.note || ''}
-                                onChange={(e) => updateJournalLine(line.id, { note: e.target.value })}
-                                className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:border-blue-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
-                              />
-                              <input
-                                type="text"
-                                placeholder="Line ref # (optional)..."
-                                value={line.referenceNumber || ''}
-                                onChange={(e) => updateJournalLine(line.id, { referenceNumber: e.target.value })}
-                                className="w-full px-2.5 py-1.5 text-xs bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:border-blue-500 text-slate-800 dark:text-slate-200 placeholder-slate-400"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      ))}
-
-                      {/* Actions: Add Line & Auto-Balance */}
-                      <div className="flex gap-2 mt-1">
-                        <button
-                          type="button"
-                          onClick={addJournalLine}
-                          className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg flex items-center justify-center gap-1.5 text-xs sm:text-sm font-semibold transition-colors cursor-pointer border border-dashed border-slate-300 dark:border-slate-600"
-                        >
-                          <Plus className="w-4 h-4" strokeWidth={1.5} /> Add Line
-                        </button>
-
-                        {Math.abs(balanceDiff) >= 0.01 && (
-                          <button
-                            type="button"
-                            onClick={handleAutoBalance}
-                            className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/60 rounded-lg flex items-center justify-center gap-1 text-xs font-semibold transition-colors cursor-pointer shadow-sm"
-                            title={`Auto-add ${balanceDiff > 0 ? 'Credit' : 'Debit'} ₱${Math.abs(balanceDiff).toFixed(2)}`}
-                          >
-                            <Sparkles className="w-3.5 h-3.5" /> Auto-Balance
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Live Balance Status Card */}
-                      <div
-                        className={`flex flex-col gap-1.5 p-2.5 rounded-xl border transition-all text-xs ${
-                          Math.abs(balanceDiff) < 0.01 && debitTotal > 0
-                            ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/50 text-emerald-800 dark:text-emerald-300'
-                            : 'bg-slate-100/90 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        <div className="flex justify-between items-center font-medium">
-                          <div className="flex items-center gap-1.5">
-                            {Math.abs(balanceDiff) < 0.01 && debitTotal > 0 ? (
-                              <>
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                                <span className="font-semibold text-emerald-700 dark:text-emerald-300">
-                                  Balanced
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <AlertCircle className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-                                <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                  {debitTotal === 0 && creditTotal === 0
-                                    ? 'Enter line amounts'
-                                    : `Diff: ₱${Math.abs(balanceDiff).toFixed(2)} (${balanceDiff > 0 ? 'Need Cr' : 'Need Dr'})`}
-                                </span>
-                              </>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2.5 font-semibold">
-                            <span className="text-blue-600 dark:text-blue-400">
-                              Dr: ₱{debitTotal.toFixed(2)}
-                            </span>
-                            <span className="text-slate-300 dark:text-slate-600">|</span>
-                            <span className="text-emerald-600 dark:text-emerald-400">
-                              Cr: ₱{creditTotal.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    <JournalEntrySection
+                      journalLines={journalLines}
+                      setJournalLines={setJournalLines}
+                      accountGroups={accountGroups}
+                      accounts={accounts}
+                      onPendingNewAccount={setPendingNewAccount}
+                      onAddLine={addJournalLine}
+                      onRemoveLine={removeJournalLine}
+                      onUpdateLine={updateJournalLine}
+                      onAutoBalance={handleAutoBalance}
+                      debitTotal={debitTotal}
+                      creditTotal={creditTotal}
+                      balanceDiff={balanceDiff}
+                    />
                   )}
 
                   {/* Shared Vendor, Date, and Note for both modes */}
@@ -1027,74 +595,16 @@ function AddTransactionModalContent() {
                   )}
 
                   {!initialData && (
-                    <div className="mt-2 p-3 border border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-950/50">
-                      <label className="flex items-center justify-between cursor-pointer">
-                        <div className="flex flex-col">
-                          <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                            Make this recurring
-                          </span>
-                          <span className="text-xs text-slate-500">Auto-generate this transaction</span>
-                        </div>
-                        <div className="relative inline-flex items-center">
-                          <input
-                            type="checkbox"
-                            className="sr-only peer"
-                            checked={isRecurring}
-                            onChange={(e) => setIsRecurring(e.target.checked)}
-                          />
-                          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-blue-600"></div>
-                        </div>
-                      </label>
-
-                      {isRecurring && (
-                        <div className="space-y-3 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
-                          <div className="flex flex-col gap-1">
-                            <label htmlFor="recurring-frequency-select" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                              Frequency
-                            </label>
-                            <select
-                              id="recurring-frequency-select"
-                              value={frequency}
-                              onChange={(e) => setFrequency(e.target.value as any)}
-                              className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
-                            >
-                              <option value="Daily">Daily</option>
-                              <option value="Weekly">Weekly</option>
-                              <option value="Monthly">Monthly</option>
-                              <option value="Yearly">Yearly</option>
-                            </select>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="flex flex-col gap-1">
-                              <label htmlFor="recurring-end-date-input" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                End Date <span className="text-slate-400 font-normal lowercase">(optional)</span>
-                              </label>
-                              <input
-                                id="recurring-end-date-input"
-                                type="date"
-                                value={recurringEndDate}
-                                onChange={(e) => handleRecurringEndDateChange(e.target.value)}
-                                className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <label htmlFor="recurring-max-occurrences-input" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                Max Times <span className="text-slate-400 font-normal lowercase">(optional)</span>
-                              </label>
-                              <input
-                                id="recurring-max-occurrences-input"
-                                type="number"
-                                min={1}
-                                placeholder="Unlimited"
-                                value={maxOccurrences}
-                                onChange={(e) => handleRecurringOccurrencesChange(e.target.value)}
-                                className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <RecurringScheduleSection
+                      isRecurring={isRecurring}
+                      setIsRecurring={setIsRecurring}
+                      frequency={frequency}
+                      setFrequency={setFrequency}
+                      recurringEndDate={recurringEndDate}
+                      handleRecurringEndDateChange={handleRecurringEndDateChange}
+                      maxOccurrences={maxOccurrences}
+                      handleRecurringOccurrencesChange={handleRecurringOccurrencesChange}
+                    />
                   )}
                 </div>
               </div>
@@ -1176,128 +686,21 @@ function AddTransactionModalContent() {
 
       <InlineAccountCreateForm />
 
-      {confirmReclassifyOpen && ingestion && (() => {
-        const debitAccId =
-          mode === 'Advanced'
-            ? journalLines.find((l) => l.type === 'Debit')?.subCategoryId || null
-            : type === 'Transfer'
-            ? toAccountId || null
-            : type === 'Income'
-            ? sourceAccountId || null
-            : splits[0]?.subCategoryId || null
-
-        const creditAccId =
-          mode === 'Advanced'
-            ? journalLines.find((l) => l.type === 'Credit')?.subCategoryId || null
-            : type === 'Transfer'
-            ? sourceAccountId || null
-            : type === 'Income'
-            ? splits[0]?.subCategoryId || null
-            : sourceAccountId || null
-
-        const debitAccName = accounts.find((a) => a.id === debitAccId)?.name || (debitAccId ? 'Selected' : 'None')
-        const creditAccName = accounts.find((a) => a.id === creditAccId)?.name || (creditAccId ? 'Selected' : 'None')
-
-        const commentText = reclassifyComment.trim()
-        const hasComment = Boolean(commentText)
-
-        // When user provides a comment/instruction text, send all current active modal values
-        const corrections = hasComment ? {
-          comment: commentText,
-          type,
-          vendor: vendor.trim() || undefined,
-          debit_account_id: debitAccId,
-          credit_account_id: creditAccId,
-        } : undefined
-
-        return (
-          <ConfirmationModal
-            isOpen={confirmReclassifyOpen}
-            title="Re-run AI Classification"
-            confirmLabel="Reclassify"
-            confirmVariant="primary"
-            onConfirm={() => {
-              setConfirmReclassifyOpen(false)
-              const opId = uuidv7()
-              setCurrentOperationId(opId)
-
-              reclassifyMutation.mutate({
-                id: ingestion.id,
-                operationId: opId,
-                streamReasoning,
-                userCorrections: corrections,
-              })
-              setReclassifyComment('')
-            }}
-            onCancel={() => {
-              setConfirmReclassifyOpen(false)
-              setReclassifyComment('')
-            }}
-          >
-            <div className="flex flex-col gap-3.5">
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                Re-run AI classification on this ingestion.{hasComment ? ' The AI will use your instructions and current values as context to refine suggestions and propose a runbook rule.' : ''}
-              </p>
-
-              {/* Current values context preview if comment is provided */}
-              {hasComment && (
-                <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 text-xs flex flex-col gap-1.5">
-                  <span className="font-bold text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    Values Being Sent to AI:
-                  </span>
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-slate-700 dark:text-slate-300">
-                    <div className="col-span-2">
-                      <span className="text-slate-400">Instruction:</span> <span className="font-semibold italic">"{commentText}"</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">Type:</span> <span className="font-semibold">{type}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">Vendor:</span> <span className="font-semibold">{vendor || '(None)'}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">Debit (Dr / To):</span> <span className="font-semibold truncate">{debitAccName}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">Credit (Cr / From):</span> <span className="font-semibold truncate">{creditAccName}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Optional comments/instructions textarea */}
-              <div className="flex flex-col gap-1">
-                <label
-                  htmlFor="reclassify-comment-input"
-                  className="text-xs font-semibold text-slate-700 dark:text-slate-300"
-                >
-                  Optional Comments / Instructions for AI
-                </label>
-                <textarea
-                  id="reclassify-comment-input"
-                  rows={3}
-                  value={reclassifyComment}
-                  onChange={(e) => setReclassifyComment(e.target.value)}
-                  placeholder="e.g. Treat this as a Food & Dining expense, and suggest a runbook rule for GrabFood..."
-                  className="p-2.5 text-xs rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                />
-              </div>
-
-              <label className="flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/50 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700/50 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={streamReasoning}
-                  onChange={(e) => setStreamReasoning(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600 dark:border-slate-600 dark:bg-slate-700"
-                />
-                <div className="flex flex-col">
-                  <span className="font-semibold text-xs text-slate-900 dark:text-slate-50">Stream AI Reasoning</span>
-                </div>
-              </label>
-            </div>
-          </ConfirmationModal>
-        )
-      })()}
+      <ReclassifyConfirmModal
+        isOpen={confirmReclassifyOpen}
+        onClose={() => setConfirmReclassifyOpen(false)}
+        ingestion={ingestion}
+        mode={mode}
+        type={type}
+        vendor={vendor}
+        sourceAccountId={sourceAccountId}
+        toAccountId={toAccountId}
+        splits={splits}
+        journalLines={journalLines}
+        accounts={accounts}
+        reclassifyMutation={reclassifyMutation}
+        setCurrentOperationId={setCurrentOperationId}
+      />
 
       <ReasoningDrawer
         isOpen={isDrawerOpen}

@@ -34,3 +34,4 @@ All UI implementations must strictly adhere to the guidelines in `design-system/
 ## 5. Skills and Workflow
 - **Project Specifications:** ALWAYS read `spec.md` at the start of tasks to understand architecture and requirements. When making architectural, database, API, or feature changes, use the `spec-updater` skill to keep `spec.md` synchronized. also if there is a `todo.md`, suggest this if we are in the implementing stage and the I am happy with the progress.
 - **Testing Requirements:** Whenever updating features or adding new logic, use the `finance-test-scaffold` skill to generate necessary unit and integration tests across both the React frontend and .NET backend.
+- **Component & Module Decomposition:** Whenever modifying or adding complex UI sections, repeating JSX patterns, or components exceeding ~200 lines, automatically activate the `modularizer` skill to extract clean, single-responsibility sub-components.
