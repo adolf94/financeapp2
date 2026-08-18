@@ -1049,10 +1049,11 @@ function AddTransactionModalContent() {
                       {isRecurring && (
                         <div className="space-y-3 mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
                           <div className="flex flex-col gap-1">
-                            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                            <label htmlFor="recurring-frequency-select" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                               Frequency
                             </label>
                             <select
+                              id="recurring-frequency-select"
                               value={frequency}
                               onChange={(e) => setFrequency(e.target.value as any)}
                               className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
@@ -1065,10 +1066,11 @@ function AddTransactionModalContent() {
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             <div className="flex flex-col gap-1">
-                              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              <label htmlFor="recurring-end-date-input" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                                 End Date <span className="text-slate-400 font-normal lowercase">(optional)</span>
                               </label>
                               <input
+                                id="recurring-end-date-input"
                                 type="date"
                                 value={recurringEndDate}
                                 onChange={(e) => handleRecurringEndDateChange(e.target.value)}
@@ -1076,10 +1078,11 @@ function AddTransactionModalContent() {
                               />
                             </div>
                             <div className="flex flex-col gap-1">
-                              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              <label htmlFor="recurring-max-occurrences-input" className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                                 Max Times <span className="text-slate-400 font-normal lowercase">(optional)</span>
                               </label>
                               <input
+                                id="recurring-max-occurrences-input"
                                 type="number"
                                 min={1}
                                 placeholder="Unlimited"

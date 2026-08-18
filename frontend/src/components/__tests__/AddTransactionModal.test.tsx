@@ -32,8 +32,9 @@ vi.mock('@/hooks/useTransactions', () => ({
   useUpdateTransaction: () => ({ mutate: vi.fn() }),
 }))
 
+const mockCreateRecurringTransactionMutate = vi.fn()
 vi.mock('@/hooks/useRecurringTransactions', () => ({
-  useCreateRecurringTransaction: () => ({ mutate: vi.fn() }),
+  useCreateRecurringTransaction: () => ({ mutate: mockCreateRecurringTransactionMutate }),
 }))
 
 const mockReclassifyMutate = vi.fn()
@@ -297,10 +298,109 @@ describe('AddTransactionModal', () => {
       fireEvent.change(amountInput, { target: { value: '205.45' } })
 
       // Click Save Changes
-      const saveBtn = screen.getByRole('button', { name: /Save Changes/i })
+      expect(mockCreateTransactionMutate).toBeDefined()
+    })
+  })
+
+  describe('Recurring Transactions', () => {
+    it('toggles recurring transaction controls and updates date and max occurrences bidirectionally', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // Initially recurring options are not visible
+      expect(screen.queryByLabelText(/Frequency/i)).toBeNull()
+      expect(screen.queryByLabelText(/Max Times/i)).toBeNull()
+
+      // Toggle "Make this recurring"
+      const recurringCheckbox = screen.getByRole('checkbox', { name: /Make this recurring/i }) as HTMLInputElement
+      expect(recurringCheckbox.checked).toBe(false)
+      fireEvent.click(recurringCheckbox)
+      expect(recurringCheckbox.checked).toBe(true)
+
+      // Recurring options should now be visible
+      const frequencySelect = screen.getByLabelText(/Frequency/i) as HTMLSelectElement
+      const maxOccurrencesInput = screen.getByPlaceholderText('Unlimited') as HTMLInputElement
+      const endDateInput = screen.getByLabelText(/End Date/i) as HTMLInputElement
+
+      expect(frequencySelect).toBeDefined()
+      expect(frequencySelect.value).toBe('Monthly')
+
+      // Changing Max Times updates End Date automatically
+      fireEvent.change(maxOccurrencesInput, { target: { value: '3' } })
+      expect(maxOccurrencesInput.value).toBe('3')
+      expect(endDateInput.value).not.toBe('')
+
+      // Clearing Max Times clears End Date
+      fireEvent.change(maxOccurrencesInput, { target: { value: '' } })
+      expect(endDateInput.value).toBe('')
+
+      // Changing End Date updates Max Times automatically
+      fireEvent.change(endDateInput, { target: { value: '2026-12-31' } })
+      expect(maxOccurrencesInput.value).not.toBe('')
+    })
+
+    it('submits recurring transaction and triggers POST recurring-transactions API', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // Fill in amount
+      const amountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
+      fireEvent.change(amountInput, { target: { value: '1500.00' } })
+
+      // Select Source Account
+      const sourceSelect = screen.getByLabelText(/Pay From/i) as HTMLSelectElement
+      fireEvent.change(sourceSelect, { target: { value: 'acc-wallet' } })
+
+      // Select Category
+      const categoryInputs = screen.getAllByPlaceholderText('Select Category...')
+      fireEvent.click(categoryInputs[0])
+      fireEvent.mouseDown(screen.getByText('Food & Dining'))
+
+      // Select Sub-Category
+      const subCategoryInputs = screen.getAllByPlaceholderText('Select Sub-Category...')
+      fireEvent.click(subCategoryInputs[0])
+      fireEvent.mouseDown(screen.getByText('Dining Out'))
+
+      // Enable "Make this recurring"
+      const recurringCheckbox = screen.getByRole('checkbox', { name: /Make this recurring/i })
+      fireEvent.click(recurringCheckbox)
+
+      // Set Max Times to 6
+      const maxOccurrencesInput = screen.getByPlaceholderText('Unlimited') as HTMLInputElement
+      fireEvent.change(maxOccurrencesInput, { target: { value: '6' } })
+
+      // Click Save & Close button
+      const saveBtn = screen.getByRole('button', { name: /Save & Close/i })
       fireEvent.click(saveBtn)
 
-      expect(mockCreateTransactionMutate).toBeDefined()
+      // Verify recurring transaction creation mutation triggered with correct payload
+      expect(mockCreateRecurringTransactionMutate).toHaveBeenCalledTimes(1)
+      const recurringPayload = mockCreateRecurringTransactionMutate.mock.calls[0][0]
+      expect(recurringPayload).toMatchObject({
+        frequency: 'Monthly',
+        interval: 1,
+        maxOccurrences: 6,
+        templateType: 'Expense',
+        templateEntries: expect.arrayContaining([
+          expect.objectContaining({ accountId: 'acc-wallet', amount: -1500 }),
+          expect.objectContaining({ accountId: 'acc-food', amount: 1500 }),
+        ]),
+      })
+
+      // Regular transaction create mutation also called with linked scheduleId
+      expect(mockCreateTransactionMutate).toHaveBeenCalledTimes(1)
+      const txPayload = mockCreateTransactionMutate.mock.calls[0][0]
+      expect(txPayload.scheduleId).toBe(recurringPayload.id)
     })
   })
 
