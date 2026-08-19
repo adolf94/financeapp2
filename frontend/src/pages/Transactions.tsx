@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useGetTransactions, useDeleteTransaction, Transaction } from '@/hooks/useTransactions'
 import { useGetAccounts } from '@/hooks/useAccounts'
-import { ChevronLeft, ChevronRight, List, CalendarDays, RotateCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, List, CalendarDays, RotateCw, RefreshCw } from 'lucide-react'
 import dayjs from 'dayjs'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import CalendarView from '@/pages/CalendarView'
@@ -20,7 +20,7 @@ export default function Transactions() {
   const startDate = currentMonth.format('YYYY-MM-DD')
   const endDate = currentMonth.endOf('month').format('YYYY-MM-DD')
 
-  const { data: transactions = [], isLoading } = useGetTransactions(startDate, endDate)
+  const { data: transactions = [], isLoading, isFetching, refetch } = useGetTransactions(startDate, endDate)
   const { data: accounts = [] } = useGetAccounts()
   const deleteMutation = useDeleteTransaction()
 
@@ -33,22 +33,39 @@ export default function Transactions() {
     return accounts.find(a => a.id === id)?.name ?? 'Unknown Account'
   }
 
+  const handleRefetch = async () => {
+    try {
+      await refetch()
+    } catch (err) {
+      console.error('Failed to refetch transactions', err)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950">
       {/* Header */}
-      <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10 flex justify-between items-center">
+      <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10 flex justify-between items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Transactions</h1>
           <p className="text-slate-500 mt-1 text-sm">Monthly Log</p>
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={handleRefetch}
+            disabled={isFetching}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-all shadow-sm disabled:opacity-50 cursor-pointer mr-1"
+            title="Refresh transactions"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+            <span>{isFetching ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+          <button
             onClick={() => setCurrentMonth(prev => prev.subtract(1, 'month'))}
             className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
           >
             <ChevronLeft className="w-5 h-5"/>
           </button>
-          <span className="font-semibold text-slate-800 dark:text-slate-100 min-w-[130px] text-center">
+          <span className="font-semibold text-slate-800 dark:text-slate-100 min-w-[120px] text-center text-sm">
             {currentMonth.format('MMMM YYYY')}
           </span>
           <button

@@ -15,8 +15,8 @@ registerSW({ immediate: true })
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      gcTime: 1000 * 60 * 60 * 24, // 24 hours
+      staleTime: 1000 * 60 * 10, // 10 minutes
+      gcTime: 1000 * 60 * 60 * 24 * 7, // 7 days
       retry: 1,
       refetchOnWindowFocus: false,
     },
@@ -40,7 +40,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <AuthProvider config={authConfig}>
       <PersistQueryClientProvider
         client={queryClient}
-        persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24, buster: 'v1.0' }}
+        persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24 * 7, buster: 'v1.0' }}
       >
         <RouterProvider router={router} />
         <Toaster position="bottom-right" />
