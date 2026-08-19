@@ -9,6 +9,8 @@ import ReasoningDrawer from '@/components/ReasoningDrawer'
 import { Transaction } from '@/hooks/useTransactions'
 import { RefreshCw, Mail, Image as ImageIcon, Brain } from 'lucide-react'
 
+import { IngestionListSkeleton } from '@/components/ui/Skeleton'
+
 export default function PendingIngestions() {
   const [viewMode, setViewMode] = useState<'Pending' | 'AutoConfirmed' | 'Confirmed'>('Pending')
   const [filter, setFilter] = useState<'all' | 'sms' | 'app' | 'email' | 'image'>('all')
@@ -221,7 +223,9 @@ export default function PendingIngestions() {
       </div>
 
       <div className="flex-1 overflow-y-auto pb-6">
-        {!isLoading && pendingIngestions.length === 0 ? (
+        {isLoading ? (
+          <IngestionListSkeleton count={4} />
+        ) : pendingIngestions.length === 0 ? (
           <div className="p-8 text-center text-slate-400 italic">No {viewMode === 'Pending' ? 'pending' : viewMode === 'AutoConfirmed' ? 'auto-confirmed' : 'confirmed'} notifications.</div>
         ) : (
           <PendingIngestionsList filter={filter} viewMode={viewMode} onEditConfirm={(ing) => setConfirmingIngestionId(ing.id)} onOpenTransaction={(txId) => setOpeningTransactionId(txId)} />

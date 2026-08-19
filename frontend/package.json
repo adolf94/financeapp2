@@ -20,13 +20,16 @@
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
+    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.10"
   },
   "dependencies": {
     "@adolf94/ar-auth-client": "^1.2.4",
     "@microsoft/signalr": "^10.0.11",
     "@monaco-editor/react": "^4.7.0",
+    "@tanstack/query-sync-storage-persister": "^5.101.4",
     "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-query-persist-client": "^5.101.4",
     "@tanstack/react-router": "^1.170.18",
     "@types/diff": "^7.0.2",
     "axios": "^1.18.1",

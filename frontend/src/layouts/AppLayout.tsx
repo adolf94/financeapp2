@@ -13,8 +13,39 @@ const navItems = [
   { path: '/settings', label: 'Settings', icon: Settings },
 ]
 
+function hasStoredSession(): boolean {
+  try {
+    const authority = window.authConfig?.authority ?? 'https://auth.adolfrey.com/api'
+    const clientId = window.authConfig?.clientId ?? 'finance-app2'
+    const authorityBase = authority.endsWith('/') ? authority : `${authority}/`
+    const keys = [
+      `oidc.user:${authorityBase}:${clientId}`,
+      `oidc.user:${authority}:${clientId}`,
+    ]
+
+    for (const key of keys) {
+      const data = localStorage.getItem(key)
+      if (data) {
+        const parsed = JSON.parse(data)
+        if (parsed?.refresh_token || parsed?.access_token) {
+          return true
+        }
+      }
+    }
+
+    // Also check generic localStorage access_token if present
+    if (localStorage.getItem('access_token')) {
+      return true
+    }
+  } catch (e) {
+    console.error('Error checking stored session:', e)
+  }
+  return false
+}
+
 export default function AppLayout() {
   const { isAuthenticated, isLoading, login, logout, user } = useAuth()
+  const hasSession = hasStoredSession()
   
   // Connect to SignalR connection announcements when authenticated
   useSignalR(!isLoading && isAuthenticated)
@@ -31,12 +62,25 @@ export default function AppLayout() {
     }
   }, [isLoading, isAuthenticated, login])
 
-  if (isLoading || !isAuthenticated) {
+  // Only block with AuthSplash if auth is actively loading AND there is no stored session
+  if (isLoading && !hasSession) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white">
         <div className="flex flex-col items-center gap-4">
           <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
           <span className="text-lg font-medium text-slate-400">Authenticating...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // If loading finished and user is not authenticated, let useEffect trigger login redirect (or show splash while redirecting)
+  if (!isLoading && !isAuthenticated) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 text-white">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-lg font-medium text-slate-400">Redirecting to login...</span>
         </div>
       </div>
     )

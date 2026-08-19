@@ -1,7 +1,8 @@
-import { Wallet, Loader2 } from 'lucide-react'
+import { Wallet } from 'lucide-react'
 import { useAnalysis } from '@/hooks/useAnalysis'
 import { useState } from 'react'
 import Analysis from '@/pages/Analysis'
+import { DashboardOverviewSkeleton } from '@/components/ui/Skeleton'
 
 export default function Dashboard() {
   const { netWorth, currentMonthIncome, currentMonthExpense, isLoading } = useAnalysis()
@@ -48,9 +49,7 @@ export default function Dashboard() {
       {activeTab === 'overview' && (
         <>
           {isLoading ? (
-            <div className="flex justify-center p-10">
-              <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
-            </div>
+            <DashboardOverviewSkeleton />
           ) : (
             <>
               <section className="bg-blue-600 text-white p-5 rounded-2xl shadow-sm">
