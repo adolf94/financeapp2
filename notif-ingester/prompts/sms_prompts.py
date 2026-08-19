@@ -24,31 +24,6 @@ Return ONLY valid JSON:
 }}
 """
 
-SMS_EXTRACTION_PROMPT = """
-You are a financial data extraction assistant. Extract ALL account identifiers, vendor names, and transaction details from this SMS banking message.
-
-SMS from: {sender}
-SMS Message: {raw_msg}
-
-Extract the following information:
-1. **Account Numbers**: Any account/card/wallet numbers mentioned (e.g., "1234", "****5678", "0917****", masked numbers)
-2. **Account Names**: Any account holder/merchant/person names mentioned
-3. **Potential Vendor Names**: Any store/merchant/business/person names that received the payment
-
-CRITICAL FILTERING RULES:
-- For fund transfers between individuals: the vendor should be the PERSON receiving money, not the bank
-- DO NOT include bank names (BPI, BDO, Metrobank, UnionBank, GCash, Maya) as potential_vendor_names — they are account senders, not vendors
-- DO include the RECIPIENT person/business name as potential_vendor_names for transfers
-- Masked numbers like "****1234" or "xxxx-5678" should still be included in account_numbers
-
-Return ONLY valid JSON matching this schema:
-{{
-  "account_numbers": ["string"],
-  "account_names": ["string"],
-  "potential_vendor_names": ["string"]
-}}
-"""
-
 SMS_CLASSIFICATION_PROMPT = """
 You are a personal finance assistant classifying an SMS banking transaction.
 

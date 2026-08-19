@@ -341,14 +341,14 @@ uses it for multi-order routing.
 
 | # | Change | File(s) | Status |
 |---|--------|---------|--------|
-| 1 | Fix `SmsProcessingService._classify_hook_async` signature (add `related_context`, `extracted_info`) | `sms_processing_service.py` | ⬜ TODO |
-| 2 | Delete `SMS_EXTRACTION_PROMPT` dead code | `sms_prompts.py` | ⬜ TODO |
-| 3 | Persist `is_multi_order` + `currency` to `raw_payload` after preprocess | `ingestion_service.py` | ⬜ TODO |
-| 4 | Restore `is_financial` gate via `_use_is_financial_gate()` override | `ingestion_service.py`, `email_processing_service.py` | ⬜ TODO |
-| 5 | Widen amount-only relation window per type (`_get_relation_window_minutes()`) | `ingestion_service.py` + subclasses | ⬜ TODO |
-| 5b | Widen confirmed ledger search window for App/SMS to 60 min (email-first gap fix) | `ingestion_service.py` | ⬜ TODO |
-| 6 | Add post-classify embedding for Image pipeline | `image_processing_service.py` | ⬜ TODO |
-| 7 | Remove post-classify `_apply_vendor_matching()` entirely — no replacement, `ensure_vendor_and_lookups_async` auto-create disabled | `ingestion_service.py`, `image_processing_service.py` | ⬜ TODO |
+| 1 | Fix `SmsProcessingService._classify_hook_async` signature (add `related_context`, `extracted_info`) | `sms_processing_service.py` | ✅ Done |
+| 2 | Delete `SMS_EXTRACTION_PROMPT` dead code | `sms_prompts.py` | ✅ Done |
+| 3 | Persist `is_multi_order` + `currency` to `raw_payload` after preprocess | `ingestion_service.py` | ✅ Done |
+| 4 | Restore `is_financial` gate via `_use_is_financial_gate()` override | `ingestion_service.py`, `email_processing_service.py` | ✅ Done |
+| 5 | Widen amount-only relation window per type (`_get_relation_window_minutes()`) | `ingestion_service.py` + subclasses | ✅ Done |
+| 5b | Widen confirmed ledger search window for App/SMS to 60 min (email-first gap fix) | `ingestion_service.py` | ✅ Done |
+| 6 | Add post-classify embedding for Image pipeline | `image_processing_service.py` | ✅ Done |
+| 7 | Remove post-classify `_apply_vendor_matching()` entirely — no replacement, `ensure_vendor_and_lookups_async` auto-create disabled | `ingestion_service.py`, `image_processing_service.py` | ✅ Done |
 
 ---
 

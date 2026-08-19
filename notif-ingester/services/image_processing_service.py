@@ -54,6 +54,14 @@ class ImageProcessingService(IngestionService):
     def _get_runbook_id(self) -> str:
         return self.RUNBOOK_ID
 
+    def _use_is_financial_gate(self) -> bool:
+        """Image pipeline has dedicated flow; skip base is_financial gate."""
+        return False
+
+    def _get_relation_window_minutes(self) -> float:
+        """Receipt photos may be uploaded much later; widen amount-only relation window to 24 hours (1440m)."""
+        return 1440.0
+
     def get_default_image_runbook_content(self) -> str:
         """Load bundled image_runbook.md template."""
         runbook_path = os.path.join(
@@ -115,44 +123,6 @@ class ImageProcessingService(IngestionService):
             blob_name=blob_name,
             blob_url=blob_url,
         )
-
-    async def process_image_async(
-        self,
-        image_bytes: bytes,
-        mime_type: str,
-        filename: str,
-        user_id: str,
-        operation_id: Optional[str] = None,
-        connection_id: Optional[str] = None,
-        ingestion_id: Optional[str] = None,
-        stream_reasoning: bool = True,
-        description: Optional[str] = None,
-        user_corrections: Optional[dict] = None,
-        blob_name: Optional[str] = None,
-        blob_url: Optional[str] = None,
-    ) -> PendingIngestion:
-        """Process an uploaded receipt or invoice image end-to-end."""
-        target_id = ingestion_id or str(uuid7())
-        now = datetime.now(timezone.utc)
-        month_key = now.strftime("%Y-%m")
-
-        logger.info(f"[ImageProcessingService] Processing image '{filename}' for user '{user_id}' (ingestion_id={target_id})")
-
-        # 1. Upload to Blob Storage if not already uploaded
-        resolved_blob_name = blob_name or ""
-        resolved_blob_url = blob_url or ""
-        if not resolved_blob_name:
-            try:
-                resolved_blob_name, resolved_blob_url = await self._blob_storage.upload_image_async(
-                    image_bytes=image_bytes,
-                    user_id=user_id,
-                    ingestion_id=target_id,
-                    filename=filename,
-                    mime_type=mime_type,
-                )
-            except Exception as e:
-                logger.error(f"[ImageProcessingService] Blob upload warning: {e}")
-
 
     async def _preprocess_image_and_find_vendor_matches_async(
         self,
@@ -321,12 +291,7 @@ class ImageProcessingService(IngestionService):
             related_context=related_context,
         )
 
-
-        # 5. Map lookups and vendor matching
-        lookups = self._build_lookups(ai_parsed, accounts)
-        await self._apply_vendor_matching(ai_parsed, vendors, accounts, lookups, user_id)
-
-        # 6. Build raw payload and metadata
+        # 5. Build raw payload and metadata
         raw_msg = f"[IMAGE]: {ai_parsed.summary or description or filename}"
         raw_payload = {
             "filename": filename,
@@ -338,7 +303,6 @@ class ImageProcessingService(IngestionService):
             "notif_title": filename,
             "description": description or "",
         }
-
 
         ingestion = PendingIngestion(
             id=target_id,
@@ -361,8 +325,16 @@ class ImageProcessingService(IngestionService):
         else:
             await self.detect_and_link_relations_async(ingestion)
 
-        # 7. Save to CosmosDB
+        # 6. Save to CosmosDB
         saved_ingestion = await self._repo.add_async(ingestion)
+
+        # 7. Post-classify embedding for learning (if financial with vendor and debit account)
+        if saved_ingestion.ai_parsed and saved_ingestion.ai_parsed.is_financial is not False:
+            if saved_ingestion.ai_parsed.vendor and saved_ingestion.ai_parsed.debit_account_id:
+                try:
+                    await self.embed_and_learn_async(saved_ingestion)
+                except Exception as e:
+                    logger.warning(f"[ImageProcessingService] Embed+learn failed: {e}")
 
         # 8. SignalR broadcast completion if operation_id provided
         if operation_id:
@@ -471,9 +443,6 @@ class ImageProcessingService(IngestionService):
                 user_corrections=user_corrections,
                 related_context=related_context,
             )
-
-            lookups = self._build_lookups(ai_parsed, accounts)
-            await self._apply_vendor_matching(ai_parsed, vendors, accounts, lookups, user_id)
 
             ingestion.ai_parsed = ai_parsed
             ingestion.status = "Pending"

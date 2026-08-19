@@ -42,11 +42,17 @@ class EmailProcessingService(IngestionService):
             os.environ.get("AUTO_CONFIRM_THRESHOLD", "0.95")
         )
 
-    # -- Overrides ---------------------------------------------------------------
-
     def _get_runbook_id(self) -> str:
         """Use the dedicated email runbook document."""
         return self.RUNBOOK_ID
+
+    def _use_is_financial_gate(self) -> bool:
+        """Emails are inherently financial; skip fast gate."""
+        return False
+
+    def _get_relation_window_minutes(self) -> float:
+        """Emails lag behind payments (e.g. order confirmation); widen amount-only relation window to 60m."""
+        return 60.0
 
     def _is_shopee_email(self, hook: PhoneHookMessage) -> bool:
         """Check if an incoming email hook is from Shopee."""

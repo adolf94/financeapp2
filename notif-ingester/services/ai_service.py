@@ -9,7 +9,7 @@ from models.prompt_debug_log import PromptDebugLog
 from typing import List, Optional, Tuple
 from services.llm_provider import LlmProvider, make_provider
 from repositories.prompt_debug_repository import IPromptDebugRepository, NoOpPromptDebugRepository
-from prompts.sms_prompts import SMS_IS_FINANCIAL_PROMPT, SMS_EXTRACTION_PROMPT, SMS_CLASSIFICATION_PROMPT
+from prompts.sms_prompts import SMS_IS_FINANCIAL_PROMPT, SMS_CLASSIFICATION_PROMPT
 from prompts.app_prompts import APP_IS_FINANCIAL_PROMPT, APP_CLASSIFICATION_PROMPT
 from prompts.email_prompts import EMAIL_CLASSIFICATION_PROMPT, SHOPEE_MULTI_ORDER_PROMPT
 from prompts.image_prompts import IMAGE_CLASSIFICATION_PROMPT

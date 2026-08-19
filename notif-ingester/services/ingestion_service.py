@@ -51,6 +51,14 @@ class IngestionService:
         """Return the CosmosDB Settings id for this pipeline's runbook. Override in subclasses."""
         return "runbook"
 
+    def _use_is_financial_gate(self) -> bool:
+        """Whether to run fast is_financial check before preprocessing. App & SMS = True, Email/Image = False."""
+        return True
+
+    def _get_relation_window_minutes(self) -> float:
+        """Time window for amount-only relation matching. App/SMS = 5.0, Email = 60.0, Image = 1440.0."""
+        return 5.0
+
     @property
     def ingestion_repo(self) -> IIngestionRepository:
         return self._repo
@@ -216,7 +224,7 @@ class IngestionService:
                 if round(abs(float(amount)), 2) == round(abs(float(cand_amount)), 2):
                     diff_secs = (effective_time - cand_time).total_seconds()
                     time_diff_mins = abs(diff_secs) / 60.0
-                    if time_diff_mins <= 5.0:
+                    if time_diff_mins <= self._get_relation_window_minutes():
                         is_possible = True
                         time_offset_str = f"{abs(int(diff_secs))}s apart" if abs(diff_secs) < 60 else f"{round(time_diff_mins, 1)}m apart"
 
@@ -231,15 +239,15 @@ class IngestionService:
             if is_definite:
                 context_lines.append(f"- [DEFINITE MATCH (Same Ref)] {summary}")
             else:
-                context_lines.append(f"- [POSSIBLE MATCH (Same Amount within 5m)] {summary}")
+                context_lines.append(f"- [POSSIBLE MATCH (Same Amount)] {summary}")
 
-        # 2. Check confirmed ledger entries
+        # 2. Check confirmed ledger entries (60 min lookback catches email-first gap)
         confirmed_matches = await self._finance_api_service.search_confirmed_ledger_entries_async(
             user_id=user_id,
             reference_number=ref_num if ref_num else None,
             amount=amount,
             around_time=effective_time,
-            window_minutes=5
+            window_minutes=60
         )
         if confirmed_matches:
             for cm in confirmed_matches[:5]:
@@ -255,61 +263,6 @@ class IngestionService:
         return await self._ai_service.classify_async(
             hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections, related_context=related_context
         )
-
-    async def _apply_vendor_matching(self, ai_parsed: 'AiParsedData', vendors: list, accounts: list, lookups: list, user_id: str) -> None:
-        """Apply vendor matching logic in-place on ai_parsed. Shared between process_hook_async and reclassify_ingestion_async."""
-        if not ai_parsed.vendor:
-            ai_parsed.vendor = AiVendorInfo()
-
-        existing_vendor_names = {}
-        if vendors:
-            for v in vendors:
-                if isinstance(v, dict) and v.get("name"):
-                    existing_vendor_names[v.get("name").lower().strip()] = v.get("name")
-                elif isinstance(v, str):
-                    existing_vendor_names[v.lower().strip()] = v
-
-        target_vendor = (ai_parsed.vendor.name or "").strip()
-
-        string_match_name = None
-        if target_vendor.lower() in existing_vendor_names:
-            string_match_name = existing_vendor_names[target_vendor.lower()]
-
-        matched_vendor, matched_lookups = await self._finance_api_service.search_vendors_by_lookups_async(user_id, lookups)
- 
-        db_lookups = [l for l in matched_lookups if l]
-        ai_lookups = ai_parsed.vendor.lookups or []
-        new_lookups = list(set([l for l in ai_lookups if l and l not in db_lookups]))
- 
-        if matched_vendor:
-            ai_parsed.vendor.name = matched_vendor
-            ai_parsed.vendor.matched = True
-            ai_parsed.vendor.is_recommendation = False
-            ai_parsed.vendor.lookups = db_lookups
-            ai_parsed.vendor.new_lookups = new_lookups
-        elif string_match_name:
-            ai_parsed.vendor.name = string_match_name
-            ai_parsed.vendor.matched = True
-            ai_parsed.vendor.is_recommendation = False
-            ai_parsed.vendor.lookups = db_lookups
-            ai_parsed.vendor.new_lookups = new_lookups
-        else:
-            ai_parsed.vendor.matched = False
-            ai_parsed.vendor.is_recommendation = True
-            ai_parsed.vendor.lookups = []
-            ai_parsed.vendor.new_lookups = list(set([l for l in (db_lookups + ai_lookups) if l]))
- 
-            if self._has_masks(ai_parsed.vendor.name):
-                ai_parsed.vendor.matched = False
-            else:
-                if ai_parsed.confidence and ai_parsed.confidence >= self._auto_confirm_threshold and ai_parsed.debit_account_id and ai_parsed.credit_account_id and ai_parsed.vendor.name:
-                    await self._finance_api_service.ensure_vendor_and_lookups_async(user_id, ai_parsed.vendor.name, lookups, ai_parsed.vendor.type)
-                    ai_parsed.vendor.matched = True
-                    ai_parsed.vendor.is_recommendation = False
-                    ai_parsed.vendor.lookups = db_lookups
-                    ai_parsed.vendor.new_lookups = new_lookups
-
-
 
     def _extract_effective_time(self, ingestion: PendingIngestion) -> datetime:
         """Extract the effective datetime from ai_parsed.date, raw_payload.timestamp, or received_at."""
@@ -365,11 +318,11 @@ class IngestionService:
                 if time_diff_days <= 30:
                     is_definite = True
 
-            # Check Criteria 2: Amount & 5-minute time window
+            # Check Criteria 2: Amount & time window
             if not is_definite and amount is not None and cand_amount is not None:
                 if round(abs(float(amount)), 2) == round(abs(float(cand_amount)), 2):
                     time_diff_mins = abs((eff_time - cand_time).total_seconds()) / 60.0
-                    if time_diff_mins <= 5.0:
+                    if time_diff_mins <= self._get_relation_window_minutes():
                         is_possible = True
 
             if is_definite:
@@ -392,13 +345,13 @@ class IngestionService:
         ingestion.related_ingestion_ids = list(definite_ids)
         ingestion.possible_related_ingestion_ids = list(possible_ids)
 
-        # 2. Check against Confirmed Transactions / Ledger Entries
+        # 2. Check against Confirmed Transactions / Ledger Entries (60 min lookback)
         confirmed_matches = await self._finance_api_service.search_confirmed_ledger_entries_async(
             user_id=ingestion.user_id,
             reference_number=ref_num if ref_num else None,
             amount=amount,
             around_time=eff_time,
-            window_minutes=5
+            window_minutes=60
         )
 
         if confirmed_matches:
@@ -439,6 +392,28 @@ class IngestionService:
         if not runbook_content:
             runbook_content = self._ai_service.get_default_runbook_content()
         
+        # 3.4 is_financial gate (fast pre-check for App & SMS)
+        if self._use_is_financial_gate():
+            is_financial = await self._ai_service.is_financial_transaction_async(hook)
+            if not is_financial:
+                logging.info(f"[process_hook_async] Hook {hook.id} determined non-financial by gate. Short-circuiting.")
+                ingestion = PendingIngestion(
+                    user_id=hook.user_id,
+                    hook_id=hook.id,
+                    received_at=hook.received_at,
+                    raw_payload=hook.raw_payload,
+                    raw_msg=hook.raw_msg,
+                    ai_parsed=AiParsedData(is_financial=False),
+                    similarity_score=top_score,
+                    top_matches=[],
+                    status="NonFinancial",
+                    ttl=7 * 24 * 60 * 60,
+                    month_key=hook.month_key,
+                    partition_key=hook.partition_key,
+                    notification_type=hook.notification_type
+                )
+                return await self._repo.add_async(ingestion)
+
         # 3.5 Preprocessing: extract account numbers and potential vendor names
         logging.info("[process_hook_async] 3.5 Preprocessing raw message...")
         if hook.raw_payload and "extracted_info" in hook.raw_payload:
@@ -465,6 +440,22 @@ class IngestionService:
             )
         else:
             extracted_info = await self._preprocessing_service.process_hook(hook)
+            if hook.raw_payload is not None:
+                hook.raw_payload.setdefault("extracted_info", {})
+                hook.raw_payload["extracted_info"]["is_multi_order"] = extracted_info.is_multi_order
+                hook.raw_payload["extracted_info"]["currency"] = extracted_info.currency
+                if extracted_info.reference_number:
+                    hook.raw_payload["extracted_info"]["reference_number"] = extracted_info.reference_number
+                if extracted_info.amount is not None:
+                    hook.raw_payload["extracted_info"]["amount"] = extracted_info.amount
+                if extracted_info.date:
+                    hook.raw_payload["extracted_info"]["date"] = extracted_info.date
+                if extracted_info.account_numbers:
+                    hook.raw_payload["extracted_info"]["account_numbers"] = extracted_info.account_numbers
+                if extracted_info.account_names:
+                    hook.raw_payload["extracted_info"]["account_names"] = extracted_info.account_names
+                if extracted_info.potential_vendor_names:
+                    hook.raw_payload["extracted_info"]["potential_vendor_names"] = extracted_info.potential_vendor_names
         
         # Build lookup values from extracted info for vendor matching
         pre_lookups = []
@@ -506,10 +497,6 @@ class IngestionService:
         ai_parsed = await self._classify_hook_async(
             hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, stream_reasoning=False, exchange_rate_info=exchange_rate_info, related_context=related_context, extracted_info=extracted_info
         )
-
-        # 4.5 Automatically map vendor from lookups or string match
-        lookups = self._build_lookups(ai_parsed, accounts)
-        await self._apply_vendor_matching(ai_parsed, vendors, accounts, lookups, hook.user_id)
 
         # 5. Create PendingIngestion
         matches = []
@@ -651,10 +638,6 @@ class IngestionService:
             user_id=user_id
         )
         ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections, related_context=related_context, extracted_info=extracted_info)
-
-        # 4.5 Automatically map vendor from lookups or string match
-        lookups = self._build_lookups(ai_parsed, accounts)
-        await self._apply_vendor_matching(ai_parsed, vendors, accounts, lookups, user_id)
 
         # 5. Update ingestion with new classification
         matches = []
