@@ -60,10 +60,11 @@ Users need a structured way to mirror their real-world financial accounts within
         - **Confirmed Transaction Cross-Check:** Queries confirmed `LedgerEntry` records (by `reference_number` within 30 days or `amount` + `Transaction.Date` within 5-min window). Populates `related_transaction_ids` and flags `has_possible_confirmed_match: true`.
       - **Back-Porting (Mandatory):** Matched existing pending ingestions are updated with links to newly ingested items.
       - **User Actions:** UI displays related notification badges and duplicate warnings with a "Merge & Confirm" action that confirms the selected item and marks related pending items as `Duplicate` or `Merged`.
-  11. **Shopee Multi-Order Email Ingestion Flow:**
-      - **Multi-Order Detection:** Shopee payment confirmation emails are routed to `classify_email_shopee_async()` using `SHOPEE_MULTI_ORDER_PROMPT` to extract N orders in a single checkout.
-      - **1 Ingestion → 1 Transaction, N+1 LedgerEntries:** Maps 1 Shopee email to 1 `PendingIngestion` and 1 `Transaction` with 1 credit entry (total checkout amount) and N debit entries (one per order, each with its Order ID as `reference_number`).
-      - **Source Account Resolution:** Cross-references recent SMS/app notification candidates within a 5-minute window matching the total checkout amount to resolve the source credit card account ID (`credit_account_id`) and cross-links via `possible_related_ingestion_ids`.
+  11. **Shopee Multi-Order & Email Ingestion Flow:**
+       - **Multi-Order Detection:** Shopee payment confirmation emails are routed to `classify_email_shopee_async()` using `SHOPEE_MULTI_ORDER_PROMPT` to extract N orders in a single checkout.
+       - **1 Ingestion → 1 Transaction, N+1 LedgerEntries:** Maps 1 Shopee email to 1 `PendingIngestion` and 1 `Transaction` with 1 credit entry (total checkout amount) and N debit entries (one per order, each with its Order ID as `reference_number`).
+       - **Source Account Resolution:** Cross-references recent SMS/app notification candidates within a 5-minute window matching the total checkout amount to resolve the source credit card account ID (`credit_account_id`) and cross-links via `possible_related_ingestion_ids`.
+       - **Real-time SignalR Broadcast:** On every completed email ingestion classification, broadcasts `reclassifyComplete` with the updated ingestion dictionary across `notificationHub` targeting the user and hook group.
   12. **Automated Error Alerting (LlamaLabs Automate) & Error Tracking:**
       - Whenever a notification ingestion fails during pipeline execution (Cosmos DB change feed in `ClassifyNotificationFunction`), the system persists `error_detail` directly in the `PhoneHookMessages` entity (`status = "error"`), allowing direct inspection and triage from the Settings > Notification Log > Errors & Failures interface.
       - Concurrently triggers an automated push alert via `send_error_notification_async()` to LlamaLabs Automate endpoint (`AUTOMATE_ENDPOINT`, `AUTOMATE_KEY`, `AUTOMATE_EMAIL`) containing the hook ID, error trace snippet, and raw payload text summary.

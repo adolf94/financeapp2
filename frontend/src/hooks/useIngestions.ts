@@ -1,6 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import apiClient from '@/lib/apiClient'
 import ingesterClient from '@/lib/ingesterClient'
+
+
+
+
 
 export interface AiVendorInfo {
   name?: string | null
@@ -335,11 +340,23 @@ export function useCheckEmails() {
       const response = await ingesterClient.post('/email/check')
       return response.data as { success: boolean; count: number }
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
+      queryClient.invalidateQueries({ queryKey: ['phoneHooks'] })
+      if (data.count === 0) {
+        toast('No new unread financial emails found.')
+      } else {
+        toast.success(`Found ${data.count} new email${data.count > 1 ? 's' : ''}. Processing in background...`)
+      }
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.error || err?.message || 'Failed to check emails')
     }
   })
 }
+
+
+
 
 export function useUploadImage() {
   const queryClient = useQueryClient()

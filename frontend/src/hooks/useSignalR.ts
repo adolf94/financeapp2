@@ -92,6 +92,17 @@ export const useSignalR = (enabled: boolean = true) => {
       }
     })
 
+    connection.on('checkEmailItem', (ingestion: any, count: number, total: number) => {
+      console.log('[SignalR] checkEmailItem:', count, 'of', total, ingestion)
+      window.dispatchEvent(new CustomEvent('checkEmailItem', { detail: { ingestion, count, total } }))
+    })
+
+    connection.on('checkEmailComplete', (total: number) => {
+      console.log('[SignalR] checkEmailComplete:', total)
+      window.dispatchEvent(new CustomEvent('checkEmailComplete', { detail: { total } }))
+    })
+
+
     connection.start()
       .then(() => {
         console.log('[SignalR] Connected successfully!')

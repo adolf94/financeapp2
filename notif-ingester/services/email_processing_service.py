@@ -16,6 +16,8 @@ from services.embedding_service import EmbeddingService
 from services.vector_service import VectorService
 from services.ai_service import AiService
 from services.finance_api_service import FinanceApiService
+from services.signalr_publisher import publish_signalr_message
+
 
 
 class EmailProcessingService(IngestionService):
@@ -215,4 +217,19 @@ class EmailProcessingService(IngestionService):
             ingestion.raw_msg = f"[EMAIL]: {ingestion.ai_parsed.summary}"
         
         await self.ingestion_repo.update_async(ingestion)
+
+        # Broadcast SignalR completion with ingestion details
+        try:
+            ingestion_dict = ingestion.model_dump(by_alias=True, mode="json")
+            await publish_signalr_message(
+                "notificationHub",
+                "reclassifyComplete",
+                [ingestion_dict, hook.id],
+                user_id=hook.user_id,
+            )
+            logging.info(f"[EmailProcessingService] Broadcasted reclassifyComplete to user {hook.user_id} for ingestion {ingestion.id}")
+        except Exception as e:
+            logging.warning(f"[EmailProcessingService] SignalR broadcast failed: {e}")
+
         return ingestion
+

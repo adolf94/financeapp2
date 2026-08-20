@@ -24,8 +24,15 @@ from services.sms_processing_service import SmsProcessingService
 from services.notification_type_detector import NotificationTypeDetector
 from services.email_fetching_service import check_and_save_emails_async
 from services.automate_notification_service import send_error_notification_async
+
+
 from ar_auth.azure import ArAuthAzureClient
+from ar_auth.client import ArAuthClient
 from typing import Optional, Tuple
+
+# Monkey patch ArAuthClient.verify_token to allow 60s clock skew leeway
+_orig_verify_token = ArAuthClient.verify_token
+ArAuthClient.verify_token = lambda self, token, audience=None, leeway=60: _orig_verify_token(self, token, audience=audience, leeway=leeway)
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -1439,13 +1446,16 @@ async def CheckEmailManualFunction(req: func.HttpRequest) -> func.HttpResponse:
     user, err = _require_auth(req)
     if err: return err
 
-    logging.info("Manual check for unread emails triggered.")
+    user_id = user.get("sub", "default")
+    logging.info(f"Manual check for unread emails triggered for user {user_id}.")
     try:
-        saved_count = await check_and_save_emails_async()
+        saved_count = await check_and_save_emails_async(user_id=user_id)
         return func.HttpResponse(json.dumps({"success": True, "count": saved_count}), status_code=200, mimetype="application/json")
     except Exception as ex:
         logging.error(f"Error in manual email check: {ex}")
         return func.HttpResponse(json.dumps({"error": str(ex)}), status_code=500, mimetype="application/json")
+
+
 
 
 # ── Function 17: EmailTimerTriggerFunction ───────────────────────────────────

@@ -21,6 +21,7 @@ export default function PendingIngestions() {
   const [reasoningOpId, setReasoningOpId] = useState<string | null>(null)
   const [isReasoningDrawerOpen, setIsReasoningDrawerOpen] = useState(false)
   const [isReasoningPending, setIsReasoningPending] = useState(false)
+  const [processingEmailsCount, setProcessingEmailsCount] = useState(0)
 
   const queryClient = useQueryClient()
   const { data: openedTransaction } = useGetTransactionById(openingTransactionId)
@@ -36,13 +37,39 @@ export default function PendingIngestions() {
         queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
         queryClient.invalidateQueries({ queryKey: ['phoneHooks'] })
       }
+      setProcessingEmailsCount((prev) => Math.max(0, prev - 1))
+    }
+
+    const handleCheckEmailItem = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      refetch()
+      queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
+      queryClient.invalidateQueries({ queryKey: ['phoneHooks'] })
+      if (detail?.total) {
+        setProcessingEmailsCount(Math.max(0, detail.total - detail.count))
+      } else {
+        setProcessingEmailsCount((prev) => Math.max(0, prev - 1))
+      }
+    }
+
+    const handleCheckEmailComplete = () => {
+      setProcessingEmailsCount(0)
+      refetch()
+      queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
+      queryClient.invalidateQueries({ queryKey: ['phoneHooks'] })
     }
 
     window.addEventListener('reclassifyComplete', handleReclassifyComplete)
+    window.addEventListener('checkEmailItem', handleCheckEmailItem)
+    window.addEventListener('checkEmailComplete', handleCheckEmailComplete)
     return () => {
       window.removeEventListener('reclassifyComplete', handleReclassifyComplete)
+      window.removeEventListener('checkEmailItem', handleCheckEmailItem)
+      window.removeEventListener('checkEmailComplete', handleCheckEmailComplete)
     }
   }, [reasoningOpId, refetch, queryClient])
+
+
 
   const confirmingIngestion = useMemo(() => {
     return pendingIngestions.find(i => i.id === confirmingIngestionId) || null
@@ -114,11 +141,17 @@ export default function PendingIngestions() {
 
   const handleCheckEmails = async () => {
     try {
-      await checkEmailsMutation.mutateAsync()
+      const res = await checkEmailsMutation.mutateAsync()
+      if (res && res.count > 0) {
+        setProcessingEmailsCount(res.count)
+      }
     } catch (err) {
       console.error('Failed to check emails manually', err)
+      setProcessingEmailsCount(0)
     }
   }
+
+
 
   const handleRefetchList = async () => {
     try {
@@ -129,6 +162,8 @@ export default function PendingIngestions() {
   }
 
   const isCurrentFetching = isFetching
+  const isCheckingOrProcessingEmails = checkEmailsMutation.isPending || processingEmailsCount > 0
+
 
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950">
@@ -195,12 +230,18 @@ export default function PendingIngestions() {
             </button>
             <button
               onClick={handleCheckEmails}
-              disabled={checkEmailsMutation.isPending}
+              disabled={isCheckingOrProcessingEmails}
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all rounded-xl shadow-sm disabled:opacity-50 disabled:pointer-events-none"
               title="Check Email"
             >
-              <Mail className={`w-3.5 h-3.5 ${checkEmailsMutation.isPending ? 'animate-bounce' : ''}`} />
-              <span>{checkEmailsMutation.isPending ? 'Checking...' : 'Check Email'}</span>
+              <Mail className={`w-3.5 h-3.5 ${isCheckingOrProcessingEmails ? 'animate-bounce' : ''}`} />
+              <span>
+                {checkEmailsMutation.isPending
+                  ? 'Checking...'
+                  : processingEmailsCount > 0
+                  ? `Processing ${processingEmailsCount} email${processingEmailsCount > 1 ? 's' : ''}...`
+                  : 'Check Email'}
+              </span>
             </button>
           </div>
         </div>

@@ -88,6 +88,54 @@ class TestShopeeMultiOrderFlow(unittest.IsolatedAsyncioTestCase):
         self.assertIn(shopee_ing_id, sms_candidate.possible_related_ingestion_ids)
         self.mock_repo.update_async.assert_called_once_with(sms_candidate)
 
+    @patch("services.email_processing_service.publish_signalr_message", new_callable=AsyncMock)
+    async def test_process_hook_async_broadcasts_signalr(self, mock_publish_signalr):
+        now = datetime.now(timezone.utc)
+        user_id = "user-1"
+        hook = PhoneHookMessage(
+            id="hook-email-test",
+            user_id=user_id,
+            raw_msg="[EMAIL]: Bank statement notification",
+            raw_payload={"sender": "alerts@bpi.com.ph", "subject": "BPI Statement"},
+            action="email_received",
+            status="received",
+            month_key="2026-08-01",
+            partition_key="2026-08-01",
+            notification_type="email"
+        )
+        fake_ingestion = PendingIngestion(
+            id="ing-email-test",
+            user_id=user_id,
+            hook_id="hook-email-test",
+            received_at=now,
+            raw_payload={},
+            raw_msg="[EMAIL]: Bank statement notification",
+            ai_parsed=AiParsedData(
+                amount=100.0,
+                summary="Bank statement notification",
+                transaction_type="Expense",
+                credit_account_id="acc-credit-card-bpi"
+            ),
+            month_key="2026-08-01",
+            partition_key="2026-08-01",
+            notification_type="email"
+        )
+
+        with patch.object(self.service, "_get_or_bootstrap_email_runbook", new_callable=AsyncMock):
+            with patch("services.ingestion_service.IngestionService.process_hook_async", new_callable=AsyncMock, return_value=fake_ingestion):
+                res = await self.service.process_hook_async(hook)
+
+        self.assertIsNotNone(res)
+        mock_publish_signalr.assert_called_once()
+        args, kwargs = mock_publish_signalr.call_args
+        self.assertEqual(args[0], "notificationHub")
+        self.assertEqual(args[1], "reclassifyComplete")
+        self.assertEqual(args[2][1], "hook-email-test")
+        self.assertEqual(args[2][0]["id"], "ing-email-test")
+        self.assertEqual(kwargs.get("user_id"), user_id)
+
+
+
     async def test_create_transaction_multi_order(self):
         mock_cosmos_client = MagicMock()
         mock_db = MagicMock()

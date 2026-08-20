@@ -252,11 +252,12 @@ def fetch_unread_emails():
     return emails
 
 
-async def check_and_save_emails_async() -> int:
+async def check_and_save_emails_async(user_id: str = "3575cfa0-ec94-40d2-8b25-ee9f0f135027") -> int:
     from models.phone_hook import PhoneHookMessage
     from repositories.hook_repository import CosmosHookRepository
     import pytz
     from datetime import datetime, timezone
+
 
     from services.ai_service import AiService
     from repositories.prompt_debug_repository import CosmosPromptDebugRepository, NoOpPromptDebugRepository
@@ -308,7 +309,7 @@ async def check_and_save_emails_async() -> int:
         body["action"] = "email_received"
         
         hook_msg = PhoneHookMessage(
-            user_id="3575cfa0-ec94-40d2-8b25-ee9f0f135027",
+            user_id=user_id,
             action="email_received",
             raw_payload=body,
             raw_msg=f"[EMAIL]: {ai_summary}",
@@ -323,3 +324,139 @@ async def check_and_save_emails_async() -> int:
         logging.info(f"Saved email hook for emailId: {body['emailId']}")
 
     return saved_count
+
+
+async def check_and_process_emails_stream_async(user_id: str = "3575cfa0-ec94-40d2-8b25-ee9f0f135027"):
+    """
+    Synchronously fetch and process unread emails, yielding SSE events for each processed email.
+    Yields:
+      ("start", {"total": count})
+      ("item_processed", {"ingestion": ingestion_dict, "count": current_index, "total": total_count})
+      ("done", {"processed_count": saved_count})
+    """
+    from models.phone_hook import PhoneHookMessage
+    from repositories.hook_repository import CosmosHookRepository
+    import pytz
+    from datetime import datetime, timezone
+    from services.ai_service import AiService
+    from repositories.prompt_debug_repository import CosmosPromptDebugRepository, NoOpPromptDebugRepository
+    from services.email_processing_service import EmailProcessingService
+    from repositories.ingestion_repository import CosmosIngestionRepository
+    from repositories.vector_repository import CosmosVectorRepository
+    from services.embedding_service import EmbeddingService
+    from services.vector_service import VectorService
+    from services.finance_api_service import FinanceApiService
+
+    prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
+    debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
+    ai_service = AiService(debug_repo=debug_repo)
+
+    emails = fetch_unread_emails()
+    if not emails:
+        yield ("start", {"total": 0})
+        yield ("done", {"processed_count": 0})
+        return
+
+    hook_repo = CosmosHookRepository()
+    ingestion_repo = CosmosIngestionRepository()
+    vector_repo = CosmosVectorRepository()
+    embedding_service = EmbeddingService()
+    vector_service = VectorService(vector_repo)
+    finance_api_service = FinanceApiService()
+
+
+    email_service = EmailProcessingService(
+        ingestion_repo=ingestion_repo,
+        embedding_service=embedding_service,
+        vector_service=vector_service,
+        ai_service=ai_service,
+        finance_api_service=finance_api_service,
+    )
+
+    unprocessed_emails = []
+    for item in emails:
+        body = item["data"]
+        timestamp_str = body.get("timestamp")
+        try:
+            if timestamp_str:
+                dt = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            else:
+                dt = datetime.now(timezone.utc)
+        except ValueError:
+            dt = datetime.now(timezone.utc)
+        month_key = dt.strftime("%Y-%m-01")
+        existing = await hook_repo.get_by_notif_id_async(body["emailId"], month_key)
+        if not existing:
+            unprocessed_emails.append((item, body, month_key))
+
+    total = len(unprocessed_emails)
+    yield ("start", {"total": total})
+
+    saved_count = 0
+    for idx, (item, body, month_key) in enumerate(unprocessed_emails, start=1):
+        markdown_content = body.get('markdown_content', 'Email received')
+        ai_data = await ai_service.summarize_email_async(
+            sender=body.get('sender', ''),
+            subject=body.get('subject', ''),
+            markdown_content=markdown_content
+        )
+        ai_summary = ai_data.get("summary", "Email received")
+
+        body["extracted_info"] = {
+            "account_numbers": ai_data.get("account_numbers", []),
+            "account_names": ai_data.get("account_names", []),
+            "potential_vendor_names": ai_data.get("potential_vendor_names", [])
+        }
+        body["action"] = "email_received"
+
+        hook_msg = PhoneHookMessage(
+            user_id=user_id,
+            action="email_received",
+            raw_payload=body,
+            raw_msg=f"[EMAIL]: {ai_summary}",
+            month_key=month_key,
+            partition_key=month_key,
+            notification_type="email",
+            status="processed"  # Mark processed so change feed doesn't re-run
+        )
+        hook_msg.raw_payload["notif_id"] = body["emailId"]
+
+        await hook_repo.add_async(hook_msg)
+
+        # Process ingestion synchronously
+        ingestion = await email_service.process_hook_async(hook_msg)
+        saved_count += 1
+        ingestion_dict = ingestion.model_dump(by_alias=True, mode="json") if ingestion else None
+
+        # Real-time SignalR broadcast for live UI updates
+        from services.signalr_publisher import publish_signalr_message
+        try:
+            await publish_signalr_message(
+                "notificationHub",
+                "checkEmailItem",
+                [ingestion_dict, idx, total],
+                user_id=user_id
+            )
+        except Exception as sig_err:
+            logging.warning(f"Failed to publish checkEmailItem to SignalR: {sig_err}")
+
+        yield ("item_processed", {
+            "ingestion": ingestion_dict,
+            "count": idx,
+            "total": total
+        })
+
+    from services.signalr_publisher import publish_signalr_message
+    try:
+        await publish_signalr_message(
+            "notificationHub",
+            "checkEmailComplete",
+            [saved_count],
+            user_id=user_id
+        )
+    except Exception as sig_err:
+        logging.warning(f"Failed to publish checkEmailComplete to SignalR: {sig_err}")
+
+    yield ("done", {"processed_count": saved_count})
+
+
