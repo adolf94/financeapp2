@@ -193,6 +193,9 @@ Users need a structured way to mirror their real-world financial accounts within
   - `PATCH /ingestions/{id}/vendor` — Patch vendor name and set `vendor_matched = true`, JWT auth.
   - `POST /ingestions/classify-hook` — Synchronous classification (no Change Feed), JWT auth.
   - `POST /accounts/generate-description` — Generate an AI account description, JWT auth.
+  - `GET /phone-hooks` — List raw phone hook messages (e.g. `?status=error`), JWT auth.
+  - `POST /phone-hooks/{id}/retry` — Re-process and retry a failed phone hook message synchronously, JWT auth.
+  - `POST /phone-hooks/{id}/dismiss` — Mark a failed phone hook message as `skipped`, JWT auth.
   - `GET /historical-hooks` — Fetch legacy hook messages from old CosmosDB (`OldCosmosConnectionString`), JWT auth.
   - `POST /historical-hooks/{id}/import` — Map old schema → `PhoneHookMessage`, upsert to new DB, classify synchronously, JWT auth.
   - `POST /historical-hooks/{id}/ignore` — Mark old hook as `Ignored` in legacy DB, JWT auth.

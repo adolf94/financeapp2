@@ -1,20 +1,23 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { useGetPendingIngestions, useCheckEmails } from '@/hooks/useIngestions'
+import { useGetPendingIngestions, useCheckEmails, useGetPhoneHooks } from '@/hooks/useIngestions'
 import { useGetTransactionById } from '@/hooks/useTransactions'
 import PendingIngestionsList from '@/components/PendingIngestionsList'
+import ErrorNotificationsList from '@/components/ErrorNotificationsList'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import ImageUploadModal from '@/components/ImageUploadModal'
 import ReasoningDrawer from '@/components/ReasoningDrawer'
 import { Transaction } from '@/hooks/useTransactions'
-import { RefreshCw, Mail, Image as ImageIcon, Brain } from 'lucide-react'
+import { RefreshCw, Mail, Image as ImageIcon, Brain, AlertCircle } from 'lucide-react'
 
 import { IngestionListSkeleton } from '@/components/ui/Skeleton'
 
 export default function PendingIngestions() {
-  const [viewMode, setViewMode] = useState<'Pending' | 'AutoConfirmed' | 'Confirmed'>('Pending')
+  const [viewMode, setViewMode] = useState<'Pending' | 'AutoConfirmed' | 'Confirmed' | 'Error'>('Pending')
   const [filter, setFilter] = useState<'all' | 'sms' | 'app' | 'email' | 'image'>('all')
   const { data: pendingIngestions = [], isLoading, isFetching, refetch } = useGetPendingIngestions(viewMode)
+  const { data: errorPhoneHooks = [], isLoading: isLoadingHooks, isFetching: isFetchingHooks, refetch: refetchHooks } = useGetPhoneHooks('error')
+  const { data: errorIngestions = [], refetch: refetchErrorIngestions } = useGetPendingIngestions('Error')
   const [confirmingIngestionId, setConfirmingIngestionId] = useState<string | null>(null)
   const [openingTransactionId, setOpeningTransactionId] = useState<string | null>(null)
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
@@ -27,6 +30,8 @@ export default function PendingIngestions() {
 
   const checkEmailsMutation = useCheckEmails()
 
+  const totalErrorsCount = (errorPhoneHooks?.length || 0) + (errorIngestions?.length || 0)
+
   useEffect(() => {
     const handleReclassifyComplete = (e: Event) => {
       const detail = (e as CustomEvent).detail
@@ -34,6 +39,7 @@ export default function PendingIngestions() {
         setIsReasoningPending(false)
         refetch()
         queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
+        queryClient.invalidateQueries({ queryKey: ['phoneHooks'] })
       }
     }
 
@@ -121,39 +127,64 @@ export default function PendingIngestions() {
 
   const handleRefetchList = async () => {
     try {
-      await refetch()
+      await Promise.all([refetch(), refetchHooks(), refetchErrorIngestions()])
     } catch (err) {
       console.error('Failed to refetch list', err)
     }
   }
 
+  const isCurrentFetching = isFetching || isFetchingHooks
+
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-950">
       <div className="pt-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10 flex flex-col">
-        <div className="px-4 flex justify-between items-center">
+        <div className="px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Inbox</h1>
-            <p className="text-slate-500 mt-1 text-sm">{viewMode === 'Pending' ? 'Pending Notifications' : viewMode === 'AutoConfirmed' ? 'Auto-Confirmed Notifications' : 'Confirmed Notifications'}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <select
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as any)}
-                className="appearance-none pr-8 pl-3 py-2 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm"
-              >
-                <option value="all">All Notifications</option>
-                <option value="image">Receipt Images</option>
-                <option value="email">Email Only</option>
-                <option value="sms">SMS Only</option>
-                <option value="app">App Push Only</option>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
-              </div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Inbox</h1>
+              {totalErrorsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setViewMode('Error')}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-rose-500 text-white animate-pulse shadow-sm hover:bg-rose-600 transition-colors cursor-pointer"
+                  title={`${totalErrorsCount} error${totalErrorsCount > 1 ? 's' : ''} occurred`}
+                >
+                  <AlertCircle className="w-3 h-3" />
+                  <span>{totalErrorsCount}</span>
+                </button>
+              )}
             </div>
+            <p className="text-slate-500 mt-1 text-sm">
+              {viewMode === 'Pending'
+                ? 'Pending Notifications'
+                : viewMode === 'AutoConfirmed'
+                ? 'Auto-Confirmed Notifications'
+                : viewMode === 'Confirmed'
+                ? 'Confirmed Notifications'
+                : 'Failed / Errored Ingestions'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {viewMode !== 'Error' && (
+              <div className="relative">
+                <select
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value as any)}
+                  className="appearance-none pr-8 pl-3 py-2 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-sm"
+                >
+                  <option value="all">All Notifications</option>
+                  <option value="image">Receipt Images</option>
+                  <option value="email">Email Only</option>
+                  <option value="sms">SMS Only</option>
+                  <option value="app">App Push Only</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                  <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" /></svg>
+                </div>
+              </div>
+            )}
 
-            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
+            <div className="hidden sm:block w-px h-6 bg-slate-200 dark:bg-slate-700 mx-1" />
             {reasoningOpId && (
               <button
                 type="button"
@@ -162,28 +193,31 @@ export default function PendingIngestions() {
                 title="Open AI reasoning stream drawer"
               >
                 <Brain className={`w-3.5 h-3.5 ${isReasoningPending ? 'animate-pulse text-purple-500' : ''}`} />
-                <span>{isReasoningPending ? 'AI Thinking...' : 'View Reasoning'}</span>
+                <span>{isReasoningPending ? 'Thinking...' : 'Reasoning'}</span>
               </button>
             )}
             <button
               onClick={handleRefetchList}
-              disabled={isFetching}
-              className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-all shadow-sm disabled:opacity-50"
+              disabled={isCurrentFetching}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700 active:scale-95 transition-all shadow-sm disabled:opacity-50"
+              title="Refetch list"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-              <span>{isFetching ? 'Fetching...' : 'Refetch'}</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${isCurrentFetching ? 'animate-spin' : ''}`} />
+              <span>{isCurrentFetching ? 'Fetching...' : 'Refetch'}</span>
             </button>
             <button
               onClick={() => setIsUploadModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 active:scale-95 transition-all rounded-xl shadow-sm cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 active:scale-95 transition-all rounded-xl shadow-sm cursor-pointer"
+              title="Upload Receipt"
             >
               <ImageIcon className="w-3.5 h-3.5" />
-              <span>Upload Receipt</span>
+              <span>Upload</span>
             </button>
             <button
               onClick={handleCheckEmails}
               disabled={checkEmailsMutation.isPending}
-              className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all rounded-xl shadow-sm disabled:opacity-50 disabled:pointer-events-none"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:scale-95 transition-all rounded-xl shadow-sm disabled:opacity-50 disabled:pointer-events-none"
+              title="Check Email"
             >
               <Mail className={`w-3.5 h-3.5 ${checkEmailsMutation.isPending ? 'animate-bounce' : ''}`} />
               <span>{checkEmailsMutation.isPending ? 'Checking...' : 'Check Email'}</span>
@@ -219,11 +253,35 @@ export default function PendingIngestions() {
           >
             Confirmed
           </button>
+          <button
+            onClick={() => setViewMode('Error')}
+            className={`pb-3 px-4 font-semibold text-sm whitespace-nowrap transition-colors border-b-2 flex items-center gap-1.5 ${viewMode === 'Error'
+                ? 'border-rose-600 text-rose-600 dark:text-rose-400 dark:border-rose-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+          >
+            <span>Errors</span>
+            {totalErrorsCount > 0 && (
+              <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px] font-bold">
+                {totalErrorsCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto pb-6">
-        {isLoading ? (
+        {viewMode === 'Error' ? (
+          isLoadingHooks ? (
+            <IngestionListSkeleton count={3} />
+          ) : (
+            <ErrorNotificationsList
+              phoneHooks={errorPhoneHooks}
+              errorIngestions={errorIngestions}
+              onRetryComplete={handleRefetchList}
+            />
+          )
+        ) : isLoading ? (
           <IngestionListSkeleton count={4} />
         ) : pendingIngestions.length === 0 ? (
           <div className="p-8 text-center text-slate-400 italic">No {viewMode === 'Pending' ? 'pending' : viewMode === 'AutoConfirmed' ? 'auto-confirmed' : 'confirmed'} notifications.</div>
@@ -231,6 +289,7 @@ export default function PendingIngestions() {
           <PendingIngestionsList filter={filter} viewMode={viewMode} onEditConfirm={(ing) => setConfirmingIngestionId(ing.id)} onOpenTransaction={(txId) => setOpeningTransactionId(txId)} />
         )}
       </div>
+
 
       <ImageUploadModal
         isOpen={isUploadModalOpen}

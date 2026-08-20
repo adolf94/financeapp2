@@ -387,4 +387,56 @@ export function useUploadImage() {
   })
 }
 
+export interface PhoneHookMessage {
+  id: string
+  UserId?: string
+  received_at: string
+  action: string
+  raw_payload: Record<string, any>
+  raw_msg: string
+  status: string
+  month_key: string
+  partition_key: string
+  notification_type: string
+  processing_metadata?: Record<string, any>
+}
 
+export function useGetPhoneHooks(status: string = 'error') {
+  return useQuery<PhoneHookMessage[]>({
+    queryKey: ['phoneHooks', status],
+    queryFn: async () => {
+      const response = await ingesterClient.get('/phone-hooks', { params: { status } })
+      return response.data as PhoneHookMessage[]
+    }
+  })
+}
+
+export function useRetryPhoneHook() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await ingesterClient.post(`/phone-hooks/${id}/retry`)
+      return response.data as PendingIngestion
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['phoneHooks'] })
+      queryClient.invalidateQueries({ queryKey: ['pendingIngestions'] })
+    }
+  })
+}
+
+export function useDismissPhoneHook() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await ingesterClient.post(`/phone-hooks/${id}/dismiss`)
+      return response.data
+    },
+    onSuccess: (_, id) => {
+      queryClient.setQueriesData<PhoneHookMessage[]>({ queryKey: ['phoneHooks'] }, (old) => {
+        return old ? old.filter((item) => item.id !== id) : []
+      })
+      queryClient.invalidateQueries({ queryKey: ['phoneHooks'] })
+    }
+  })
+}

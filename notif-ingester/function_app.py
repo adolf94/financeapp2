@@ -668,6 +668,91 @@ async def PatchIngestionVendorFunction(req: func.HttpRequest) -> func.HttpRespon
         logging.error(f"Error updating vendor: {e}")
         return func.HttpResponse(f"Internal server error: {e}", status_code=500)
 
+# ── Function 4.6: GetPhoneHooksFunction ─────────────────────────────────────
+@app.route(route="phone-hooks", methods=["GET"])
+async def GetPhoneHooksFunction(req: func.HttpRequest) -> func.HttpResponse:
+    user, err = _require_auth(req)
+    if err: return err
+
+    status = req.params.get("status", "error")
+    user_id = user.get("sub", "default")
+
+    try:
+        skip = int(req.params.get("$skip", 0))
+        top = int(req.params.get("$top", 50))
+    except (ValueError, TypeError):
+        skip, top = 0, 50
+
+    hook_repo = CosmosHookRepository()
+    try:
+        hooks = await hook_repo.get_by_status_async(user_id, status, skip=skip, top=top)
+        return func.HttpResponse(
+            json.dumps([h.model_dump(by_alias=True, mode="json") for h in hooks]),
+            status_code=200, mimetype="application/json"
+        )
+    except Exception as e:
+        logging.error(f"Error fetching phone hooks: {e}")
+        return func.HttpResponse(f"Internal server error: {e}", status_code=500)
+
+# ── Function 4.7: RetryPhoneHookFunction ────────────────────────────────────
+@app.route(route="phone-hooks/{hook_id}/retry", methods=["POST"])
+async def RetryPhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
+    user, err = _require_auth(req)
+    if err: return err
+
+    hook_id = req.route_params.get("hook_id")
+    user_id = user.get("sub", "default")
+
+    hook_repo = CosmosHookRepository()
+    try:
+        hook_msg = await hook_repo.get_by_id_async(hook_id, user_id)
+        if not hook_msg:
+            return func.HttpResponse("Phone hook not found", status_code=404)
+
+        notif_type = _type_detector.detect_type(hook_msg)
+        hook_msg.notification_type = notif_type
+
+        if notif_type == "sms":
+            service = get_sms_ingestion_service()
+        elif notif_type == "email":
+            service = get_email_ingestion_service()
+        elif notif_type == "image":
+            service = get_image_ingestion_service()
+        else:
+            service = get_ingestion_service()
+
+        pending_ingestion = await service.process_hook_async(hook_msg)
+        await hook_repo.update_status_async(hook_msg.id, "processed", user_id)
+
+        return func.HttpResponse(
+            json.dumps(pending_ingestion.model_dump(by_alias=True, mode="json")),
+            status_code=200, mimetype="application/json"
+        )
+    except Exception as e:
+        logging.error(f"Error retrying phone hook {hook_id}: {e}")
+        await hook_repo.update_status_async(hook_id, "error", user_id)
+        return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
+
+# ── Function 4.8: DismissPhoneHookFunction ──────────────────────────────────
+@app.route(route="phone-hooks/{hook_id}/dismiss", methods=["POST"])
+async def DismissPhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
+    user, err = _require_auth(req)
+    if err: return err
+
+    hook_id = req.route_params.get("hook_id")
+    user_id = user.get("sub", "default")
+
+    hook_repo = CosmosHookRepository()
+    try:
+        await hook_repo.update_status_async(hook_id, "skipped", user_id)
+        return func.HttpResponse(
+            json.dumps({"id": hook_id, "status": "skipped"}),
+            status_code=200, mimetype="application/json"
+        )
+    except Exception as e:
+        logging.error(f"Error dismissing phone hook {hook_id}: {e}")
+        return func.HttpResponse(f"Internal server error: {e}", status_code=500)
+
 # ── Function 5: ClassifyHookFunction (Synchronous classification endpoint) ─
 @app.route(route="ingestions/classify-hook", methods=["POST"])
 async def ClassifyHookFunction(req: func.HttpRequest) -> func.HttpResponse:

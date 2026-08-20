@@ -252,9 +252,7 @@ export function useIngestionPrefill({
         setType(initialData.type)
         setToAccountId('')
 
-        if (ingestion && ingestion.ai_parsed) {
-          applyAiParsed(ingestion.ai_parsed, ingestion.received_at)
-        } else if (initialData.type === 'Journal') {
+        if (initialData.type === 'Journal') {
           setJournalLines(
             initialData.entries.map((e) => {
               const acc = accountsRef.current.find((a) => a.id === e.accountId)

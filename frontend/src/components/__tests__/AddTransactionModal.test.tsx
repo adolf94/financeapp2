@@ -300,6 +300,46 @@ describe('AddTransactionModal', () => {
       // Click Save Changes
       expect(mockCreateTransactionMutate).toBeDefined()
     })
+
+    it('populates database transaction values instead of ingestion ai_parsed when editing existing linked transaction', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          initialData={{
+            id: 'tx-1',
+            type: 'Expense',
+            date: '2026-08-08T12:00:00Z',
+            vendor: 'Test Vendor',
+            note: 'DB Note',
+            entries: [
+              { accountId: 'acc-wallet', amount: -250 },
+              { accountId: 'acc-food', amount: 250 },
+            ],
+            ingestionId: 'ingestion-123',
+          }}
+          ingestion={{
+            ...mockIngestion,
+            ai_parsed: {
+              vendor: 'Ingestion Vendor',
+              amount: 9999,
+              transaction_type: 'Expense',
+              notes: 'Ingestion Note',
+            },
+          }}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      const amountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
+      expect(amountInput.value).toBe('250')
+
+      const vendorInput = screen.getByPlaceholderText('Select or type vendor...') as HTMLInputElement
+      expect(vendorInput.value).toBe('Test Vendor')
+
+      const noteInput = screen.getByPlaceholderText('Note (optional)') as HTMLTextAreaElement
+      expect(noteInput.value).toBe('DB Note')
+    })
   })
 
   describe('Recurring Transactions', () => {
