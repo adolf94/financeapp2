@@ -23,6 +23,7 @@ from services.ingestion_service import IngestionService
 from services.sms_processing_service import SmsProcessingService
 from services.notification_type_detector import NotificationTypeDetector
 from services.email_fetching_service import check_and_save_emails_async
+from services.automate_notification_service import send_error_notification_async
 from ar_auth.azure import ArAuthAzureClient
 from typing import Optional, Tuple
 
@@ -372,11 +373,18 @@ async def ClassifyNotificationFunction(documents: func.DocumentList) -> None:
                 hook_msg.id, "processed", user_id
             )
         except Exception as e:
-            logging.error(f"Error processing document {doc_dict.get('id')}: {e}")
+            error_msg = str(e)
+            logging.error(f"Error processing document {doc_dict.get('id')}: {error_msg}")
             user_id = doc_dict.get("UserId") or doc_dict.get("userId") or doc_dict.get("user_id") or "default"
             await hook_repo.update_status_async(
-                doc_dict.get("id"), "error", user_id
+                doc_dict.get("id"), "error", user_id, error_detail=error_msg
             )
+            try:
+                raw_snippet = doc_dict.get("raw_msg") or str(doc_dict.get("raw_payload") or "")[:200]
+                error_summary = f"Ingestion error for {doc_dict.get('id')} ({doc_dict.get('action', 'notification')}): {error_msg}\nRaw: {raw_snippet[:150]}"
+                await send_error_notification_async(summary_text=error_summary, user_name=user_id, action="finance_ingestion_error")
+            except Exception as notif_err:
+                logging.error(f"Failed sending automate error notification: {notif_err}")
 
 
 # ── Function 3: LearnIngestionFunction ──────────────────────────────────
@@ -729,9 +737,10 @@ async def RetryPhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
             status_code=200, mimetype="application/json"
         )
     except Exception as e:
-        logging.error(f"Error retrying phone hook {hook_id}: {e}")
-        await hook_repo.update_status_async(hook_id, "error", user_id)
-        return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
+        error_msg = str(e)
+        logging.error(f"Error retrying phone hook {hook_id}: {error_msg}")
+        await hook_repo.update_status_async(hook_id, "error", user_id, error_detail=error_msg)
+        return func.HttpResponse(json.dumps({"error": error_msg}), status_code=500, mimetype="application/json")
 
 # ── Function 4.8: DismissPhoneHookFunction ──────────────────────────────────
 @app.route(route="phone-hooks/{hook_id}/dismiss", methods=["POST"])

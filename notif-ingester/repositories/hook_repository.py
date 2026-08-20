@@ -22,7 +22,7 @@ class IHookRepository(ABC):
         pass
 
     @abstractmethod
-    async def update_status_async(self, id: str, status: str, user_id: str) -> None:
+    async def update_status_async(self, id: str, status: str, user_id: str, error_detail: Optional[str] = None) -> None:
         pass
 
     @abstractmethod
@@ -73,8 +73,7 @@ class CosmosHookRepository(IHookRepository):
             query = "SELECT * FROM c WHERE c.id = @id"
             items = container.query_items(
                 query=query,
-                parameters=[{"name": "@id", "value": id}],
-                enable_cross_partition_query=True
+                parameters=[{"name": "@id", "value": id}]
             )
             async for doc in items:
                 return PhoneHookMessage(**doc)
@@ -91,8 +90,7 @@ class CosmosHookRepository(IHookRepository):
         ]
         items = container.query_items(
             query=query,
-            parameters=parameters,
-            enable_cross_partition_query=True
+            parameters=parameters
         )
         results = []
         async for item in items:
@@ -104,12 +102,14 @@ class CosmosHookRepository(IHookRepository):
         results.sort(key=lambda h: h.received_at, reverse=True)
         return results[skip : skip + top]
 
-    async def update_status_async(self, id: str, status: str, user_id: str) -> None:
+    async def update_status_async(self, id: str, status: str, user_id: str, error_detail: Optional[str] = None) -> None:
         container = await self._get_container()
         for pk in [user_id, "default"]:
             try:
                 item = await container.read_item(item=id, partition_key=pk)
                 item["status"] = status
+                if error_detail is not None:
+                    item["error_detail"] = error_detail
                 await container.upsert_item(item)
                 return
             except Exception:
@@ -119,11 +119,12 @@ class CosmosHookRepository(IHookRepository):
             query = "SELECT * FROM c WHERE c.id = @id"
             items = container.query_items(
                 query=query,
-                parameters=[{"name": "@id", "value": id}],
-                enable_cross_partition_query=True
+                parameters=[{"name": "@id", "value": id}]
             )
             async for doc in items:
                 doc["status"] = status
+                if error_detail is not None:
+                    doc["error_detail"] = error_detail
                 await container.upsert_item(doc)
                 return
         except Exception as e:
@@ -142,8 +143,7 @@ class CosmosHookRepository(IHookRepository):
             query = "SELECT * FROM c WHERE c.id = @id"
             items = container.query_items(
                 query=query,
-                parameters=[{"name": "@id", "value": id}],
-                enable_cross_partition_query=True
+                parameters=[{"name": "@id", "value": id}]
             )
             async for doc in items:
                 pk = doc.get("partition_key") or doc.get("UserId") or doc.get("userId") or "default"

@@ -19,6 +19,7 @@ Users need a structured way to mirror their real-world financial accounts within
 - **Settings Tab (Configuration):** A dedicated configuration area designed to strictly separate structural financial accounts from tracking meta-data. It features:
   - **Categories Management:** CRUD management for `Expense` and `Income` groups (Categories) and their nested accounts (Sub-Categories).
   - **Vendor Management:** Dedicated UI to view, create, and delete Vendors.
+  - **Notification Log:** Unified stream management for non-financial notifications (converting missed items) and failed/errored webhook ingestions (error inspection, retry, and dismissal).
 
 ### 2.2. Transaction Management
 - **Transaction Modes:**
@@ -63,6 +64,9 @@ Users need a structured way to mirror their real-world financial accounts within
       - **Multi-Order Detection:** Shopee payment confirmation emails are routed to `classify_email_shopee_async()` using `SHOPEE_MULTI_ORDER_PROMPT` to extract N orders in a single checkout.
       - **1 Ingestion → 1 Transaction, N+1 LedgerEntries:** Maps 1 Shopee email to 1 `PendingIngestion` and 1 `Transaction` with 1 credit entry (total checkout amount) and N debit entries (one per order, each with its Order ID as `reference_number`).
       - **Source Account Resolution:** Cross-references recent SMS/app notification candidates within a 5-minute window matching the total checkout amount to resolve the source credit card account ID (`credit_account_id`) and cross-links via `possible_related_ingestion_ids`.
+  12. **Automated Error Alerting (LlamaLabs Automate) & Error Tracking:**
+      - Whenever a notification ingestion fails during pipeline execution (Cosmos DB change feed in `ClassifyNotificationFunction`), the system persists `error_detail` directly in the `PhoneHookMessages` entity (`status = "error"`), allowing direct inspection and triage from the Settings > Notification Log > Errors & Failures interface.
+      - Concurrently triggers an automated push alert via `send_error_notification_async()` to LlamaLabs Automate endpoint (`AUTOMATE_ENDPOINT`, `AUTOMATE_KEY`, `AUTOMATE_EMAIL`) containing the hook ID, error trace snippet, and raw payload text summary.
 
 ### 2.5. Monthly Transaction List View
 - Chronological log of financial activity for a calendar month, accessed via the **Daily tab** (default) inside the Transactions page.

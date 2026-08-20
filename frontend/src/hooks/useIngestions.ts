@@ -398,6 +398,7 @@ export interface PhoneHookMessage {
   month_key: string
   partition_key: string
   notification_type: string
+  error_detail?: string
   processing_metadata?: Record<string, any>
 }
 

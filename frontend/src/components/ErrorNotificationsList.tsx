@@ -63,7 +63,7 @@ export default function ErrorNotificationsList({
         {phoneHooks.map((hook) => {
           const notifType = hook.notification_type || (hook.action?.includes('sms') ? 'sms' : hook.action?.includes('email') ? 'email' : hook.action?.includes('image') ? 'image' : 'app')
           const isProcessing = processingIds.includes(hook.id)
-          const errorDetail = hook.processing_metadata?.error || hook.raw_payload?.error || 'Classification failed during processing'
+          const errorDetail = hook.error_detail || hook.processing_metadata?.error || hook.raw_payload?.error || 'Classification failed during processing'
 
           return (
             <div

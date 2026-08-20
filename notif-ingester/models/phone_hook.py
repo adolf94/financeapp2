@@ -1,5 +1,5 @@
-# Source: Python (Original)
 from datetime import datetime, timezone
+from typing import Optional
 from pydantic import BaseModel, Field
 from uuid_extensions import uuid7
 
@@ -15,6 +15,7 @@ class PhoneHookMessage(BaseModel):
     partition_key: str
     ttl: int = Field(default=60 * 24 * 60 * 60, alias="_ttl")
     notification_type: str = Field(default="unknown")  # 'sms' | 'app' | 'unknown'
+    error_detail: Optional[str] = None
     processing_metadata: dict = Field(default_factory=dict)
 
     class Config:
