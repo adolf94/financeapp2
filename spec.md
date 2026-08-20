@@ -67,6 +67,7 @@ Users need a structured way to mirror their real-world financial accounts within
   12. **Automated Error Alerting (LlamaLabs Automate) & Error Tracking:**
       - Whenever a notification ingestion fails during pipeline execution (Cosmos DB change feed in `ClassifyNotificationFunction`), the system persists `error_detail` directly in the `PhoneHookMessages` entity (`status = "error"`), allowing direct inspection and triage from the Settings > Notification Log > Errors & Failures interface.
       - Concurrently triggers an automated push alert via `send_error_notification_async()` to LlamaLabs Automate endpoint (`AUTOMATE_ENDPOINT`, `AUTOMATE_KEY`, `AUTOMATE_EMAIL`) containing the hook ID, error trace snippet, and raw payload text summary.
+      - Retrying an errored hook updates its status back to `received`, seamlessly triggering change-feed reprocessing. Settings tab badge exclusively displays error count.
 
 ### 2.5. Monthly Transaction List View
 - Chronological log of financial activity for a calendar month, accessed via the **Daily tab** (default) inside the Transactions page.

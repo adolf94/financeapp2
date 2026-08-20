@@ -56,12 +56,10 @@ import { TableListSkeleton } from '@/components/ui/Skeleton'
 export default function Settings() {
   const [activeTab, setActiveTab] = useState<'general' | 'categories' | 'vendors' | 'notifications' | 'runbook'>('general')
 
-  // Badges for tabs
-  const { data: nonFinancial = [] } = useGetPendingIngestions('NonFinancial')
+  // Badges for tabs (only show errors count on Notification Log, hide non-financial)
   const { data: errorPhoneHooks = [] } = useGetPhoneHooks('error')
   const { data: errorIngestions = [] } = useGetPendingIngestions('Error')
   const totalErrors = (errorPhoneHooks?.length || 0) + (errorIngestions?.length || 0)
-  const totalNotifAttention = nonFinancial.length + totalErrors
 
   const { data: runbookSession } = useGetRunbookSession()
   const { data: appCorrections = [] } = useGetRunbookCorrections('app')
@@ -74,7 +72,7 @@ export default function Settings() {
     { id: 'general', label: 'General', icon: SunMoon, badge: null },
     { id: 'categories', label: 'Categories', icon: Tag, badge: null },
     { id: 'vendors', label: 'Vendors', icon: Store, badge: null },
-    { id: 'notifications', label: 'Notification Log', icon: Bell, badge: totalNotifAttention > 0 ? totalNotifAttention : null, isError: totalErrors > 0 },
+    { id: 'notifications', label: 'Notification Log', icon: Bell, badge: totalErrors > 0 ? totalErrors : null, isError: totalErrors > 0 },
     { id: 'runbook', label: 'Runbook Review', icon: BookOpen, badge: runbookSession ? 'Active' : (totalCorrections > 0 ? totalCorrections : null), isError: false },
   ] as const
 
@@ -921,11 +919,6 @@ function NotificationLogSettings() {
         >
           <Bell className="w-3.5 h-3.5" />
           <span>Non-Financial Stream</span>
-          {ingestions.length > 0 && (
-            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-              {ingestions.length}
-            </span>
-          )}
         </button>
 
         <button

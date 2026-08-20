@@ -717,29 +717,16 @@ async def RetryPhoneHookFunction(req: func.HttpRequest) -> func.HttpResponse:
         if not hook_msg:
             return func.HttpResponse("Phone hook not found", status_code=404)
 
-        notif_type = _type_detector.detect_type(hook_msg)
-        hook_msg.notification_type = notif_type
-
-        if notif_type == "sms":
-            service = get_sms_ingestion_service()
-        elif notif_type == "email":
-            service = get_email_ingestion_service()
-        elif notif_type == "image":
-            service = get_image_ingestion_service()
-        else:
-            service = get_ingestion_service()
-
-        pending_ingestion = await service.process_hook_async(hook_msg)
-        await hook_repo.update_status_async(hook_msg.id, "processed", user_id)
+        # Simply reset status to 'received' to let the Change Feed process it
+        await hook_repo.update_status_async(hook_msg.id, "received", user_id)
 
         return func.HttpResponse(
-            json.dumps(pending_ingestion.model_dump(by_alias=True, mode="json")),
+            json.dumps({"message": "Hook reset to received for reprocessing", "id": hook_msg.id}),
             status_code=200, mimetype="application/json"
         )
     except Exception as e:
         error_msg = str(e)
-        logging.error(f"Error retrying phone hook {hook_id}: {error_msg}")
-        await hook_repo.update_status_async(hook_id, "error", user_id, error_detail=error_msg)
+        logging.error(f"Error resetting phone hook {hook_id}: {error_msg}")
         return func.HttpResponse(json.dumps({"error": error_msg}), status_code=500, mimetype="application/json")
 
 # ── Function 4.8: DismissPhoneHookFunction ──────────────────────────────────
