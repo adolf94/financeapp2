@@ -1146,7 +1146,7 @@ function RunbookReviewSettings() {
         </div>
 
         {corrections.length === 0 ? (
-          <div className="text-center py-12 text-slate-500 bg-slate-50/50 dark:bg-slate-850/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-xs sm:text-sm">
+          <div className="text-center py-12 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-700/70 text-xs sm:text-sm font-medium">
             No pending {runbookLabel} corrections to review.
           </div>
         ) : (

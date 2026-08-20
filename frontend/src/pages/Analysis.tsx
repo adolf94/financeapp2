@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import dayjs from 'dayjs'
 import { useAnalysis } from '@/hooks/useAnalysis'
 import { Link } from '@tanstack/react-router'
@@ -17,11 +17,62 @@ import {
   ResponsiveContainer
 } from 'recharts'
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+const PALETTE = [
+  '#3b82f6', // blue
+  '#10b981', // emerald
+  '#f59e0b', // amber
+  '#8b5cf6', // violet
+  '#ec4899', // pink
+  '#06b6d4', // cyan
+  '#f97316', // orange
+  '#14b8a6', // teal
+  '#6366f1', // indigo
+  '#e11d48', // rose
+  '#84cc16', // lime
+  '#64748b', // slate
+]
 
 export default function Analysis() {
   const [selectedMonth, setSelectedMonth] = useState(dayjs())
-  const { spendingByCategoryChartData, categoryGroupBreakdown, monthlyBarChartData, goalProgress, isLoading } = useAnalysis(selectedMonth)
+  const { categoryGroupBreakdown, monthlyBarChartData, goalProgress, isLoading } = useAnalysis(selectedMonth)
+
+  // Aggregate pie chart data by Category Group
+  const pieChartData = useMemo(() => {
+    if (!categoryGroupBreakdown || categoryGroupBreakdown.length === 0) return []
+    const totalMonthSpending = categoryGroupBreakdown.reduce((sum, g) => sum + g.total, 0)
+    
+    // Take top 6 groups, group remainder as "Other"
+    if (categoryGroupBreakdown.length <= 7) {
+      return categoryGroupBreakdown.map((g, i) => ({
+        name: g.name,
+        value: g.total,
+        percentage: totalMonthSpending > 0 ? (g.total / totalMonthSpending) * 100 : 0,
+        color: PALETTE[i % PALETTE.length],
+      }))
+    }
+
+    const topGroups = categoryGroupBreakdown.slice(0, 6)
+    const otherGroups = categoryGroupBreakdown.slice(6)
+    const otherTotal = otherGroups.reduce((sum, g) => sum + g.total, 0)
+
+    const items = topGroups.map((g, i) => ({
+      name: g.name,
+      value: g.total,
+      percentage: totalMonthSpending > 0 ? (g.total / totalMonthSpending) * 100 : 0,
+      color: PALETTE[i % PALETTE.length],
+    }))
+
+    if (otherTotal > 0) {
+      items.push({
+        name: 'Other',
+        value: otherTotal,
+        percentage: totalMonthSpending > 0 ? (otherTotal / totalMonthSpending) * 100 : 0,
+        color: PALETTE[items.length % PALETTE.length],
+      })
+    }
+
+    return items
+  }, [categoryGroupBreakdown])
 
   if (isLoading) {
     return (
@@ -41,7 +92,7 @@ export default function Analysis() {
         <div className="flex items-center gap-4 bg-white dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
           <button 
             onClick={() => setSelectedMonth(prev => prev.subtract(1, 'month'))}
-            className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
             aria-label="Previous Month"
           >
             <ChevronLeft className="w-5 h-5 text-slate-600 dark:text-slate-400" />
@@ -51,7 +102,7 @@ export default function Analysis() {
           </span>
           <button 
             onClick={() => setSelectedMonth(prev => prev.add(1, 'month'))}
-            className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
             aria-label="Next Month"
           >
             <ChevronRight className="w-5 h-5 text-slate-600 dark:text-slate-400" />
@@ -74,35 +125,76 @@ export default function Analysis() {
         <p className="text-xs text-slate-500">You are on track to hit your year-end savings goal!</p>
       </section>
 
-      {/* Spending by Category Pie Chart */}
-      <section className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-4">{selectedMonth.format('MMMM')} Spending</h2>
-        {spendingByCategoryChartData.length === 0 ? (
+      {/* Spending by Category Group Pie Chart */}
+      <section className="bg-white dark:bg-slate-900 p-5 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50 mb-6">{selectedMonth.format('MMMM')} Spending</h2>
+        {pieChartData.length === 0 ? (
            <p className="text-sm text-slate-500 text-center py-10">No expenses recorded this month.</p>
         ) : (
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={spendingByCategoryChartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
+          <div className="flex flex-col items-center gap-8">
+            {/* Chart Area */}
+            <div className="h-80 w-full max-w-[340px] relative flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                  <Pie
+                    data={pieChartData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={72}
+                    outerRadius={108}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {pieChartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                     formatter={(value: any) => `₱${Number(value).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                     contentStyle={{
+                       borderRadius: '12px',
+                       background: 'rgba(15, 23, 42, 0.95)',
+                       borderColor: '#334155',
+                       color: '#f8fafc',
+                       boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3)',
+                       fontSize: '13px',
+                       zIndex: 50
+                     }}
+                     itemStyle={{ color: '#f8fafc' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total</span>
+                <span className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
+                  ₱{pieChartData.reduce((acc, curr) => acc + curr.value, 0).toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Structured Clean Legend */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+              {pieChartData.map((item) => (
+                <div
+                  key={item.name}
+                  className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800"
                 >
-                  {spendingByCategoryChartData.map((_entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                   formatter={(value: any) => `₱${Number(value).toLocaleString()}`}
-                   contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                    <span className="text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">{item.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2.5 shrink-0 ml-3">
+                    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100">
+                      ₱{item.value.toLocaleString('en-PH', { maximumFractionDigits: 0 })}
+                    </span>
+                    <span className="text-xs font-medium text-slate-400 min-w-[36px] text-right">
+                      {item.percentage.toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </section>

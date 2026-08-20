@@ -132,7 +132,7 @@ export function useAnalysis(selectedMonth: dayjs.Dayjs = dayjs()) {
       monthlyBarChartData,
       goalProgress: 65 // Hardcoded for now
     }
-  }, [accounts, accountGroups, transactions])
+  }, [accounts, accountGroups, transactions, selectedMonth])
 
   return {
     ...analysisData,
