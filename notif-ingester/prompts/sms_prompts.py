@@ -11,8 +11,7 @@ SMS_IS_FINANCIAL_PROMPT = """
 You are a personal finance assistant. Determine if this SMS represents a financial transaction.
 A financial transaction includes: payments, transfers, withdrawals, deposits, bills, purchases.
 Advertisements, promotions, and marketing offers are NOT financial transactions, even if they mention monetary amounts or rewards.
-Cashback or rewards expressed in POINTS or redeemable items are NOT financial — only classify as financial if real money (PHP) was actually credited/debited.
-OTPs and security alerts are NOT financial transactions.
+Cashback or rewards expressed in POINTS or redeemable items are NOT financial — only classify as financial if real money (PHP) was actually credited/debited. security alerts are NOT financial transactions.
 Only classify as financial if the message confirms an actual COMPLETED transaction — i.e., a past debit, credit, transfer, payment, or withdrawal that has ALREADY occurred.
 
 SMS Sender: {app_name}
@@ -24,10 +23,12 @@ Return ONLY valid JSON:
 }}
 """
 
-SMS_CLASSIFICATION_PROMPT = """
-You are a personal finance assistant classifying an SMS banking transaction.
+SMS_CLASSIFICATION_SYSTEM_PROMPT = """
+You are an expert personal finance assistant classifying an SMS banking transaction.
 
-Apply the rules below to classify the transaction. Return ONLY valid JSON matching this schema:
+Apply double-entry bookkeeping rules and SMS parsing guidelines to classify the transaction accurately into JSON.
+
+Return ONLY valid JSON matching this schema:
 {{
   "is_financial": true,
   "vendor": {{
@@ -40,8 +41,8 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   }},
   "amount": number (positive) - in PHP,
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
-  "debit_account_id": string,
-  "credit_account_id": string,
+  "debit_account_id": string (account id from the list provided),
+  "credit_account_id": string (account id from the list provided),
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string"]}}],
   "notes": string,
   "summary": string (A concise summary.),
@@ -75,8 +76,10 @@ SMS-Specific Rules:
 - **Pre-matched Vendors**: "Vendor Matches Found" were matched by extracted account numbers — STRONGLY PRIORITIZE these. If there is a match, set `vendor.matched = true`, `vendor.is_recommendation = false`, and map `vendor.lookups` to the matching strings.
 - **Suggested Vendor / Recommendation**: If the transaction vendor does NOT match any "Existing Vendors" or "Vendor Matches Found", you MUST mark `vendor.is_recommendation = true`, `vendor.matched = false`, and provide suggestions for `vendor.tags` (2-4 concise lowercase tags describing the vendor's activity). Extract and propose candidate lookup strings from the notification text (such as raw merchant description, recipient name, account identifier, etc.) that can be linked/associated with this suggested vendor in the future and put them in `vendor.lookups`.
 - **Account Number Uniqueness**: The same account number CANNOT appear in both recipient_account_number and sender_account_number. If a message contains only one account number, assign it to the most contextually appropriate field (recipient if money was sent, sender if money was received) and leave the other field empty.
-{conversion_instructions}
+"""
 
+SMS_CLASSIFICATION_USER_PROMPT = """
+{conversion_instructions}
 User SMS Runbook (Explicit Rules):
 {runbook_content}
 
@@ -100,4 +103,6 @@ Full payload: {raw_payload}
 Similar past transactions (for context):
 {similar_context}
 """
+
+SMS_CLASSIFICATION_PROMPT = SMS_CLASSIFICATION_SYSTEM_PROMPT + "\n\n" + SMS_CLASSIFICATION_USER_PROMPT
 

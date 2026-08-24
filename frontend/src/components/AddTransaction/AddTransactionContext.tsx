@@ -202,6 +202,96 @@ export function AddTransactionProvider({
     return null
   }, [ingestion])
 
+  const handleSetMode = useCallback(
+    (nextMode: 'Simple' | 'Advanced') => {
+      if (nextMode === 'Advanced' && mode === 'Simple') {
+        const sourceAcc = accounts.find((a) => a.id === sourceAccountId)
+        const sourceGroupId = sourceAcc?.accountGroupId || ''
+        const sanitizedTotal = totalAmount ? sanitizeAmount(totalAmount) : ''
+
+        if (type === 'Transfer') {
+          const toAcc = accounts.find((a) => a.id === toAccountId)
+          const toGroupId = toAcc?.accountGroupId || ''
+
+          setJournalLines([
+            {
+              id: generateId(),
+              categoryId: toGroupId,
+              subCategoryId: toAccountId || '',
+              amount: sanitizedTotal,
+              type: 'Debit',
+              note: '',
+              referenceNumber: '',
+            },
+            {
+              id: generateId(),
+              categoryId: sourceGroupId,
+              subCategoryId: sourceAccountId || '',
+              amount: sanitizedTotal,
+              type: 'Credit',
+              note: '',
+              referenceNumber: '',
+            },
+          ])
+        } else if (type === 'Income') {
+          const categorySplit = splits[0]
+          const catAcc = accounts.find((a) => a.id === categorySplit?.subCategoryId)
+          const catGroupId = categorySplit?.categoryId || catAcc?.accountGroupId || ''
+
+          setJournalLines([
+            {
+              id: generateId(),
+              categoryId: sourceGroupId,
+              subCategoryId: sourceAccountId || '',
+              amount: sanitizedTotal,
+              type: 'Debit',
+              note: '',
+              referenceNumber: '',
+            },
+            {
+              id: generateId(),
+              categoryId: catGroupId,
+              subCategoryId: categorySplit?.subCategoryId || '',
+              amount: categorySplit?.amount ? sanitizeAmount(categorySplit.amount) : sanitizedTotal,
+              type: 'Credit',
+              note: '',
+              referenceNumber: '',
+            },
+          ])
+        } else {
+          // Expense
+          const categorySplit = splits[0]
+          const catAcc = accounts.find((a) => a.id === categorySplit?.subCategoryId)
+          const catGroupId = categorySplit?.categoryId || catAcc?.accountGroupId || ''
+
+          setJournalLines([
+            {
+              id: generateId(),
+              categoryId: catGroupId,
+              subCategoryId: categorySplit?.subCategoryId || '',
+              amount: categorySplit?.amount ? sanitizeAmount(categorySplit.amount) : sanitizedTotal,
+              type: 'Debit',
+              note: '',
+              referenceNumber: '',
+            },
+            {
+              id: generateId(),
+              categoryId: sourceGroupId,
+              subCategoryId: sourceAccountId || '',
+              amount: sanitizedTotal,
+              type: 'Credit',
+              note: '',
+              referenceNumber: '',
+            },
+          ])
+        }
+      }
+
+      setMode(nextMode)
+    },
+    [mode, accounts, sourceAccountId, toAccountId, totalAmount, type, splits]
+  )
+
   const resetForm = useCallback(() => {
     setMode('Simple')
     setType('Expense')
@@ -808,7 +898,7 @@ export function AddTransactionProvider({
       ingestion,
       isLoadingIngestion,
       mode,
-      setMode,
+      setMode: handleSetMode,
       type,
       setType,
       totalAmount,
@@ -895,6 +985,7 @@ export function AddTransactionProvider({
       ingestion,
       isLoadingIngestion,
       mode,
+      handleSetMode,
       type,
       totalAmount,
       sourceAccountId,

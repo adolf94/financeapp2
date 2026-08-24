@@ -3,12 +3,14 @@ App notification-specific prompts for the notification ingestion pipeline.
 These are the original prompts used for push notification / app-based messages.
 """
 
-APP_CLASSIFICATION_PROMPT = """
-You are a personal finance assistant.
+APP_CLASSIFICATION_SYSTEM_PROMPT = """
+You are an expert personal finance assistant.
 
-Apply the rules below to classify the transaction. Return ONLY valid JSON matching this schema:
+Apply double-entry bookkeeping rules to classify notification transactions accurately into JSON.
+
+Return ONLY valid JSON matching this schema:
 {{
-  "is_financial":true,
+  "is_financial": true,
   "vendor": {{
     "name": "string (name of the vendor, e.g. Starbucks, McDonald's)",
     "type": "Individual"|"Business"|"Internal" (Individual means a person/friend/relative, Business means a merchant/store/app/company, Internal means a transfer/adjustment/movement between the user's own accounts/assets or the user's own name),
@@ -19,8 +21,8 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   }},
   "amount": number (positive) - in PHP,
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
-  "debit_account_id": string (account id from the list above),
-  "credit_account_id": string (account id from the list above),
+  "debit_account_id": string (account id from the list provided),
+  "credit_account_id": string (account id from the list provided),
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string (2-4 concise lowercase tags that are *unique transaction-routing keywords* for this account, e.g. 'grab', 'uber', 'taxi'. Rules: (1) Do NOT repeat the account name, account type, group name, bank name, country, or currency as tags. (2) Do NOT use tags already covered by the vendor's tags — account tags should complement, not duplicate vendor tags. (3) Tags must be specific enough to distinguish this account from similar ones.)"]}}] (empty array if no accounts need to be created, or if not financial),
   "notes": string,
   "summary": string (A concise, human-readable summary or description of this transaction based on the context. Do NOT use the raw notification text, null if not financial),
@@ -43,8 +45,6 @@ Rules:
 - For Income: debit = bank account, credit = income account
 - For Transfer: debit = receiving asset/bank account, credit = sending asset/bank account
 - Entries must balance (debit amount positive, credit amount negative)
-
-
 - **Pre-matched Vendors**: You are provided with "Vendor Matches Found" - these vendors were matched based on extracted account numbers/names from the notification text. **STRONGLY PRIORITIZE THESE MATCHES** in your classification. Check their tags to understand what they're for. If a vendor match has high hit counts, it's very likely correct.
 - **Vendor Matching**: You are also provided with a list of "Existing Vendors" with their tags. Check if any of these match the transaction vendor. If a vendor from the "Vendor Matches Found" list also appears in "Existing Vendors", that's a strong confirmation. Set `vendor.matched = true`, `vendor.is_recommendation = false`, and map `vendor.lookups` to the matching strings.
 - **Suggested Vendor / Recommendation**: If the transaction vendor does NOT match any "Existing Vendors" or "Vendor Matches Found", you MUST mark `vendor.is_recommendation = true`, `vendor.matched = false`, and provide suggestions for `vendor.tags` (2-4 concise lowercase tags describing the vendor's activity). Extract and propose candidate lookup strings from the notification text (such as raw merchant description, recipient name, account identifier, etc.) that can be linked/associated with this suggested vendor in the future and put them in `vendor.lookups`.
@@ -52,8 +52,10 @@ Rules:
 - **Suggested Account Creation**: Focus ONLY on the functional, financial purpose of the account.
 - **Account Number Uniqueness**: The same account number CANNOT appear in both recipient_account_number and sender_account_number. If a notification contains only one account number, assign it to the most contextually appropriate field (recipient if money was sent out, sender if money was received) and leave the other field empty.
 - **Explanation field ('why')**: Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names. Write enough detail that the user can clearly identify what drove each classification decision. Mention if vendor matches influenced your decision.
-{conversion_instructions}
+"""
 
+APP_CLASSIFICATION_USER_PROMPT = """
+{conversion_instructions}
 User Runbook (Explicit Rules):
 {runbook_content}
 
@@ -78,6 +80,8 @@ Full payload: {raw_payload}
 Similar past transactions (for context):
 {similar_context}
 """
+
+APP_CLASSIFICATION_PROMPT = APP_CLASSIFICATION_SYSTEM_PROMPT + "\n\n" + APP_CLASSIFICATION_USER_PROMPT
 
 APP_IS_FINANCIAL_PROMPT = """
 You are a personal finance assistant. Determine if this notification represents a financial transaction.

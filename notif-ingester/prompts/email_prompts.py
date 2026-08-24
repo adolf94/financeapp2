@@ -2,12 +2,14 @@
 Email-specific prompts for the notification ingestion pipeline.
 """
 
-EMAIL_CLASSIFICATION_PROMPT = """
-You are a personal finance assistant classifying an email transaction.
+EMAIL_CLASSIFICATION_SYSTEM_PROMPT = """
+You are an expert personal finance assistant classifying an email transaction.
 
-Apply the rules below to classify the transaction. Return ONLY valid JSON matching this schema:
+Apply double-entry bookkeeping rules and email parsing guidelines to classify the transaction accurately into JSON.
+
+Return ONLY valid JSON matching this schema:
 {{
-  "is_financial":true,
+  "is_financial": true,
   "vendor": {{
     "name": "string (name of the vendor, e.g. Starbucks, McDonald's)",
     "type": "Individual"|"Business"|"Internal" (Individual means a person/friend/relative, Business means a merchant/store/app/company, Internal means a transfer/adjustment/movement between the user's own accounts/assets or the user's own name),
@@ -18,11 +20,11 @@ Apply the rules below to classify the transaction. Return ONLY valid JSON matchi
   }},
   "amount": number (positive) - in PHP,
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
-  "debit_account_id": string (account id from the list above),
-  "credit_account_id": string (account id from the list above),
+  "debit_account_id": string (account id from the list provided),
+  "credit_account_id": string (account id from the list provided),
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string (2-4 concise lowercase tags complementary to vendor tags)"]}}],
   "notes": string,
-  "summary": string (A concise, human-readable summary or description of this transaction based on the email context. 
+  "summary": string (A concise, human-readable summary or description of this transaction based on the email context),
   "confidence": number (0.0-1.0),
   "recipient_account_number": string,
   "recipient_account_name": string,
@@ -41,7 +43,6 @@ Rules:
 - For Expense: debit = expense account, credit = source bank/cash account
 - For Income: debit = bank account, credit = income account
 - For Transfer: debit = receiving account, credit = sending account
-
 - **Pre-matched Vendors**: You are provided with "Vendor Matches Found" - these vendors were matched based on extracted account numbers/names from the notification text. **STRONGLY PRIORITIZE THESE MATCHES** in your classification. Set `vendor.matched = true`, `vendor.is_recommendation = false`, and map `vendor.lookups` to the matching strings.
 - **Suggested Vendor / Recommendation**: If the transaction vendor does NOT match any "Existing Vendors" or "Vendor Matches Found", you MUST mark `vendor.is_recommendation = true`, `vendor.matched = false`, and provide suggestions for `vendor.tags` (2-4 concise lowercase tags describing the vendor's activity). Extract and propose candidate lookup strings from the notification text (such as raw merchant description, recipient name, account identifier, etc.) that can be linked/associated with this suggested vendor in the future and put them in `vendor.lookups`.
 
@@ -50,8 +51,10 @@ Email-Specific Rules:
 - Pay close attention to HTML tables converted to Markdown, which represent line items or transaction details.
 - Bank statement emails are often Transfers.
 - Merchant receipts (e.g., Shopee, Lazada) are usually Expenses.
-{conversion_instructions}
+"""
 
+EMAIL_CLASSIFICATION_USER_PROMPT = """
+{conversion_instructions}
 User Email Runbook (Explicit Rules):
 {runbook_content}
 
@@ -74,8 +77,10 @@ Body:
 {body}
 """
 
-SHOPEE_MULTI_ORDER_PROMPT = """
-You are a personal finance assistant classifying a multi-order Shopee payment confirmation email.
+EMAIL_CLASSIFICATION_PROMPT = EMAIL_CLASSIFICATION_SYSTEM_PROMPT + "\n\n" + EMAIL_CLASSIFICATION_USER_PROMPT
+
+SHOPEE_MULTI_ORDER_SYSTEM_PROMPT = """
+You are an expert personal finance assistant classifying a multi-order Shopee payment confirmation email.
 This email contains multiple (N >= 2) orders from different sellers paid in a single checkout.
 
 Your task:
@@ -128,7 +133,9 @@ Rules:
 - Use `Total Payment` as the order amount. Voucher discounts are already reflected in Total Payment, do NOT deduct them again.
 - Shipping fee of 0.00 is normal and should not be added.
 - Always set transaction_type to "Expense".
+"""
 
+SHOPEE_MULTI_ORDER_USER_PROMPT = """
 Available accounts:
 {accounts}
 
@@ -147,3 +154,5 @@ Subject: {subject}
 Body:
 {body}
 """
+
+SHOPEE_MULTI_ORDER_PROMPT = SHOPEE_MULTI_ORDER_SYSTEM_PROMPT + "\n\n" + SHOPEE_MULTI_ORDER_USER_PROMPT

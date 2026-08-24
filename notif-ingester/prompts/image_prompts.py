@@ -51,14 +51,9 @@ APP_BRANDING_GUIDELINES = """
   * **Metrobank**: Navy blue header, "Metrobank App", "Transaction Successful".
 """
 
-IMAGE_CLASSIFICATION_PROMPT = """
-You are a financial parsing agent. You are given an image of a financial document
+IMAGE_CLASSIFICATION_SYSTEM_PROMPT = """
+You are a financial parsing agent analyzing an image of a financial document
 (receipt, invoice, bank statement, mobile payment confirmation, or checkout screenshot) and user account context.
-
-Image Filename: {filename}
-
-{description_section}
-{inferred_app_section}
 
 Analyze the image carefully and return ONLY valid JSON matching this schema:
 {{
@@ -73,8 +68,8 @@ Analyze the image carefully and return ONLY valid JSON matching this schema:
   }},
   "amount": number (positive total amount paid/transacted in PHP, after taxes and discounts),
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
-  "debit_account_id": string (account id from the list above),
-  "credit_account_id": string (account id from the list above),
+  "debit_account_id": string (account id from the list provided),
+  "credit_account_id": string (account id from the list provided),
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string"]}}],
   "notes": "string (A descriptive note, e.g. 'Parsed from receipt image: [Merchant]')",
   "summary": "string (A concise, human-readable summary of this transaction)",
@@ -97,8 +92,6 @@ Rules:
 - Application Identification: If this is a physical paper receipt, invoice, or POS slip, strictly set application to "Physical Receipt". For digital mobile screenshots, identify the app name.
 {app_branding_section}
 - amount = TOTAL amount paid/settled (the final charged total, not subtotal or before discounts).
-
-
 - date = Extract transaction date and time from the receipt/statement if printed and format strictly as an ISO8601 UTC string ending in 'Z' (e.g. 8:13 PM GMT+8 becomes 20:13:00 GMT+8 -> convert to UTC: '2026-08-15T12:13:00Z'). Assume time in screenshot is GMT+08:00 (Asia/Manila) unless another timezone is explicitly stated. Pay special attention to AM vs PM. If no year is printed, assume current year. If no date is found, set null.
 - Apply the User Runbook rules ABOVE everything else.
 - For transaction_type: "Expense" = money leaving user's accounts to pay for goods/services; "Income" = salary, deposits, earnings; "Transfer" = moving money between user's own bank accounts, paying a credit card, or e-wallet top-up.
@@ -106,7 +99,13 @@ Rules:
 - For Income: debit = receiving bank/cash account, credit = income account.
 - For Transfer: debit = receiving account, credit = sending account.
 - Account IDs: DO NOT hallucinate account IDs. Use exact account IDs from the available accounts list. If no matching account exists, set null and suggest account creation.
+"""
 
+IMAGE_CLASSIFICATION_USER_PROMPT = """
+Image Filename: {filename}
+
+{description_section}
+{inferred_app_section}
 
 User Runbook (Explicit Rules):
 {runbook_content}
@@ -124,4 +123,6 @@ Vendor Matches Found:
 Similar past transactions (for context):
 {similar_context}
 """
+
+IMAGE_CLASSIFICATION_PROMPT = IMAGE_CLASSIFICATION_SYSTEM_PROMPT + "\n\n" + IMAGE_CLASSIFICATION_USER_PROMPT
 

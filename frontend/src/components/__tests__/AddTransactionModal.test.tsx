@@ -248,6 +248,71 @@ describe('AddTransactionModal', () => {
       expect(screen.queryByText('Journal Lines')).toBeNull()
     })
 
+    it('copies over selected accounts and amounts when switching from Simple to Advanced mode (Expense)', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          ingestion={{
+            ...mockIngestion,
+            ai_parsed: {
+              ...mockIngestion.ai_parsed,
+              debit_account_id: 'acc-food',
+              credit_account_id: 'acc-wallet',
+            },
+          }}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // In Simple mode: amount 500, debit Dining Out, credit GCash
+      const initialAmountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
+      expect(initialAmountInput.value).toBe('500')
+
+      // Switch from Simple to Advanced
+      const advancedBtn = screen.getByRole('button', { name: 'Advanced' })
+      fireEvent.click(advancedBtn)
+
+      // In Advanced mode, Journal Lines should have debit Food and credit Wallet
+      expect(screen.getByText('Journal Lines')).toBeDefined()
+      const amountInputs = screen.getAllByPlaceholderText('0.00') as HTMLInputElement[]
+      expect(amountInputs.length).toBeGreaterThanOrEqual(2)
+      expect(amountInputs[0].value).toBe('500')
+      expect(amountInputs[1].value).toBe('500')
+    })
+
+    it('copies over selected accounts and amounts when switching from Simple to Advanced mode (Transfer)', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          initialData={{
+            id: 'tx-transfer',
+            type: 'Transfer',
+            date: '2026-08-08T00:00:00Z',
+            vendor: '',
+            entries: [
+              { accountId: 'acc-wallet', amount: -1000 },
+              { accountId: 'acc-food', amount: 1000 },
+            ],
+          }}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // Switch from Simple to Advanced
+      const advancedBtn = screen.getByRole('button', { name: 'Advanced' })
+      fireEvent.click(advancedBtn)
+
+      // Journal lines should be visible with amounts copied
+      expect(screen.getByText('Journal Lines')).toBeDefined()
+      const amountInputs = screen.getAllByPlaceholderText('0.00') as HTMLInputElement[]
+      expect(amountInputs[0].value).toBe('1000')
+      expect(amountInputs[1].value).toBe('1000')
+    })
+
+
+
     it('switches transaction type between Expense, Income, and Transfer', () => {
       render(
         <AddTransactionModal

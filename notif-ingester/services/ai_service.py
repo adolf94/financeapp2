@@ -9,193 +9,32 @@ from models.prompt_debug_log import PromptDebugLog
 from typing import List, Optional, Tuple
 from services.llm_provider import LlmProvider, make_provider
 from repositories.prompt_debug_repository import IPromptDebugRepository, NoOpPromptDebugRepository
-from prompts.sms_prompts import SMS_IS_FINANCIAL_PROMPT, SMS_CLASSIFICATION_PROMPT
-from prompts.app_prompts import APP_IS_FINANCIAL_PROMPT, APP_CLASSIFICATION_PROMPT
-from prompts.email_prompts import EMAIL_CLASSIFICATION_PROMPT, SHOPEE_MULTI_ORDER_PROMPT
-from prompts.image_prompts import IMAGE_CLASSIFICATION_PROMPT
+from prompts.sms_prompts import (
+    SMS_IS_FINANCIAL_PROMPT,
+    SMS_CLASSIFICATION_PROMPT,
+    SMS_CLASSIFICATION_SYSTEM_PROMPT,
+    SMS_CLASSIFICATION_USER_PROMPT,
+)
+from prompts.app_prompts import (
+    APP_IS_FINANCIAL_PROMPT,
+    APP_CLASSIFICATION_PROMPT,
+    APP_CLASSIFICATION_SYSTEM_PROMPT,
+    APP_CLASSIFICATION_USER_PROMPT,
+)
+from prompts.email_prompts import (
+    EMAIL_CLASSIFICATION_PROMPT,
+    EMAIL_CLASSIFICATION_SYSTEM_PROMPT,
+    EMAIL_CLASSIFICATION_USER_PROMPT,
+    SHOPEE_MULTI_ORDER_PROMPT,
+    SHOPEE_MULTI_ORDER_SYSTEM_PROMPT,
+    SHOPEE_MULTI_ORDER_USER_PROMPT,
+)
+from prompts.image_prompts import (
+    IMAGE_CLASSIFICATION_PROMPT,
+    IMAGE_CLASSIFICATION_SYSTEM_PROMPT,
+    IMAGE_CLASSIFICATION_USER_PROMPT,
+)
 from services.image_optimizer import optimize_image_for_ai
-
-RUNBOOK_REVIEW_PROMPT = """
-You are a personal finance assistant. Your job is to review the user's transaction classification rules runbook (RUNBOOK.md) and propose updates to it, as well as account descriptions and vendor tags.
-
-Here is the current content of RUNBOOK.md:
----
-{current_runbook}
----
-
-Here are the existing accounts in the system:
----
-{accounts}
----
-
-Here are the existing vendors in the system:
----
-{vendors}
----
-
-{corrections_section}
-
-Your task:
-1. Analyze the context (and any corrections, if provided).
-2. Formulate a proposal. If there are corrections, determine if there is a missing explicit rule, ambiguous account description, or missing vendor tags. CRITICAL: If there are NO corrections (ad-hoc chat), DO NOT propose any updates yet; just greet the user and ask what they want to change. You MUST return empty arrays for all updates if there are no corrections.
-3. Provide a friendly conversational message explaining your proposed changes (or your greeting). Ask for clarification if needed.
-4. Output the COMPLETE updated RUNBOOK.md text (if no changes are needed, output the exact current RUNBOOK.md text).
-5. If any account descriptions or tags should be updated, provide a list of updates. (Leave empty if no changes).
-6. If any vendor tags should be updated, provide a list of updates. (Leave empty if no changes).
-
-Return ONLY valid JSON matching this schema:
-{{
-  "message": "Your conversational explanation to the user",
-  "questions": ["Any specific questions or clarifications formatted as an array of strings, or empty array"],
-  "proposed_runbook": "The full markdown text of the updated runbook",
-  "account_description_updates": [
-    {{
-      "account_id": "string",
-      "new_description": "string",
-      "new_tags": ["string"]
-    }}
-  ],
-  "vendor_updates": [
-    {{
-      "vendor_id": "string",
-      "new_tags": ["string"]
-    }}
-  ]
-}}
-"""
-
-RUNBOOK_CHAT_PROMPT = """
-You are a personal finance assistant. You are in an active conversation with the user to refine proposed updates to their RUNBOOK.md, account descriptions, and vendor tags.
-
-Current RUNBOOK.md:
----
-{current_runbook}
----
-
-Accounts context:
----
-{accounts}
----
-
-Vendors context:
----
-{vendors}
----
-
-Proposed RUNBOOK.md (from previous turn):
----
-{proposed_runbook}
----
-
-Proposed Account Description Updates (from previous turn):
----
-{proposed_account_updates}
----
-
-Proposed Vendor Updates (from previous turn):
----
-{proposed_vendor_updates}
----
-
-{corrections_section}
-
-Chat History:
-{chat_history}
-
-User's latest message: {user_message}
-
-Your task:
-7. CRITICAL: Do NOT alter the `account_description_updates` or `vendor_updates` from their previous state UNLESS the user explicitly comments on them or requests a change in their latest message.
-
-Return ONLY valid JSON matching this schema:
-{{
-  "message": "Your conversational response",
-  "questions": ["Any specific questions or clarifications formatted as an array of strings, or empty array"],
-  "proposed_runbook": "The full markdown text of the updated runbook",
-  "account_description_updates": [
-    {{
-      "account_id": "string",
-      "new_description": "string",
-      "new_tags": ["string"]
-    }}
-  ],
-  "vendor_updates": [
-    {{
-      "vendor_id": "string",
-      "new_tags": ["string"]
-    }}
-  ]
-}}
-"""
-
-CLASSIFICATION_PROMPT = """
-You are a personal finance assistant.
-
-Apply the rules below to classify the transaction. Return ONLY valid JSON matching this schema:
-{{
-  "is_financial":true,
-  "vendor": string,
-  "vendor_type": "Individual"|"Business"|"Internal" (Individual means a person/friend/relative, Business means a merchant/store/app/company, Internal means a transfer/adjustment/movement between the user's own accounts/assets or the user's own name),
-  "suggested_vendor": {{
-    "name": "string (suggested name of the vendor, e.g. Starbucks, McDonald's)",
-    "tags": ["string (2-4 concise lowercase tags describing what the vendor *does*, e.g. 'coffee', 'cafe', 'food'. Do NOT include the vendor name, country, bank name, or vendor type as tags. Tags must be unique to this vendor's activity and not redundant with each other.)"],
-    "type": "Individual"|"Business"|"Internal"
-  }} (or null if there is a match in the Existing Vendors list),
-  "amount": number (positive),
-  "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
-  "debit_account_id": string (account id from the list above),
-  "credit_account_id": string (account id from the list above),
-  "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string (2-4 concise lowercase tags that are *unique transaction-routing keywords* for this account, e.g. 'grab', 'uber', 'taxi'. Rules: (1) Do NOT repeat the account name, account type, group name, bank name, country, or currency as tags. (2) Do NOT use tags already covered by the vendor's tags — account tags should complement, not duplicate vendor tags. (3) Tags must be specific enough to distinguish this account from similar ones.)"]}}] (empty array if no accounts need to be created, or if not financial),
-  "notes": string,
-  "summary": string (A concise, human-readable summary or description of this transaction based on the context. Do NOT use the raw notification text, null if not financial),
-  "confidence": number (0.0-1.0),
-  "recipient_account_number": string (recipient/card/account number if mentioned in the message),
-  "recipient_account_name": string (recipient name if mentioned in the message),
-  "sender_account_number": string (sender account/card/wallet number if mentioned in the message),
-  "sender_account_name": string (sender name if mentioned in the message),
-  "application": string (name of the app or SMS sender, e.g. BPI, GCash),
-  "why": string (explain the classification so the user can spot mistakes and provide corrections — mention which runbook rule, keyword, or past transaction match drove each decision. Do NOT include raw UUIDs.)
-}}
-
-Rules:
-- Apply the User Runbook rules ABOVE everything else.
-- For transaction_type: "Expense" means money leaving the user's personal accounts (e.g. purchases, payments to external parties for services/goods). "Income" means money entering the user's personal accounts (e.g. salary, deposits from external parties). "Transfer" means money moving between Asset, Liability, Bank, or Investment accounts. This includes moving money between the user's own accounts (e.g. Bank to Bank, Bank to EWallet/Asset, paying a Credit Card) AND receiving/sending money that affects a Liability/Receivable (e.g. receiving a loan payment from someone else).
-- For Expense: debit = expense account, credit = source bank/cash account
-- For Income: debit = bank account, credit = income account
-- For Transfer: debit = receiving asset/bank account, credit = sending asset/bank account
-- Entries must balance (debit amount positive, credit amount negative)
-
-
-- **Pre-matched Vendors**: You are provided with "Vendor Matches Found" - these vendors were matched based on extracted account numbers/names from the notification text. **STRONGLY PRIORITIZE THESE MATCHES** in your classification. Check their tags to understand what they're for. If a vendor match has high hit counts, it's very likely correct.
-- **Vendor Matching**: You are also provided with a list of "Existing Vendors" with their tags. Check if any of these match the transaction vendor. If a vendor from the "Vendor Matches Found" list also appears in "Existing Vendors", that's a strong confirmation.
-- **Suggested Vendor**: If the transaction vendor matches one of the "Existing Vendors" (either by exact name or was found in "Vendor Matches Found"), set `suggested_vendor` to null. If there is NO match in the existing vendors or vendor matches, you MUST provide a `suggested_vendor` object with proposed name, tags, and type. The type must strictly be one of "Individual", "Business", or "Internal". When suggesting tags, consider the vendor's purpose and existing vendor tags to maintain consistency.
-- **Account IDs**: DO NOT hallucinate account IDs. Use exact account IDs from the accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`. CRITICAL: Never invent or guess account IDs. If you are not 100% certain an account ID exists in the provided list, set it to null.
-- **Suggested Account Creation**: Focus ONLY on the functional, financial purpose of the account.
-- **Explanation field ('why')**: Do NOT include raw UUIDs (like '018f3a3d-...'). Refer to accounts by their human-readable names. Write enough detail that the user can clearly identify what drove each classification decision. Mention if vendor matches influenced your decision.
-
-User Runbook (Explicit Rules):
-{runbook_content}
-
-Available accounts:
-{accounts}
-
-Existing Vendors:
-{vendors}
-
-Vendor Matches Found (via account number/name lookup):
-{vendor_matches}
-
-==================================================
-Now, classify the following specific notification transaction:
-==================================================
-
-Notification: {raw_msg}
-Source App / Sender: {app_name}
-Full payload: {raw_payload}
-
-Similar past transactions (for context):
-{similar_context}
-"""
 
 IS_FINANCIAL_PROMPT = APP_IS_FINANCIAL_PROMPT
 CLASSIFICATION_PROMPT = APP_CLASSIFICATION_PROMPT
@@ -718,7 +557,7 @@ Return ONLY valid JSON matching this schema:
 - **Foreign Transaction Summary**: In the `summary` field, include the original transaction amount and its currency (e.g. "Paid 10.00 USD (converted to PHP)...").
 """
 
-        prompt = CLASSIFICATION_PROMPT.format(
+        user_prompt = APP_CLASSIFICATION_USER_PROMPT.format(
             runbook_content=runbook_content,
             raw_msg=hook.raw_msg,
             app_name=app_name,
@@ -734,11 +573,13 @@ Return ONLY valid JSON matching this schema:
             conversion_instructions=conversion_instructions
         )
 
-        system_instruction = "You are a personal finance assistant. Classify the notification as a financial transaction."
+        system_instruction = APP_CLASSIFICATION_SYSTEM_PROMPT.format(
+            suggested_rule_field=suggested_rule_field
+        )
         
         response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
-            prompt=prompt,
+            prompt=user_prompt,
             system=system_instruction,
             json_mode=True,
             include_reasoning=False,
@@ -752,7 +593,7 @@ Return ONLY valid JSON matching this schema:
         await self._debug_log(
             "classify",
             self.classification_provider,
-            prompt,
+            user_prompt,
             response_text,
             system=system_instruction,
             input_tokens=in_tok,
@@ -807,7 +648,7 @@ Return ONLY valid JSON matching this schema:
 - **Foreign Transaction Summary**: In the `summary` field, include the original transaction amount and its currency (e.g. "Paid 10.00 USD (converted to PHP)...").
 """
 
-        prompt = SMS_CLASSIFICATION_PROMPT.format(
+        user_prompt = SMS_CLASSIFICATION_USER_PROMPT.format(
             runbook_content=runbook_content,
             raw_msg=hook.raw_msg,
             app_name=app_name,
@@ -823,11 +664,13 @@ Return ONLY valid JSON matching this schema:
             conversion_instructions=conversion_instructions
         )
 
-        system_instruction = "You are a personal finance assistant. Classify the SMS banking notification as a financial transaction. Pay special attention to transfer patterns, masked account numbers, and person-to-person payment indicators."
+        system_instruction = SMS_CLASSIFICATION_SYSTEM_PROMPT.format(
+            suggested_rule_field=suggested_rule_field
+        )
 
         response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
-            prompt=prompt,
+            prompt=user_prompt,
             system=system_instruction,
             json_mode=True,
             include_reasoning=True,
@@ -841,7 +684,7 @@ Return ONLY valid JSON matching this schema:
         await self._debug_log(
             "classify",
             self.classification_provider,
-            prompt,
+            user_prompt,
             response_text,
             system=system_instruction,
             input_tokens=in_tok,
@@ -891,7 +734,7 @@ Return ONLY valid JSON matching this schema:
 - **Foreign Transaction Summary**: In the `summary` field, include the original transaction amount and its currency (e.g. "Paid 10.00 USD (converted to PHP)...").
 """
 
-        prompt = EMAIL_CLASSIFICATION_PROMPT.format(
+        user_prompt = EMAIL_CLASSIFICATION_USER_PROMPT.format(
             runbook_content=runbook_content,
             body=email_body,
             sender=sender,
@@ -906,11 +749,13 @@ Return ONLY valid JSON matching this schema:
             conversion_instructions=conversion_instructions
         )
 
-        system_instruction = "You are a personal finance assistant. Classify the Email notification as a financial transaction. Pay special attention to invoice tables, vendor names, and credit/debit account assignments."
+        system_instruction = EMAIL_CLASSIFICATION_SYSTEM_PROMPT.format(
+            suggested_rule_field=suggested_rule_field
+        )
 
         response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
-            prompt=prompt,
+            prompt=user_prompt,
             system=system_instruction,
             json_mode=True,
             include_reasoning=True,
@@ -924,7 +769,7 @@ Return ONLY valid JSON matching this schema:
         await self._debug_log(
             "classify",
             self.classification_provider,
-            prompt,
+            user_prompt,
             response_text,
             system=system_instruction,
             input_tokens=in_tok,
@@ -968,8 +813,7 @@ Return ONLY valid JSON matching this schema:
         subject = hook.raw_payload.get("subject") or ""
         email_body = hook.raw_payload.get("markdown_content") or hook.raw_payload.get("body") or hook.raw_msg
 
-        prompt = SHOPEE_MULTI_ORDER_PROMPT.format(
-            runbook_content=runbook_content,
+        user_prompt = SHOPEE_MULTI_ORDER_USER_PROMPT.format(
             body=email_body,
             sender=sender,
             subject=subject,
@@ -978,15 +822,14 @@ Return ONLY valid JSON matching this schema:
             vendor_matches=vendor_matches_text,
             related_context=related_context_section,
             user_corrections_section=user_corrections_section,
-            suggested_rule_field=suggested_rule_field,
             exchange_rate_info=exchange_rate_info
         )
 
-        system_instruction = "You are an expert personal finance assistant. Accurately extract all Shopee orders and payment amounts from the checkout email."
+        system_instruction = SHOPEE_MULTI_ORDER_SYSTEM_PROMPT
 
         response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
-            prompt=prompt,
+            prompt=user_prompt,
             system=system_instruction,
             json_mode=True,
             include_reasoning=True,
@@ -1000,7 +843,7 @@ Return ONLY valid JSON matching this schema:
         await self._debug_log(
             "classify_shopee",
             self.classification_provider,
-            prompt,
+            user_prompt,
             response_text,
             system=system_instruction,
             input_tokens=in_tok,
@@ -1081,13 +924,10 @@ Return ONLY valid JSON matching this schema:
         else:
             app_hint_section = "Inferred App: Unknown (Inspect visual UI branding, header color, and logos to identify the mobile app, or set 'Physical Receipt')"
 
-        app_branding_section = APP_BRANDING_GUIDELINES
-
-        prompt = IMAGE_CLASSIFICATION_PROMPT.format(
+        user_prompt = IMAGE_CLASSIFICATION_USER_PROMPT.format(
             filename=filename or "receipt_image",
             description_section=desc_section,
             inferred_app_section=app_hint_section,
-            app_branding_section=app_branding_section,
             runbook_content=runbook_content,
             accounts=accounts_text,
             vendors=vendors_text,
@@ -1095,13 +935,11 @@ Return ONLY valid JSON matching this schema:
             similar_context=context,
             related_context=related_context_section,
             user_corrections_section=user_corrections_section,
-            suggested_rule_field=suggested_rule_field,
         )
 
-
-        system_instruction = (
-            "You are an expert financial parsing assistant analyzing an image of a receipt, invoice, "
-            "bank statement, or checkout screenshot. Extract all transaction details accurately into JSON."
+        system_instruction = IMAGE_CLASSIFICATION_SYSTEM_PROMPT.format(
+            app_branding_section=APP_BRANDING_GUIDELINES,
+            suggested_rule_field=suggested_rule_field,
         )
 
         # Downscale & compress image prior to sending to vision LLM
@@ -1114,7 +952,7 @@ Return ONLY valid JSON matching this schema:
 
         response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
             self.classification_provider,
-            prompt=prompt,
+            prompt=user_prompt,
             system=system_instruction,
             json_mode=True,
             include_reasoning=True,
@@ -1130,7 +968,7 @@ Return ONLY valid JSON matching this schema:
         await self._debug_log(
             "classify",
             self.classification_provider,
-            prompt,
+            user_prompt,
             response_text,
             system=system_instruction,
             input_tokens=in_tok,
