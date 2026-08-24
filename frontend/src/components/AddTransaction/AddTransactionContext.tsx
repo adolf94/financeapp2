@@ -304,6 +304,8 @@ export function AddTransactionProvider({
       { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' },
     ])
     setVendor('')
+    setSelectedLookups([])
+    setSelectedNewLookups([])
     setNote('')
     setReferenceNumber('')
     setUserWhy('')
@@ -599,6 +601,8 @@ export function AddTransactionProvider({
             { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' },
           ])
           setVendor('')
+          setSelectedLookups([])
+          setSelectedNewLookups([])
           setNote('')
           setReferenceNumber('')
         } else {
@@ -656,8 +660,9 @@ export function AddTransactionProvider({
         const tags = suggestions.suggestedVendorTags
           ? suggestions.suggestedVendorTags.split(',').map((t) => t.trim()).filter(Boolean)
           : []
+        const lookups = Array.from(new Set([...selectedLookups, ...selectedNewLookups]))
         createVendorMutation.mutate(
-          { name: vendor, type: suggestions.suggestedVendorType, tags },
+          { name: vendor, type: suggestions.suggestedVendorType, tags, lookups },
           {
             onSettled: () => {
               saveAdvancedTransaction(entries)
@@ -679,7 +684,11 @@ export function AddTransactionProvider({
     }
 
     if (vendor && !dbVendors.some((v) => v.name.toLowerCase() === vendor.toLowerCase())) {
-      createVendorMutation.mutate({ name: vendor })
+      const tags = suggestions.suggestedVendorTags
+        ? suggestions.suggestedVendorTags.split(',').map((t) => t.trim()).filter(Boolean)
+        : []
+      const lookups = Array.from(new Set([...selectedLookups, ...selectedNewLookups]))
+      createVendorMutation.mutate({ name: vendor, type: suggestions.suggestedVendorType, tags, lookups })
     }
 
     const entries: LedgerEntry[] = []
@@ -877,6 +886,8 @@ export function AddTransactionProvider({
             { id: generateId(), categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' },
           ])
           setVendor('')
+          setSelectedLookups([])
+          setSelectedNewLookups([])
           setNote('')
           setReferenceNumber('')
           setUserWhy('')

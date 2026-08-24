@@ -39,6 +39,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
+        globIgnores: ['**/staticwebapp.config.json'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/, /^\/authConfig/],
         runtimeCaching: [

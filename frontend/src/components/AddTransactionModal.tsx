@@ -465,8 +465,9 @@ function AddTransactionModalContent() {
                         const tags = suggestedVendorTags
                           ? suggestedVendorTags.split(',').map((t) => t.trim()).filter(Boolean)
                           : []
+                        const lookups = Array.from(new Set([...selectedLookups, ...selectedNewLookups]))
                         createVendorMutation.mutate(
-                          { name: val, type: suggestedVendorType, tags },
+                          { name: val, type: suggestedVendorType, tags, lookups },
                           {
                             onSuccess: () => {
                               setVendor(val)
@@ -477,30 +478,49 @@ function AddTransactionModalContent() {
                       placeholder="Select or type vendor..."
                       className="w-full"
                     />
-                    {ingestion && (selectedLookups.length > 0 || selectedNewLookups.length > 0) && (
-                      <div className="flex flex-wrap gap-1.5 mt-1.5 animate-fade-in">
-                        {selectedLookups.map((l, i) => (
-                          <span
-                            key={`matched-${i}`}
-                            onClick={() => setSelectedLookups(prev => prev.filter(x => x !== l))}
-                            className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-900/40 px-2 py-0.5 rounded-full shadow-sm cursor-pointer hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-450 dark:hover:border-rose-800 transition-colors"
-                            title="Click to exclude matched lookup"
-                          >
-                            {l}
-                            <X className="w-2.5 h-2.5" />
-                          </span>
-                        ))}
-                        {selectedNewLookups.map((l, i) => (
-                          <span
-                            key={`suggested-${i}`}
-                            onClick={() => setSelectedNewLookups(prev => prev.filter(x => x !== l))}
-                            className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40 px-2 py-0.5 rounded-full shadow-sm cursor-pointer hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 dark:hover:border-rose-800 transition-colors"
-                            title="Click to exclude suggested lookup"
-                          >
-                            {l}
-                            <X className="w-2.5 h-2.5" />
-                          </span>
-                        ))}
+                    {vendor && (
+                      <div className="flex flex-col gap-1 mt-1">
+                        <div className="flex flex-wrap items-center gap-1.5 animate-fade-in">
+                          {selectedLookups.map((l, i) => (
+                            <span
+                              key={`matched-${i}`}
+                              onClick={() => setSelectedLookups((prev) => prev.filter((x) => x !== l))}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-900/40 px-2 py-0.5 rounded-full shadow-sm cursor-pointer hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-450 dark:hover:border-rose-800 transition-colors"
+                              title="Click to remove lookup"
+                            >
+                              {l}
+                              <X className="w-2.5 h-2.5" />
+                            </span>
+                          ))}
+                          {selectedNewLookups.map((l, i) => (
+                            <span
+                              key={`suggested-${i}`}
+                              onClick={() => setSelectedNewLookups((prev) => prev.filter((x) => x !== l))}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40 px-2 py-0.5 rounded-full shadow-sm cursor-pointer hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 dark:hover:border-rose-800 transition-colors"
+                              title="Click to remove suggested lookup"
+                            >
+                              {l}
+                              <X className="w-2.5 h-2.5" />
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <input
+                            type="text"
+                            placeholder="Add reference / lookup string (e.g. account # or keyword)..."
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                const val = (e.currentTarget.value || '').trim()
+                                if (val && !selectedLookups.includes(val) && !selectedNewLookups.includes(val)) {
+                                  setSelectedLookups((prev) => [...prev, val])
+                                  e.currentTarget.value = ''
+                                }
+                              }
+                            }}
+                            className="text-xs px-2.5 py-1 border border-slate-200 dark:border-slate-800 rounded-md bg-slate-50/50 dark:bg-slate-950/50 text-slate-800 dark:text-slate-200 w-full placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
                       </div>
                     )}
                   </div>

@@ -65,6 +65,16 @@ namespace FinanceApp.Functions
                     .ToList();
             }
 
+            List<string> lookups = new();
+            if (doc.RootElement.TryGetProperty("lookups", out var lookupsProp) && lookupsProp.ValueKind == JsonValueKind.Array)
+            {
+                lookups = lookupsProp.EnumerateArray()
+                    .Select(l => l.GetString()?.Trim())
+                    .Where(l => !string.IsNullOrWhiteSpace(l))
+                    .Cast<string>()
+                    .ToList();
+            }
+
             var vendor = new Models.Vendor
             {
                 UserId = userId,
@@ -74,6 +84,10 @@ namespace FinanceApp.Functions
             };
 
             var createdVendor = await _vendorService.CreateOrUpdateVendorAsync(userId, vendor);
+            if (lookups.Any())
+            {
+                await _vendorService.EnsureVendorAndLookupsAsync(userId, createdVendor.Name, lookups);
+            }
             return new CreatedResult($"/api/vendors/{createdVendor.Id}", createdVendor);
         }
 
@@ -119,4 +133,3 @@ namespace FinanceApp.Functions
         }
     }
 }
-

@@ -219,6 +219,42 @@ describe('AddTransactionModal', () => {
       expect(vendorInput.value).toBe('New Restaurant')
     })
 
+    it('allows adding and removing string references (lookups) directly under vendor', () => {
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // Enter vendor and select from dropdown
+      const vendorInput = screen.getByPlaceholderText('Select or type vendor...') as HTMLInputElement
+      fireEvent.click(vendorInput)
+      fireEvent.mouseDown(screen.getByText('Test Vendor'))
+
+      // Reference input should be visible once vendor is set
+      const lookupInput = screen.getByPlaceholderText(/Add reference \/ lookup string/i) as HTMLInputElement
+      expect(lookupInput).toBeDefined()
+
+      // Add a custom lookup
+      fireEvent.change(lookupInput, { target: { value: 'STORE-1234' } })
+      fireEvent.keyDown(lookupInput, { key: 'Enter', code: 'Enter' })
+
+      // Lookup chip should appear
+      expect(screen.getByText('STORE-1234')).toBeDefined()
+
+      // Add another lookup
+      fireEvent.change(lookupInput, { target: { value: 'PAYMAYA-REF-99' } })
+      fireEvent.keyDown(lookupInput, { key: 'Enter', code: 'Enter' })
+      expect(screen.getByText('PAYMAYA-REF-99')).toBeDefined()
+
+      // Click to remove first lookup
+      fireEvent.click(screen.getByText('STORE-1234'))
+      expect(screen.queryByText('STORE-1234')).toBeNull()
+      expect(screen.getByText('PAYMAYA-REF-99')).toBeDefined()
+    })
+
     it('switches between Simple and Advanced (Journal) mode on click', () => {
       render(
         <AddTransactionModal
