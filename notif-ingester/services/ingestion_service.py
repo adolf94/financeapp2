@@ -76,62 +76,6 @@ class IngestionService:
         if re.search(r'\d{4,}', name):
             return True
         return False
-
-    def _build_lookups(self, ai_parsed, accounts: list[dict]) -> list[str]:
-        # Extract ALL possible lookup strings from the AI classification
-        raw_lookups = [
-            ai_parsed.vendor.name if ai_parsed.vendor else None,
-            getattr(ai_parsed, 'application', None),
-            getattr(ai_parsed, 'recipient_account_name', None),
-            getattr(ai_parsed, 'recipient_account_number', None),
-            getattr(ai_parsed, 'sender_account_name', None),
-            getattr(ai_parsed, 'sender_account_number', None)
-        ]
-        if ai_parsed.vendor and ai_parsed.vendor.lookups:
-            raw_lookups.extend(ai_parsed.vendor.lookups)
-        
-        # Add phone / account number variations (e.g. 0917 123 4567 -> 09171234567, 9171234567)
-        for num_field in [getattr(ai_parsed, 'recipient_account_number', None), getattr(ai_parsed, 'sender_account_number', None)]:
-            if num_field and isinstance(num_field, str):
-                cleaned = re.sub(r'[\s\-]+', '', num_field)
-                if cleaned != num_field:
-                    raw_lookups.append(cleaned)
-                if cleaned.startswith("09") and len(cleaned) == 11:
-                    raw_lookups.append(cleaned[1:])      # 9171234567
-                    raw_lookups.append("+63" + cleaned[1:]) # +639171234567
-                elif cleaned.startswith("+639") and len(cleaned) == 13:
-                    raw_lookups.append("0" + cleaned[3:]) # 09171234567
-                    raw_lookups.append(cleaned[3:])       # 9171234567
-
-        # Clean and filter lookups
-        lookups = [loc.strip() for loc in raw_lookups if loc and isinstance(loc, str) and loc.strip()]
-        
-        stop_words = {
-            "mastercard", "master-card", "visa", "gcash", "paymaya", "maya", 
-            "credit card", "debit card", "bdo", "bpi", "unionbank", "metrobank",
-            "instapay", "pesonet", "credit", "debit", "bank"
-        }
-        
-        account_exclusions = set()
-        if accounts:
-            for acc in accounts:
-                if acc.get("account_number"):
-                    account_exclusions.add(str(acc["account_number"]).lower().strip())
-                if acc.get("name"):
-                    account_exclusions.add(str(acc["name"]).lower().strip())
-                    
-        clean_lookups = []
-        for loc in lookups:
-            loc_lower = loc.lower()
-            if loc_lower in stop_words:
-                continue
-            if loc_lower in account_exclusions:
-                continue
-            clean_lookups.append(loc)
-            
-        return list(dict.fromkeys(clean_lookups))
-
-
     def _format_candidate_summary(self, cand: PendingIngestion, cand_time: Optional[datetime] = None, time_offset_str: str = "") -> str:
         app = (cand.notification_type or "notification").upper()
         amt_str = f"₱{cand.ai_parsed.amount:,.2f}" if (cand.ai_parsed and cand.ai_parsed.amount is not None) else "N/A"

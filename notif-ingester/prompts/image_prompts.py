@@ -87,7 +87,7 @@ Analyze the image carefully and return ONLY valid JSON matching this schema:
 Rules:
 - Individual / P2P Transfers to Account Numbers: If this is a screenshot of sending money to an individual person, mobile wallet number (e.g. GCash Express Send 0917xxxxxxx), or bank account:
   1. Extract the EXACT recipient number/phone in `recipient_account_number` and name in `recipient_account_name`.
-  2. ALWAYS include the recipient phone number, account number, name, and reference in `vendor.lookups` (e.g. `["09171234567", "John Doe"]`).
+  2. In `vendor.lookups`, include ONLY persistent identifiers like the recipient phone number, account number, or recipient/merchant name (e.g. `["09171234567", "John Doe"]`). **DO NOT include transaction reference numbers, trace numbers, or order IDs in `vendor.lookups`** (those belong strictly in `reference_number`).
   3. If "Vendor Matches Found" matches this account number or name, assign that matched vendor name to `vendor.name` and set `vendor.matched` to true.
 - Application Identification: If this is a physical paper receipt, invoice, or POS slip, strictly set application to "Physical Receipt". For digital mobile screenshots, identify the app name.
 {app_branding_section}

@@ -371,6 +371,7 @@ export function AddTransactionProvider({
     initialData,
     ingestion,
     accounts,
+    vendors: dbVendors,
     reclassifyData: reclassifyMutation.data,
     resetForm,
     resetSuggestionsState: suggestions.resetSuggestionsState,
@@ -447,7 +448,12 @@ export function AddTransactionProvider({
           { categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' },
         ],
         vendor: vendorName,
-        selectedLookups: parsed.vendor?.lookups || [],
+        selectedLookups: Array.from(
+          new Set([
+            ...(parsed.vendor?.lookups || []),
+            ...(dbVendors.find((v) => v.name.toLowerCase() === vendorName.toLowerCase())?.lookups || []),
+          ])
+        ),
         selectedNewLookups: parsed.vendor?.new_lookups || parsed.vendor?.NewLookups || [],
         date: parsed.date ? dayjs(parsed.date).format('YYYY-MM-DDTHH:mm') : (ingestion.received_at ? dayjs(ingestion.received_at).format('YYYY-MM-DDTHH:mm') : dayjs().format('YYYY-MM-DDTHH:mm')),
         note: parsed.summary || parsed.notes || '',

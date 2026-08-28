@@ -1158,7 +1158,13 @@ function RunbookReviewSettings() {
               >
                 <div className="flex justify-between items-start">
                   <div className="font-semibold text-sm text-slate-900 dark:text-slate-100">
-                    {c.user_confirmed?.vendor || c.ai_parsed?.vendor || 'Unknown Vendor'}
+                    {(typeof c.user_confirmed?.vendor === 'string'
+                      ? c.user_confirmed.vendor
+                      : c.user_confirmed?.vendor?.name) ||
+                      (typeof c.ai_parsed?.vendor === 'string'
+                        ? c.ai_parsed.vendor
+                        : c.ai_parsed?.vendor?.name) ||
+                      'Unknown Vendor'}
                   </div>
                   <div className="text-[11px] text-slate-400 font-medium">
                     {dayjs(c.received_at).format('MMM D, YYYY h:mm A')}

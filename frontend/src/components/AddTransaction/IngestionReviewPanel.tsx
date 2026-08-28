@@ -41,6 +41,8 @@ export default function IngestionReviewPanel() {
     setIsReviewOpen,
     setConfirmReclassifyOpen,
     setVendor,
+    selectedLookups,
+    selectedNewLookups,
     suggestedVendorType,
     setSuggestedVendorType,
     suggestedVendorTags,
@@ -90,8 +92,9 @@ export default function IngestionReviewPanel() {
     const tags = suggestedVendorTags
       ? suggestedVendorTags.split(',').map((t) => t.trim()).filter(Boolean)
       : []
+    const lookups = Array.from(new Set([...selectedLookups, ...selectedNewLookups]))
     createVendorMutation.mutate(
-      { name: ingestion.ai_parsed.vendor?.name!, type: suggestedVendorType, tags },
+      { name: ingestion.ai_parsed.vendor?.name!, type: suggestedVendorType, tags, lookups },
       {
         onSuccess: () => {
           setVendor(ingestion.ai_parsed.vendor?.name!)

@@ -37,7 +37,7 @@ ArAuthClient.verify_token = lambda self, token, audience=None, leeway=60: _orig_
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 # Shared auth client (caches JWKS)
-_auth_client = ArAuthAzureClient(authority="https://auth.adolfrey.com/api", client_id=os.environ.get("ArAuth__ClientId"))
+_auth_client = ArAuthAzureClient(authority="https://auth.adolfrey.com/api", client_id=os.environ.get("ArAuth__ClientId") or os.environ.get("ArAuth:ClientId") or "finance-app-api")
 
 # Set to track notif_ids currently in-flight / being inserted to prevent duplicates
 _processing_notif_ids = set()

@@ -21,7 +21,11 @@ vi.mock('@/hooks/useAccounts', () => ({
 }))
 
 vi.mock('@/hooks/useVendors', () => ({
-  useGetVendors: () => ({ data: [{ id: 'vendor-1', name: 'Test Vendor', type: 'Business', tags: ['tag1'] }] }),
+  useGetVendors: () => ({
+    data: [
+      { id: 'vendor-1', name: 'Test Vendor', type: 'Business', tags: ['tag1'], lookups: ['EXISTING-LOOKUP-123'] },
+    ],
+  }),
   useCreateVendor: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateVendor: () => ({ mutate: vi.fn(), isPending: false }),
 }))
@@ -233,6 +237,9 @@ describe('AddTransactionModal', () => {
       fireEvent.click(vendorInput)
       fireEvent.mouseDown(screen.getByText('Test Vendor'))
 
+      // Existing lookup from DB should be populated
+      expect(screen.getByText('EXISTING-LOOKUP-123')).toBeDefined()
+
       // Reference input should be visible once vendor is set
       const lookupInput = screen.getByPlaceholderText(/Add reference \/ lookup string/i) as HTMLInputElement
       expect(lookupInput).toBeDefined()
@@ -253,6 +260,61 @@ describe('AddTransactionModal', () => {
       fireEvent.click(screen.getByText('STORE-1234'))
       expect(screen.queryByText('STORE-1234')).toBeNull()
       expect(screen.getByText('PAYMAYA-REF-99')).toBeDefined()
+      expect(screen.getByText('EXISTING-LOOKUP-123')).toBeDefined()
+    })
+
+    it('prefills vendor lookups and new lookups from ai_parsed by default', () => {
+      const ingestionWithLookups = {
+        ...mockIngestion,
+        ai_parsed: {
+          ...mockIngestion.ai_parsed,
+          vendor: {
+            name: 'GrabFood',
+            lookups: ['09171234567', 'GRAB-PH-88'],
+            new_lookups: ['GF-REF-01'],
+            is_recommendation: true,
+          },
+        },
+      }
+
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          ingestion={ingestionWithLookups}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      expect(screen.getByText('09171234567')).toBeDefined()
+      expect(screen.getByText('GRAB-PH-88')).toBeDefined()
+      expect(screen.getByText('GF-REF-01')).toBeDefined()
+    })
+
+    it('prefills existing vendor lookups from DB on load when vendor matches', () => {
+      const ingestionWithDbVendor = {
+        ...mockIngestion,
+        ai_parsed: {
+          ...mockIngestion.ai_parsed,
+          vendor: {
+            name: 'Test Vendor',
+            lookups: ['AI-LOOKUP-1'],
+          },
+        },
+      }
+
+      render(
+        <AddTransactionModal
+          isOpen={true}
+          onClose={vi.fn()}
+          ingestion={ingestionWithDbVendor}
+        />,
+        { wrapper: createWrapper() }
+      )
+
+      // Both AI lookup and DB vendor's existing lookup should be present on load
+      expect(screen.getByText('AI-LOOKUP-1')).toBeDefined()
+      expect(screen.getByText('EXISTING-LOOKUP-123')).toBeDefined()
     })
 
     it('switches between Simple and Advanced (Journal) mode on click', () => {

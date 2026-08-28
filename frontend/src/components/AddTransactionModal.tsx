@@ -460,6 +460,16 @@ function AddTransactionModalContent() {
                       value={vendor}
                       onChange={(val) => {
                         setVendor(val)
+                        if (val) {
+                          const matched = dbVendors.find(
+                            (v) => v.name.toLowerCase() === val.toLowerCase()
+                          )
+                          if (matched?.lookups && matched.lookups.length > 0) {
+                            setSelectedLookups((prev) =>
+                              Array.from(new Set([...prev, ...(matched.lookups || [])]))
+                            )
+                          }
+                        }
                       }}
                       onCreate={(val) => {
                         const tags = suggestedVendorTags

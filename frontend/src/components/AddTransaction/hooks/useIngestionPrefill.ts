@@ -4,6 +4,7 @@ import { uuidv7 } from 'uuidv7'
 import { PendingIngestion } from '@/hooks/useIngestions'
 import { Transaction } from '@/hooks/useTransactions'
 import { Account } from '@/hooks/useAccounts'
+import { Vendor } from '@/hooks/useVendors'
 import { SplitLine, JournalLine } from '../AddTransactionContext'
 
 const generateId = () => uuidv7()
@@ -13,6 +14,7 @@ interface UseIngestionPrefillParams {
   initialData: Transaction | null
   ingestion: PendingIngestion | null
   accounts: Account[]
+  vendors?: Vendor[]
   reclassifyData: any
   resetForm: () => void
   resetSuggestionsState: () => void
@@ -42,6 +44,7 @@ export function useIngestionPrefill({
   initialData,
   ingestion,
   accounts,
+  vendors = [],
   reclassifyData,
   resetForm,
   resetSuggestionsState,
@@ -70,6 +73,11 @@ export function useIngestionPrefill({
     accountsRef.current = accounts
   }, [accounts])
 
+  const vendorsRef = useRef(vendors)
+  useEffect(() => {
+    vendorsRef.current = vendors
+  }, [vendors])
+
   const applyAiParsed = useCallback(
     (parsed: any, receivedAt?: string) => {
       if (!parsed) return
@@ -88,7 +96,13 @@ export function useIngestionPrefill({
       if (parsed.vendor) {
         const vendorName = typeof parsed.vendor === 'string' ? parsed.vendor : parsed.vendor.name || ''
         setVendor(vendorName)
-        setSelectedLookups(parsed.vendor.lookups || [])
+        const matchedVendor = vendorsRef.current?.find(
+          (v) => v.name.toLowerCase() === vendorName.toLowerCase()
+        )
+        const combinedLookups = Array.from(
+          new Set([...(parsed.vendor.lookups || []), ...(matchedVendor?.lookups || [])])
+        )
+        setSelectedLookups(combinedLookups)
         setSelectedNewLookups(parsed.vendor.new_lookups || parsed.vendor.NewLookups || [])
         if (parsed.vendor.is_recommendation) {
           setSuggestedVendorType(parsed.vendor.type === 'Individual' ? 'Individual' : 'Business')
