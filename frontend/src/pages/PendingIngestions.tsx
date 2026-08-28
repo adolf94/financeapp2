@@ -6,7 +6,6 @@ import PendingIngestionsList from '@/components/PendingIngestionsList'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import ImageUploadModal from '@/components/ImageUploadModal'
 import ReasoningDrawer from '@/components/ReasoningDrawer'
-import { Transaction } from '@/hooks/useTransactions'
 import { RefreshCw, Mail, Image as ImageIcon, Brain } from 'lucide-react'
 
 import { IngestionListSkeleton } from '@/components/ui/Skeleton'
@@ -74,70 +73,6 @@ export default function PendingIngestions() {
   const confirmingIngestion = useMemo(() => {
     return pendingIngestions.find(i => i.id === confirmingIngestionId) || null
   }, [pendingIngestions, confirmingIngestionId])
-
-  const mappedIngestionTransaction = useMemo(() => {
-    if (!confirmingIngestion) return null
-
-    let resolvedDate = confirmingIngestion.ai_parsed.date
-    if (!resolvedDate && confirmingIngestion.raw_payload?.timestamp) {
-      const ts = confirmingIngestion.raw_payload.timestamp
-      if (typeof ts === 'number') {
-        const ms = ts > 30000000000 ? ts : ts * 1000
-        resolvedDate = new Date(ms).toISOString()
-      } else {
-        resolvedDate = ts
-      }
-    }
-    if (!resolvedDate) {
-      resolvedDate = confirmingIngestion.received_at
-    }
-
-    const multiOrders = confirmingIngestion.ai_parsed.multi_order_items || []
-    if (multiOrders.length > 1) {
-      const entries = [
-        {
-          accountId: confirmingIngestion.ai_parsed.credit_account_id || '',
-          amount: -(confirmingIngestion.ai_parsed.amount || 0),
-          note: confirmingIngestion.ai_parsed.notes || 'Shopee total'
-        },
-        ...multiOrders.map((o) => ({
-          accountId: o.debit_account_id || confirmingIngestion.ai_parsed.debit_account_id || '',
-          amount: o.amount || 0,
-          referenceNumber: o.reference_number || '',
-          note: o.notes || (typeof o.vendor === 'string' ? o.vendor : o.vendor?.name) || ''
-        }))
-      ]
-
-      return {
-        type: 'Journal',
-        vendor: confirmingIngestion.ai_parsed.vendor?.name || '',
-        note: confirmingIngestion.ai_parsed.summary || confirmingIngestion.ai_parsed.notes || '',
-        date: resolvedDate,
-        referenceNumber: confirmingIngestion.ai_parsed.reference_number || '',
-        entries
-      } as Transaction
-    }
-
-    return {
-      type: ['Income', 'Expense', 'Transfer'].includes(confirmingIngestion.ai_parsed.transaction_type || '')
-        ? confirmingIngestion.ai_parsed.transaction_type
-        : 'Expense',
-      vendor: confirmingIngestion.ai_parsed.vendor?.name || '',
-      note: confirmingIngestion.ai_parsed.summary || confirmingIngestion.ai_parsed.notes || '',
-      date: resolvedDate,
-      referenceNumber: confirmingIngestion.ai_parsed.reference_number || '',
-      entries: [
-        {
-          accountId: confirmingIngestion.ai_parsed.debit_account_id || '',
-          amount: confirmingIngestion.ai_parsed.amount || 0
-        },
-        {
-          accountId: confirmingIngestion.ai_parsed.credit_account_id || '',
-          amount: -(confirmingIngestion.ai_parsed.amount || 0)
-        }
-      ]
-    } as Transaction
-  }, [confirmingIngestion])
 
   const handleCheckEmails = async () => {
     try {
@@ -320,7 +255,7 @@ export default function PendingIngestions() {
           setConfirmingIngestionId(null)
           setOpeningTransactionId(null)
         }}
-        initialData={openedTransaction || mappedIngestionTransaction}
+        initialData={openedTransaction}
         ingestionId={confirmingIngestion?.id || openedTransaction?.ingestionId}
         ingestion={confirmingIngestion}
       />
