@@ -28,8 +28,26 @@ namespace FinanceApp.Models
         public List<LedgerEntry> Entries { get; set; } = new();
         public bool IsAutoConfirmed { get; set; } = false;
         public string? IngestionId { get; set; }
-        public List<string> MergedIngestionIds { get; set; } = new();
-        public List<string> MatchedVendorLookups { get; set; } = new();
-        public List<string> NewVendorLookups { get; set; } = new();
+
+        private List<string>? _mergedIngestionIds = new();
+        public List<string> MergedIngestionIds
+        {
+            get => _mergedIngestionIds ??= new();
+            set => _mergedIngestionIds = value ?? new();
+        }
+
+        private List<string>? _matchedVendorLookups = new();
+        public List<string> MatchedVendorLookups
+        {
+            get => _matchedVendorLookups ??= new();
+            set => _matchedVendorLookups = value ?? new();
+        }
+
+        private List<string>? _newVendorLookups = new();
+        public List<string> NewVendorLookups
+        {
+            get => _newVendorLookups ??= new();
+            set => _newVendorLookups = value ?? new();
+        }
     }
 }

@@ -5,7 +5,27 @@ from azure.cosmos.aio import CosmosClient
 from models.pending_ingestion import PendingIngestion
 from uuid_extensions import uuid7
 
+import re
 from repositories.cosmos_client import get_cosmos_client
+
+def normalize_lookup(val: str) -> str:
+    """
+    Normalizes a lookup string:
+    - Lowercase and trim.
+    - If masked (e.g. XXXXXXX1234 or ***1234 or •••1234), strip leading mask characters
+      if at least 3 alphanumeric characters remain.
+    """
+    if not val or not isinstance(val, str):
+        return ""
+    clean = val.strip().lower()
+    if not clean:
+        return ""
+    # Strip leading mask characters: x, *, •, \u2022, -, .
+    unmasked = re.sub(r'^[x\*\u2022\-\.\s]+', '', clean)
+    # If stripping left a useful identifier (>= 3 chars), use it; otherwise keep clean
+    if len(unmasked) >= 3:
+        return unmasked
+    return clean
 
 class FinanceApiService:
     def __init__(self):
@@ -156,10 +176,20 @@ class FinanceApiService:
         if not self.client or not lookups:
             return None, []
             
+        import logging
         db = self.client.get_database_client(self.db_name)
         try:
             lookup_container = db.get_container_client("VendorLookups")
-            lookup_values = [loc.lower().strip() for loc in lookups if loc and isinstance(loc, str) and loc.strip()]
+            lookup_values_set = set()
+            for loc in lookups:
+                if loc and isinstance(loc, str) and loc.strip():
+                    raw = loc.lower().strip()
+                    norm = normalize_lookup(loc)
+                    if raw:
+                        lookup_values_set.add(raw)
+                    if norm:
+                        lookup_values_set.add(norm)
+            lookup_values = list(lookup_values_set)
             if not lookup_values:
                 return None, []
                 
@@ -167,6 +197,7 @@ class FinanceApiService:
             param_names = ", ".join(p["name"] for p in parameters)
             
             query = f"SELECT c.VendorId, c.Hits, c.LookupValue FROM c WHERE c.LookupValue IN ({param_names})"
+            logging.info(f"[search_vendors_by_lookups] user_id={user_id} lookups_in={lookups} query_values={lookup_values}")
             items = lookup_container.query_items(
                 query=query,
                 parameters=parameters,
@@ -200,9 +231,10 @@ class FinanceApiService:
                 vendor_container = db.get_container_client("Vendors")
                 try:
                     vendor = await vendor_container.read_item(item=vendor_id, partition_key=user_id)
+                    logging.info(f"[search_vendors_by_lookups] Matched vendor '{vendor.get('Name')}' (ID: {vendor_id}) via {matched_lookups}")
                     return vendor.get("Name"), matched_lookups
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.warning(f"[search_vendors_by_lookups] Found lookup but failed reading vendor {vendor_id} under user {user_id}: {e}")
             
             # Fallback: check exact name match directly
             vendor_container = db.get_container_client("Vendors")
@@ -216,10 +248,10 @@ class FinanceApiService:
             async for item in items_name:
                 matched_name = item.get("Name")
                 matched_input = [l for l in lookups if l.lower().strip() == matched_name.lower().strip()]
+                logging.info(f"[search_vendors_by_lookups] Fallback matched vendor name '{matched_name}'")
                 return matched_name, matched_input if matched_input else [matched_name]
                 
         except Exception as e:
-            import logging
             logging.warning(f"Error searching vendors by lookups: {e}")
         return None, []
 
@@ -243,13 +275,23 @@ class FinanceApiService:
         if not self.client or not lookups:
             return []
             
+        import logging
         db = self.client.get_database_client(self.db_name)
         try:
             lookup_container = db.get_container_client("VendorLookups")
             vendor_container = db.get_container_client("Vendors")
             
-            # Normalize lookup values
-            lookup_values = [loc.lower().strip() for loc in lookups if loc and isinstance(loc, str) and loc.strip()]
+            # Normalize lookup values (include both normalized stripped version and raw version for compatibility)
+            lookup_values_set = set()
+            for loc in lookups:
+                if loc and isinstance(loc, str) and loc.strip():
+                    raw = loc.lower().strip()
+                    norm = normalize_lookup(loc)
+                    if raw:
+                        lookup_values_set.add(raw)
+                    if norm:
+                        lookup_values_set.add(norm)
+            lookup_values = list(lookup_values_set)
             if not lookup_values:
                 return []
                 
@@ -258,6 +300,8 @@ class FinanceApiService:
             param_names = ", ".join(p["name"] for p in parameters)
             
             query = f"SELECT c.VendorId, c.LookupValue, c.Hits FROM c WHERE c.LookupValue IN ({param_names})"
+            logging.info(f"[search_all_vendor_matches] user_id={user_id} lookups_in={lookups} query_values={lookup_values} query={query}")
+            
             lookup_items = lookup_container.query_items(
                 query=query,
                 parameters=parameters,
@@ -266,11 +310,15 @@ class FinanceApiService:
             
             # Group by vendor ID
             vendor_matches = {}
+            raw_lookup_matches_count = 0
             
             async for item in lookup_items:
+                raw_lookup_matches_count += 1
                 v_id = item.get("VendorId")
                 lookup_value = item.get("LookupValue")
                 hits = item.get("Hits", 1)
+                
+                logging.info(f"[search_all_vendor_matches] Found VendorLookup doc: VendorId={v_id}, LookupValue={lookup_value}, Hits={hits}")
                 
                 if v_id not in vendor_matches:
                     vendor_matches[v_id] = {
@@ -282,6 +330,8 @@ class FinanceApiService:
                 vendor_matches[v_id]["matched_lookups"].append(lookup_value)
                 vendor_matches[v_id]["total_hits"] += hits
             
+            logging.info(f"[search_all_vendor_matches] Found {raw_lookup_matches_count} matching lookup docs for {len(vendor_matches)} distinct vendor(s)")
+            
             # Fetch vendor details for matched vendors
             matches_list = []
             for v_id, match_info in vendor_matches.items():
@@ -291,17 +341,18 @@ class FinanceApiService:
                     match_info["vendor_type"] = vendor.get("Type", "Business")
                     match_info["vendor_tags"] = vendor.get("Tags", []) or vendor.get("tags", [])
                     matches_list.append(match_info)
-                except Exception:
-                    # Skip vendors we can't fetch details for
+                    logging.info(f"[search_all_vendor_matches] Successfully resolved vendor: Name='{match_info['vendor_name']}', ID={v_id}")
+                except Exception as e:
+                    logging.warning(f"[search_all_vendor_matches] Failed reading vendor doc {v_id} with partition_key={user_id}: {e}")
                     continue
             
             # Sort by total hits (most frequent matches first)
             matches_list.sort(key=lambda x: x["total_hits"], reverse=True)
+            logging.info(f"[search_all_vendor_matches] Returning {len(matches_list)} final vendor matches: {[m.get('vendor_name') for m in matches_list]}")
             
             return matches_list
             
         except Exception as e:
-            import logging
             logging.warning(f"Error searching all vendor matches by lookups: {e}")
             return []
 
@@ -365,7 +416,7 @@ class FinanceApiService:
             
         if lookups:
             lookup_container = db.get_container_client("VendorLookups")
-            normalized_lookups = list(set([loc.lower().strip() for loc in lookups if loc and isinstance(loc, str) and loc.strip()]))
+            normalized_lookups = list(set([normalize_lookup(loc) for loc in lookups if normalize_lookup(loc)]))
             
             if normalized_lookups:
                 # Fetch existing lookups for this vendor that match our new lookups

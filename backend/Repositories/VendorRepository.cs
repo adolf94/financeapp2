@@ -93,13 +93,29 @@ namespace FinanceApp.Repositories
                 await _context.SaveChangesAsync();
             }
         }
+        private static string NormalizeLookup(string? val)
+        {
+            if (string.IsNullOrWhiteSpace(val)) return string.Empty;
+            var clean = val.Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(clean)) return string.Empty;
+            
+            // Strip leading mask characters (x, *, •, -, .)
+            var unmasked = System.Text.RegularExpressions.Regex.Replace(clean, @"^[x\*\u2022\-\.\s]+", "");
+            if (unmasked.Length >= 3)
+            {
+                return unmasked;
+            }
+            return clean;
+        }
+
         public async Task EnsureLookupsAsync(string userId, string vendorId, IEnumerable<string> lookups)
         {
             if (lookups == null || !lookups.Any()) return;
 
             var normalizedLookups = lookups
                 .Where(l => !string.IsNullOrWhiteSpace(l))
-                .Select(l => l.Trim().ToLowerInvariant())
+                .Select(l => NormalizeLookup(l))
+                .Where(l => !string.IsNullOrEmpty(l))
                 .Distinct()
                 .ToList();
 
@@ -143,7 +159,7 @@ namespace FinanceApp.Repositories
 
         public async Task<VendorLookup> AddLookupAsync(string userId, string vendorId, string lookupValue)
         {
-            var normalized = lookupValue.Trim().ToLowerInvariant();
+            var normalized = NormalizeLookup(lookupValue);
             var existing = await _context.VendorLookups
                 .WithPartitionKey(userId)
                 .FirstOrDefaultAsync(vl => vl.VendorId == vendorId && vl.LookupValue == normalized);

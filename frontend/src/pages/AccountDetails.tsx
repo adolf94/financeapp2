@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useParams, Link } from '@tanstack/react-router'
 import { useGetAccounts, useGetAccountGroups } from '@/hooks/useAccounts'
-import { useGetAccountTransactions, Transaction } from '@/hooks/useTransactions'
+import { useGetAccountTransactions, Transaction, LedgerEntry } from '@/hooks/useTransactions'
 import { ArrowLeft, ArrowDownRight, ArrowUpRight, ArrowRightLeft, BookOpen, Pencil, Edit3, SlidersHorizontal } from 'lucide-react'
 import AddTransactionModal from '@/components/AddTransactionModal'
 import EditAccountModal from '@/components/EditAccountModal'
@@ -24,49 +24,75 @@ export default function AccountDetails() {
     return accounts.find(a => a.id === id)?.name ?? 'Unknown Account'
   }
 
-  // Calculate running balances
-  const transactionsWithBalance = useMemo(() => {
+  // Calculate running balances per ledger entry
+  const entriesWithBalance = useMemo(() => {
     if (!account || transactions.length === 0) return []
 
-    // 1. Sort transactions oldest to newest
-    const sorted = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-
-    // 2. Compute running balance starting from account's initial balance
+    // 1. Flatten to entries affecting this account with parent tx details, sorted oldest to newest
+    const sortedTx = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    
     let currentBalance = account.startingBalance || 0
-    const calculated = sorted.map(tx => {
-      // Find the entries that affect this specific account
-      const accountEntries = tx.entries.filter(e => e.accountId === accountId)
-      // Sum the impact on this account
-      const impact = accountEntries.reduce((sum, e) => sum + e.amount, 0)
-      
-      currentBalance += impact
+    const calculated: Array<{
+      id: string
+      txId?: string
+      parentTx: Transaction
+      entry: LedgerEntry
+      date: string
+      vendor?: string | null
+      note?: string
+      type: Transaction['type']
+      impact: number
+      runningBalance: number
+      otherAccountName: string
+    }> = []
 
-      return {
-        ...tx,
-        impact,
-        runningBalance: currentBalance
-      }
+    sortedTx.forEach(tx => {
+      // Find the entries in this transaction that affect this specific account
+      const accountEntries = tx.entries.filter(e => e.accountId === accountId)
+      const otherEntries = tx.entries.filter(e => e.accountId !== accountId)
+      const otherAccountName = otherEntries.length === 1
+        ? getAccountName(otherEntries[0].accountId)
+        : otherEntries.length > 1
+        ? 'Split'
+        : 'Self'
+
+      accountEntries.forEach((entry, idx) => {
+        currentBalance += entry.amount
+        calculated.push({
+          id: entry.id || `${tx.id}-${idx}`,
+          txId: tx.id,
+          parentTx: tx,
+          entry,
+          date: tx.date,
+          vendor: tx.vendor,
+          note: entry.note || tx.note,
+          type: tx.type,
+          impact: entry.amount,
+          runningBalance: currentBalance,
+          otherAccountName,
+        })
+      })
     })
 
-    // 3. Reverse to show newest first
+    // 2. Reverse to show newest first
     return calculated.reverse()
-  }, [account, transactions, accountId])
+  }, [account, transactions, accountId, accounts])
 
-  // Group transactions by Cycle and then by Day
+  // Group entries by Cycle and then by Day
   const groupedData = useMemo(() => {
-    if (!account || transactionsWithBalance.length === 0) return []
+    if (!account || entriesWithBalance.length === 0) return []
 
-    const groups: { cycleLabel: string | null, days: { dateStr: string, transactions: typeof transactionsWithBalance }[] }[] = []
+    const groups: { cycleLabel: string | null, days: { dateStr: string, entries: typeof entriesWithBalance }[] }[] = []
 
     let currentCycleLabel: string | null = null
-    let currentCycleDays: { dateStr: string, transactions: typeof transactionsWithBalance }[] = []
+    let currentCycleDays: { dateStr: string, entries: typeof entriesWithBalance }[] = []
     
     let currentDayStr: string | null = null
-    let currentDayTx: typeof transactionsWithBalance = []
+    let currentDayEntries: typeof entriesWithBalance = []
 
     const pushDay = () => {
-      if (currentDayStr && currentDayTx.length > 0) {
-        currentCycleDays.push({ dateStr: currentDayStr, transactions: currentDayTx })
+      if (currentDayStr && currentDayEntries.length > 0) {
+        currentCycleDays.push({ dateStr: currentDayStr, entries: currentDayEntries })
       }
     }
 
@@ -76,8 +102,8 @@ export default function AccountDetails() {
       }
     }
 
-    transactionsWithBalance.forEach(tx => {
-      const d = new Date(tx.date)
+    entriesWithBalance.forEach(item => {
+      const d = new Date(item.date)
       const dateStr = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
       
       let cycleLabel: string | null = null
@@ -98,13 +124,13 @@ export default function AccountDetails() {
         currentCycleLabel = cycleLabel
         currentCycleDays = []
         currentDayStr = dateStr
-        currentDayTx = [tx]
+        currentDayEntries = [item]
       } else if (dateStr !== currentDayStr) {
         pushDay()
         currentDayStr = dateStr
-        currentDayTx = [tx]
+        currentDayEntries = [item]
       } else {
-        currentDayTx.push(tx)
+        currentDayEntries.push(item)
       }
     })
     
@@ -112,7 +138,7 @@ export default function AccountDetails() {
     pushCycle()
 
     return groups
-  }, [account, transactionsWithBalance])
+  }, [account, entriesWithBalance])
 
   if (isLoadingAccounts || isLoadingTx) {
     return <div className="p-4 text-slate-500">Loading account details...</div>
@@ -163,7 +189,7 @@ export default function AccountDetails() {
 
       {/* Transaction List */}
       <div className="flex-1 overflow-y-auto">
-        {transactionsWithBalance.length === 0 ? (
+        {entriesWithBalance.length === 0 ? (
           <div className="p-8 text-center text-slate-400 italic">No transactions in this account.</div>
         ) : (
           <div className="bg-white dark:bg-slate-900 shadow-sm border-y border-slate-200 dark:border-slate-800">
@@ -189,53 +215,45 @@ export default function AccountDetails() {
                         <h3 className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{dayGroup.dateStr}</h3>
                       </div>
                       <ul className="divide-y divide-slate-100 dark:divide-slate-800/50 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                        {dayGroup.transactions.map((tx) => {
-                          // Determine the "other" account for display purposes
-                          const otherEntries = tx.entries.filter(e => e.accountId !== accountId)
-                          const otherAccountName = otherEntries.length === 1 
-                            ? getAccountName(otherEntries[0].accountId)
-                            : otherEntries.length > 1 
-                            ? 'Split'
-                            : 'Self'
-
+                        {dayGroup.entries.map((item) => {
                           return (
-                            <li key={tx.id} className="grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                            <li key={item.id} className="grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                               {/* Details */}
                               <div className="col-span-6 flex items-center gap-3 overflow-hidden">
                                 <div
                                   className={`shrink-0 p-1.5 rounded-full ${
-                                    tx.type === 'Income'
+                                    item.type === 'Income'
                                       ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400'
-                                      : tx.type === 'Expense'
+                                      : item.type === 'Expense'
                                       ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400'
-                                      : tx.type === 'Journal'
+                                      : item.type === 'Journal'
                                       ? 'bg-purple-100 text-purple-600 dark:bg-purple-500/10 dark:text-purple-400'
                                       : 'bg-blue-100 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400'
                                   }`}
                                 >
-                                  {tx.type === 'Income' && <ArrowUpRight className="w-4 h-4" />}
-                                  {tx.type === 'Expense' && <ArrowDownRight className="w-4 h-4" />}
-                                  {tx.type === 'Transfer' && <ArrowRightLeft className="w-4 h-4" />}
-                                  {tx.type === 'Journal' && <BookOpen className="w-4 h-4" />}
+                                  {item.type === 'Income' && <ArrowUpRight className="w-4 h-4" />}
+                                  {item.type === 'Expense' && <ArrowDownRight className="w-4 h-4" />}
+                                  {item.type === 'Transfer' && <ArrowRightLeft className="w-4 h-4" />}
+                                  {item.type === 'Journal' && <BookOpen className="w-4 h-4" />}
                                 </div>
                                 <div className="truncate">
                                   <p className="text-xs font-medium text-slate-900 dark:text-slate-100 truncate">
-                                    {tx.vendor ? tx.vendor : tx.type === 'Journal' ? 'Journal Entry' : otherAccountName}
+                                    {item.vendor ? item.vendor : item.type === 'Journal' ? 'Journal Entry' : item.otherAccountName}
                                   </p>
-                                  {tx.note && <p className="text-xs text-slate-600 dark:text-slate-300 italic truncate mt-0.5">{tx.note}</p>}
+                                  {item.note && <p className="text-xs text-slate-600 dark:text-slate-300 italic truncate mt-0.5">{item.note}</p>}
                                 </div>
                               </div>
 
                               {/* Amount */}
-                              <div className={`col-span-3 text-right text-xs font-medium ${tx.impact > 0 ? 'text-emerald-600 dark:text-emerald-400' : tx.impact < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500'}`}>
-                                {tx.impact > 0 ? '+' : ''}{tx.impact === 0 ? '0.00' : tx.impact.toFixed(2)}
+                              <div className={`col-span-3 text-right text-xs font-medium ${item.impact > 0 ? 'text-emerald-600 dark:text-emerald-400' : item.impact < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500'}`}>
+                                {item.impact > 0 ? '+' : ''}{item.impact === 0 ? '0.00' : item.impact.toFixed(2)}
                               </div>
 
                               {/* Running Balance */}
                               <div className="col-span-3 flex items-center justify-end gap-2 text-right text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                <span>₱{tx.runningBalance.toFixed(2)}</span>
+                                <span>₱{item.runningBalance.toFixed(2)}</span>
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); setEditingTx(tx); }}
+                                  onClick={(e) => { e.stopPropagation(); setEditingTx(item.parentTx); }}
                                   className="p-1 text-slate-400 hover:text-blue-500 transition-colors cursor-pointer"
                                   aria-label="Edit transaction"
                                 >
