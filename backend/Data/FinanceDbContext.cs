@@ -58,6 +58,15 @@ namespace FinanceApp.Data
                 .Property(x => x.Type)
                 .HasConversion<string>();
             modelBuilder.Entity<Transaction>()
+                .Property(x => x.MergedIngestionIds)
+                .UsePropertyAccessMode(PropertyAccessMode.Property);
+            modelBuilder.Entity<Transaction>()
+                .Property(x => x.MatchedVendorLookups)
+                .UsePropertyAccessMode(PropertyAccessMode.Property);
+            modelBuilder.Entity<Transaction>()
+                .Property(x => x.NewVendorLookups)
+                .UsePropertyAccessMode(PropertyAccessMode.Property);
+            modelBuilder.Entity<Transaction>()
                 .HasMany(t => t.Entries)
                 .WithOne(e => e.Transaction)
                 .HasForeignKey(e => new { e.TransactionId, e.UserId })

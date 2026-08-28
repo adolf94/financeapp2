@@ -5,7 +5,27 @@ from azure.cosmos.aio import CosmosClient
 from models.pending_ingestion import PendingIngestion
 from uuid_extensions import uuid7
 
+import re
 from repositories.cosmos_client import get_cosmos_client
+
+def normalize_lookup(val: str) -> str:
+    """
+    Normalizes a lookup string:
+    - Lowercase and trim.
+    - If masked (e.g. XXXXXXX1234 or ***1234 or •••1234), strip leading mask characters
+      if at least 3 alphanumeric characters remain.
+    """
+    if not val or not isinstance(val, str):
+        return ""
+    clean = val.strip().lower()
+    if not clean:
+        return ""
+    # Strip leading mask characters: x, *, •, \u2022, -, .
+    unmasked = re.sub(r'^[x\*\u2022\-\.\s]+', '', clean)
+    # If stripping left a useful identifier (>= 3 chars), use it; otherwise keep clean
+    if len(unmasked) >= 3:
+        return unmasked
+    return clean
 
 class FinanceApiService:
     def __init__(self):
@@ -159,7 +179,16 @@ class FinanceApiService:
         db = self.client.get_database_client(self.db_name)
         try:
             lookup_container = db.get_container_client("VendorLookups")
-            lookup_values = [loc.lower().strip() for loc in lookups if loc and isinstance(loc, str) and loc.strip()]
+            lookup_values_set = set()
+            for loc in lookups:
+                if loc and isinstance(loc, str) and loc.strip():
+                    raw = loc.lower().strip()
+                    norm = normalize_lookup(loc)
+                    if raw:
+                        lookup_values_set.add(raw)
+                    if norm:
+                        lookup_values_set.add(norm)
+            lookup_values = list(lookup_values_set)
             if not lookup_values:
                 return None, []
                 
@@ -248,8 +277,17 @@ class FinanceApiService:
             lookup_container = db.get_container_client("VendorLookups")
             vendor_container = db.get_container_client("Vendors")
             
-            # Normalize lookup values
-            lookup_values = [loc.lower().strip() for loc in lookups if loc and isinstance(loc, str) and loc.strip()]
+            # Normalize lookup values (include both normalized stripped version and raw version for compatibility)
+            lookup_values_set = set()
+            for loc in lookups:
+                if loc and isinstance(loc, str) and loc.strip():
+                    raw = loc.lower().strip()
+                    norm = normalize_lookup(loc)
+                    if raw:
+                        lookup_values_set.add(raw)
+                    if norm:
+                        lookup_values_set.add(norm)
+            lookup_values = list(lookup_values_set)
             if not lookup_values:
                 return []
                 
@@ -365,7 +403,7 @@ class FinanceApiService:
             
         if lookups:
             lookup_container = db.get_container_client("VendorLookups")
-            normalized_lookups = list(set([loc.lower().strip() for loc in lookups if loc and isinstance(loc, str) and loc.strip()]))
+            normalized_lookups = list(set([normalize_lookup(loc) for loc in lookups if normalize_lookup(loc)]))
             
             if normalized_lookups:
                 # Fetch existing lookups for this vendor that match our new lookups
