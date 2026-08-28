@@ -130,5 +130,20 @@ namespace FinanceApp.Services
             var vendor = await CreateVendorAsync(userId, vendorName);
             await _repository.EnsureLookupsAsync(userId, vendor.Id, lookups);
         }
+
+        public async Task<IEnumerable<VendorLookup>> GetLookupsByVendorIdAsync(string userId, string vendorId)
+        {
+            return await _repository.GetLookupsByVendorIdAsync(userId, vendorId);
+        }
+
+        public async Task<VendorLookup> AddLookupAsync(string userId, string vendorId, string lookupValue)
+        {
+            return await _repository.AddLookupAsync(userId, vendorId, lookupValue);
+        }
+
+        public async Task DeleteLookupAsync(string userId, string lookupId)
+        {
+            await _repository.DeleteLookupAsync(userId, lookupId);
+        }
     }
 }

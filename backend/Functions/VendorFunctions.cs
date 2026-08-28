@@ -131,5 +131,47 @@ namespace FinanceApp.Functions
             await _vendorService.DeleteVendorAsync(userId, id);
             return new NoContentResult();
         }
+
+        [Function("GetVendorLookups")]
+        public async Task<IActionResult> GetVendorLookups(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "vendors/{id}/lookups")] HttpRequest req, FunctionContext context,
+            string id)
+        {
+            string? userId = context.GetUserId();
+            if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            var lookups = await _vendorService.GetLookupsByVendorIdAsync(userId, id);
+            return new OkObjectResult(lookups);
+        }
+
+        [Function("AddVendorLookup")]
+        public async Task<IActionResult> AddVendorLookup(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "vendors/{id}/lookups")] HttpRequest req, FunctionContext context,
+            string id)
+        {
+            string? userId = context.GetUserId();
+            if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+
+            var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            using var doc = JsonDocument.Parse(requestBody);
+
+            if (!doc.RootElement.TryGetProperty("lookup", out var lookupProp) || string.IsNullOrWhiteSpace(lookupProp.GetString()))
+            {
+                return new BadRequestObjectResult("Lookup value is required.");
+            }
+
+            var created = await _vendorService.AddLookupAsync(userId, id, lookupProp.GetString()!);
+            return new OkObjectResult(created);
+        }
+
+        [Function("DeleteVendorLookup")]
+        public async Task<IActionResult> DeleteVendorLookup(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "vendors/lookups/{lookupId}")] HttpRequest req, FunctionContext context,
+            string lookupId)
+        {
+            string? userId = context.GetUserId();
+            if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            await _vendorService.DeleteLookupAsync(userId, lookupId);
+            return new NoContentResult();
+        }
     }
 }

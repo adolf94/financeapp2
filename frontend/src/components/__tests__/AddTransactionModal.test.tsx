@@ -28,6 +28,9 @@ vi.mock('@/hooks/useVendors', () => ({
   }),
   useCreateVendor: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateVendor: () => ({ mutate: vi.fn(), isPending: false }),
+  useGetVendorLookups: () => ({ data: [], isLoading: false }),
+  useAddVendorLookup: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteVendorLookup: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 const mockCreateTransactionMutate = vi.fn()

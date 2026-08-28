@@ -851,6 +851,7 @@ function VendorsSettings() {
         isOpen={!!editCandidate}
         onClose={() => setEditCandidate(null)}
         vendor={editCandidate}
+        showLookups={true}
       />
     </div>
   )

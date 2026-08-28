@@ -132,5 +132,54 @@ namespace FinanceApp.Repositories
             }
             await _context.SaveChangesAsync();
         }
+
+        public async Task<IEnumerable<VendorLookup>> GetLookupsByVendorIdAsync(string userId, string vendorId)
+        {
+            return await _context.VendorLookups
+                .WithPartitionKey(userId)
+                .Where(vl => vl.VendorId == vendorId)
+                .ToListAsync();
+        }
+
+        public async Task<VendorLookup> AddLookupAsync(string userId, string vendorId, string lookupValue)
+        {
+            var normalized = lookupValue.Trim().ToLowerInvariant();
+            var existing = await _context.VendorLookups
+                .WithPartitionKey(userId)
+                .FirstOrDefaultAsync(vl => vl.VendorId == vendorId && vl.LookupValue == normalized);
+
+            if (existing != null)
+            {
+                existing.Hits += 1;
+                _context.VendorLookups.Update(existing);
+                await _context.SaveChangesAsync();
+                return existing;
+            }
+
+            var newEntity = new VendorLookup
+            {
+                UserId = userId,
+                VendorId = vendorId,
+                LookupValue = normalized,
+                Hits = 1
+            };
+            await _context.VendorLookups.AddAsync(newEntity);
+            await _context.SaveChangesAsync();
+            return newEntity;
+        }
+
+        public async Task DeleteLookupAsync(string userId, string lookupId)
+        {
+            var lookup = await _context.VendorLookups
+                .WithPartitionKey(userId)
+                .FirstOrDefaultAsync(vl => vl.Id == lookupId);
+
+            if (lookup != null)
+            {
+                _context.VendorLookups.Remove(lookup);
+                await _context.SaveChangesAsync();
+            }
+        }
     }
 }
+

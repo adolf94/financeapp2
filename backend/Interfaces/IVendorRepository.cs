@@ -11,5 +11,9 @@ namespace FinanceApp.Interfaces
         Task DeleteVendorAsync(string userId, string id);
         Task EnsureLookupsAsync(string userId, string vendorId, IEnumerable<string> lookups);
         Task UpdateVendorLastUsedAsync(string userId, string vendorName, DateTime? lastUsed = null);
+        Task<IEnumerable<VendorLookup>> GetLookupsByVendorIdAsync(string userId, string vendorId);
+        Task<VendorLookup> AddLookupAsync(string userId, string vendorId, string lookupValue);
+        Task DeleteLookupAsync(string userId, string lookupId);
     }
 }
+

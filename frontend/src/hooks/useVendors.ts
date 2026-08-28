@@ -58,3 +58,51 @@ export function useUpdateVendor() {
     },
   })
 }
+
+export interface VendorLookupItem {
+  id: string
+  userId: string
+  vendorId: string
+  lookupValue: string
+  hits: number
+}
+
+export function useGetVendorLookups(vendorId?: string) {
+  return useQuery<VendorLookupItem[]>({
+    queryKey: ['vendorLookups', vendorId],
+    queryFn: async () => {
+      if (!vendorId) return []
+      const response = await apiClient.get(`/vendors/${vendorId}/lookups`)
+      return response.data
+    },
+    enabled: !!vendorId,
+  })
+}
+
+export function useAddVendorLookup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ vendorId, lookup }: { vendorId: string; lookup: string }) => {
+      const response = await apiClient.post(`/vendors/${vendorId}/lookups`, { lookup })
+      return response.data as VendorLookupItem
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['vendorLookups', variables.vendorId] })
+      queryClient.invalidateQueries({ queryKey: ['vendors'] })
+    },
+  })
+}
+
+export function useDeleteVendorLookup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ lookupId }: { vendorId: string; lookupId: string }) => {
+      await apiClient.delete(`/vendors/lookups/${lookupId}`)
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['vendorLookups', variables.vendorId] })
+      queryClient.invalidateQueries({ queryKey: ['vendors'] })
+    },
+  })
+}
+
