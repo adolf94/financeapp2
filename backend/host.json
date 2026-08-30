@@ -1,6 +1,13 @@
 {
     "version": "2.0",
     "logging": {
+        "logLevel": {
+            "default": "Information",
+            "Azure": "Warning",
+            "Azure.Core": "Warning",
+            "Azure.Cosmos": "Warning",
+            "Microsoft.EntityFrameworkCore.Database.Command": "Warning"
+        },
         "applicationInsights": {
             "samplingSettings": {
                 "isEnabled": true,

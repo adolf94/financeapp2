@@ -8,6 +8,13 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Suppress verbose Azure SDK / Cosmos DB HTTP request/response logging
+logging.getLogger("azure").setLevel(logging.WARNING)
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+logging.getLogger("azure.cosmos").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+
 from models.phone_hook import PhoneHookMessage
 from models.pending_ingestion import AiVendorInfo
 from repositories.hook_repository import CosmosHookRepository

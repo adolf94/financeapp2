@@ -20,8 +20,8 @@ Return ONLY valid JSON matching this schema:
   }},
   "amount": number (positive) - in PHP,
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
-  "debit_account_id": string (account id from the list provided),
-  "credit_account_id": string (account id from the list provided),
+  "debit_account_id": string (account id from the list provided, or null - DO NOT hallucinate),
+  "credit_account_id": string (account id from the list provided, or null - DO NOT hallucinate),
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string (2-4 concise lowercase tags complementary to vendor tags)"]}}],
   "notes": string,
   "summary": string (A concise, human-readable summary or description of this transaction based on the email context),
@@ -43,6 +43,7 @@ Rules:
 - For Expense: debit = expense account, credit = source bank/cash account
 - For Income: debit = bank account, credit = income account
 - For Transfer: debit = receiving account, credit = sending account
+- **Account IDs**: DO NOT hallucinate account IDs/GUIDs. Use exact account IDs/GUIDs from the provided available accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`. CRITICAL: Never invent, guess, or hallucinate account IDs/GUIDs. If you are not 100% certain an account ID exists in the provided list, set it to null.
 - **Pre-matched Vendors**: You are provided with "Vendor Matches Found" - these vendors were matched based on extracted account numbers/names from the notification text. **STRONGLY PRIORITIZE THESE MATCHES** in your classification. Set `vendor.matched = true`, `vendor.is_recommendation = false`, and map `vendor.lookups` to the matching strings.
 - **Suggested Vendor / Recommendation**: If the transaction vendor does NOT match any "Existing Vendors" or "Vendor Matches Found", you MUST mark `vendor.is_recommendation = true`, `vendor.matched = false`, and provide suggestions for `vendor.tags` (2-4 concise lowercase tags describing the vendor's activity). Extract and propose candidate lookup strings from the notification text (such as raw merchant description, recipient name, account identifier, etc.) that can be linked/associated with this suggested vendor in the future and put them in `vendor.lookups`. **CRITICAL: NEVER put transaction reference numbers, trace numbers, receipt numbers, or order IDs in `vendor.lookups`** (those belong only in `reference_number`).
 
