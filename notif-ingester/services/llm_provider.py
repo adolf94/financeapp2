@@ -241,17 +241,9 @@ class OpenAICompatibleProvider(LlmProvider):
         self.model = model
         self._base_url = base_url
 
-        default_headers = {}
-        if base_url and "openrouter" in base_url:
-            app_title = os.environ.get("OPENROUTER_APP_TITLE", "Personal Finance App")
-            app_url = os.environ.get("OPENROUTER_APP_URL", "https://finance.adolfrey.com")
-            default_headers["X-Title"] = app_title
-            default_headers["HTTP-Referer"] = app_url
-
         self.client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url or None,
-            default_headers=default_headers if default_headers else None,
         )
 
     @property
