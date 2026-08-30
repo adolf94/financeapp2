@@ -46,6 +46,7 @@ class AiService:
         self.reasoning_provider = make_provider("REASONING")
         self._debug_repo = debug_repo or NoOpPromptDebugRepository()
         self._prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
+        self._always_include_vendors = os.environ.get("ALWAYS_INCLUDE_VENDORS", "").lower() == "true"
 
     async def _debug_log(
         self,
@@ -539,7 +540,11 @@ Return ONLY valid JSON matching this schema:
         context = self._build_context(similar_vectors)
         accounts_text = self._format_accounts(accounts)
         
-        vendors_text = self._format_vendors(vendors)
+        if vendor_matches and not self._always_include_vendors:
+            vendors_section = ""
+        else:
+            vendors_text = self._format_vendors(vendors)
+            vendors_section = f"Existing Vendors:\n{vendors_text}"
         
         # Format vendor matches for AI context
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
@@ -564,7 +569,7 @@ Return ONLY valid JSON matching this schema:
             raw_payload=json.dumps(hook.raw_payload, indent=2),
             similar_context=context,
             accounts=accounts_text,
-            vendors=vendors_text,
+            vendors_section=vendors_section,
             vendor_matches=vendor_matches_text,
             related_context=related_context_section,
             user_corrections_section=user_corrections_section,
@@ -628,7 +633,11 @@ Return ONLY valid JSON matching this schema:
         """Classify using SMS-specific prompt (tailored for SMS banking messages)."""
         context = self._build_context(similar_vectors)
         accounts_text = self._format_accounts(accounts)
-        vendors_text = self._format_vendors(vendors)
+        if vendor_matches and not self._always_include_vendors:
+            vendors_section = ""
+        else:
+            vendors_text = self._format_vendors(vendors)
+            vendors_section = f"Existing Vendors:\n{vendors_text}"
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
         user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
         related_context_section = self._format_related_context(related_context)
@@ -655,7 +664,7 @@ Return ONLY valid JSON matching this schema:
             raw_payload=json.dumps(hook.raw_payload, indent=2),
             similar_context=context,
             accounts=accounts_text,
-            vendors=vendors_text,
+            vendors_section=vendors_section,
             vendor_matches=vendor_matches_text,
             related_context=related_context_section,
             user_corrections_section=user_corrections_section,
@@ -718,7 +727,11 @@ Return ONLY valid JSON matching this schema:
         """Classify using Email-specific prompt (tailored for email receipts/statements)."""
         context = self._build_context(similar_vectors)
         accounts_text = self._format_accounts(accounts)
-        vendors_text = self._format_vendors(vendors)
+        if vendor_matches and not self._always_include_vendors:
+            vendors_section = ""
+        else:
+            vendors_text = self._format_vendors(vendors)
+            vendors_section = f"Existing Vendors:\n{vendors_text}"
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
         user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
         related_context_section = self._format_related_context(related_context)
@@ -740,7 +753,7 @@ Return ONLY valid JSON matching this schema:
             sender=sender,
             subject=subject,
             accounts=accounts_text,
-            vendors=vendors_text,
+            vendors_section=vendors_section,
             vendor_matches=vendor_matches_text,
             related_context=related_context_section,
             user_corrections_section=user_corrections_section,
@@ -804,7 +817,11 @@ Return ONLY valid JSON matching this schema:
         """Classify Shopee email, detecting multi-order checkout or single-order."""
         context = self._build_context(similar_vectors)
         accounts_text = self._format_accounts(accounts)
-        vendors_text = self._format_vendors(vendors)
+        if vendor_matches and not self._always_include_vendors:
+            vendors_section = ""
+        else:
+            vendors_text = self._format_vendors(vendors)
+            vendors_section = f"Existing Vendors:\n{vendors_text}"
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
         user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
         related_context_section = self._format_related_context(related_context)
@@ -818,7 +835,7 @@ Return ONLY valid JSON matching this schema:
             sender=sender,
             subject=subject,
             accounts=accounts_text,
-            vendors=vendors_text,
+            vendors_section=vendors_section,
             vendor_matches=vendor_matches_text,
             related_context=related_context_section,
             user_corrections_section=user_corrections_section,
@@ -909,7 +926,11 @@ Return ONLY valid JSON matching this schema:
         """Classify a financial receipt/statement using multimodal vision AI."""
         context = self._build_context(similar_vectors)
         accounts_text = self._format_accounts(accounts)
-        vendors_text = self._format_vendors(vendors)
+        if vendor_matches and not self._always_include_vendors:
+            vendors_section = ""
+        else:
+            vendors_text = self._format_vendors(vendors)
+            vendors_section = f"Existing Vendors:\n{vendors_text}"
         vendor_matches_text = self._format_vendor_matches(vendor_matches)
         user_corrections_section, suggested_rule_field = self._format_user_corrections(user_corrections, accounts)
         related_context_section = self._format_related_context(related_context)
@@ -930,7 +951,7 @@ Return ONLY valid JSON matching this schema:
             inferred_app_section=app_hint_section,
             runbook_content=runbook_content,
             accounts=accounts_text,
-            vendors=vendors_text,
+            vendors_section=vendors_section,
             vendor_matches=vendor_matches_text,
             similar_context=context,
             related_context=related_context_section,

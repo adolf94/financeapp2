@@ -62,8 +62,7 @@ User Runbook (Explicit Rules):
 Available accounts:
 {accounts}
 
-Existing Vendors:
-{vendors}
+{vendors_section}
 
 Vendor Matches Found (via account number/name lookup):
 {vendor_matches}

@@ -62,8 +62,7 @@ User Email Runbook (Explicit Rules):
 Available accounts:
 {accounts}
 
-Existing Vendors:
-{vendors}
+{vendors_section}
 
 Vendor Matches Found:
 {vendor_matches}
@@ -140,8 +139,7 @@ SHOPEE_MULTI_ORDER_USER_PROMPT = """
 Available accounts:
 {accounts}
 
-Existing Vendors:
-{vendors}
+{vendors_section}
 
 Vendor Matches Found:
 {vendor_matches}
