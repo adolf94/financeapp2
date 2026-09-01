@@ -15,6 +15,7 @@ dist/
 nuget.config
 .npmrc
 .venv
+.venv-*
 __pycache__ 
 local.settings.json
 notif-ingester/debug_prompts
