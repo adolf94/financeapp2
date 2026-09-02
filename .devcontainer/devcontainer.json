@@ -1,0 +1,45 @@
+{
+  "name": "finance3",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspaces/finance3",
+
+  "remoteUser": "1000:1000",
+
+  "containerEnv": {
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_NOLOGO": "1",
+    "ASP.NETCORE_ENVIRONMENT": "Development"
+  },
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "${workspaceFolder}/notif-ingester/.venv/bin/python",
+        "python.analysis.extraPaths": [
+          "${workspaceFolder}/notif-ingester",
+          "${workspaceFolder}/notif-ingester/models",
+          "${workspaceFolder}"
+        ],
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "[csharp]": { "editor.formatOnSave": true },
+        "[python]": { "editor.formatOnSave": true },
+        "[typescript]": { "editor.formatOnSave": true },
+        "[typescriptreact]": { "editor.formatOnSave": true }
+      },
+      "extensions": [
+        "ms-dotnettools.csharp",
+        "ms-python.python",
+        "ms-python.debugpy",
+        "esbenp.prettier-vscode",
+        "dbaeumer.vscode-eslint",
+        "bradlc.vscode-tailwindcss",
+        "ms-azuretools.vscode-azurefunctions",
+        "formulahendry.azure-storage-explorer",
+        "ms-azuretools.vscode-cosmosdb"
+      ]
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/scripts/setup.sh"
+}

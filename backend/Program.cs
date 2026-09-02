@@ -27,7 +27,15 @@ builder.Services.AddDbContext<FinanceDbContext>((provider, options) =>
     var connectionString = configuration["CosmosConnectionString"]
         ?? "AccountEndpoint=https://localhost:8081/;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==";
     var databaseName = configuration["CosmosDatabaseName"] ?? "FinanceDb";
-    options.UseCosmos(connectionString, databaseName);
+    var connectionMode = configuration["CosmosConnectionMode"];
+
+    options.UseCosmos(connectionString, databaseName, cosmos =>
+    {
+        if (string.Equals(connectionMode, "Gateway", StringComparison.OrdinalIgnoreCase))
+        {
+            cosmos.ConnectionMode(Microsoft.Azure.Cosmos.ConnectionMode.Gateway);
+        }
+    });
 });
 
 // Register Repositories

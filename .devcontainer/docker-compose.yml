@@ -1,0 +1,133 @@
+# Finance3 local development environment.
+#
+# The `dev` service is the development container (used by the VS Code devcontainer
+# and/or standalone). It contains the full toolchain and runs the three app
+# processes (backend, notif-ingester, frontend). The `cosmos`, `azurite` and
+# `signalr` services are the Azure emulators that the apps connect to over the
+# shared `finance3-net` network, addressed by their service hostname.
+#
+#  Dev ports  (inside the `dev` container):
+#    7071  -> backend          (.NET Azure Functions)
+#    7072  -> notif-ingester   (Python Azure Functions)
+#    5173  -> frontend         (Vite dev server)
+#
+#  Emulator services (reachable from `dev` via <hostname>:<port>):
+#    cosmos  :8081   Cosmos DB emulator   (also published to host :8081)
+#    azurite :10000-10002  Azure Storage
+#    signalr :8080   SignalR emulator     (also published to host :6001)
+#
+# Usage (from repo root):
+#   docker compose -f .devcontainer/docker-compose.yml up -d --build   # start everything
+#   docker compose -f .devcontainer/docker-compose.yml down            # stop
+#   # Then attach / run the apps inside the dev container (see scripts/dev-up.sh).
+#
+name: finance3
+
+services:
+  cosmos:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-latest
+    container_name: finance3-cosmos
+    restart: unless-stopped
+    environment:
+      AZURE_COSMOS_EMULATOR_PARTITION_COUNT: "10"
+      AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "true"
+    ports:
+      - "8081:8081"
+    volumes:
+      - cosmos-data:/tmp/cosmos/appdata
+    networks:
+      - finance3-net
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'curl -fsS "http://localhost:8081/" -o /dev/null || exit 1'
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: finance3-azurite
+    restart: unless-stopped
+    command: "azurite --silent --skipApiVersionCheck --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0"
+    ports:
+      - "10000:10000"
+      - "10001:10001"
+      - "10002:10002"
+    volumes:
+      - azurite-data:/data
+    networks:
+      - finance3-net
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('net').connect(10000,'127.0.0.1',()=>process.exit(0)).on('error',()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  signalr:
+    image: mcr.microsoft.com/signalr/signalr-emulator:latest
+    container_name: finance3-signalr
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
+    # On Linux docker, the emulator needs host.docker.internal to reach the
+    # backend (finance3-dev) webhook upstream published on the host at :7071.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "6001:8888"
+    volumes:
+      - signalr-data:/tmp
+    networks:
+      - finance3-net
+
+  dev:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    container_name: finance3-dev
+    # Workspace must be writable by the vscode user (uid 1000). The base image
+    # `devcontainers/base:ubuntu` creates the vscode user as UID 1000/GID 1000.
+    user: "1000:1000"
+    init: true
+    tty: true
+    stdin_open: true
+    environment:
+      # The apps run inside this container so they reach each other on localhost.
+      # The Azure emulators live in sibling containers on `finance3-net` and are
+      # addressed by service hostname (see the per-service notes in local.settings.json).
+      ASPNETCORE_ENVIRONMENT: "Development"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+    volumes:
+      - ../:/workspaces/finance3
+    ports:
+      # Expose the app ports to the host so a browser can reach the frontend,
+      # and the functions hosts are reachable from the host for testing.
+      - "5173:5173"
+      - "7071:7071"
+      - "7072:7072"
+    working_dir: /workspaces/finance3
+    networks:
+      - finance3-net
+    depends_on:
+      cosmos:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+      signalr:
+        condition: service_started
+
+volumes:
+  cosmos-data:
+  azurite-data:
+  signalr-data:
+
+networks:
+  finance3-net:
+    driver: bridge
