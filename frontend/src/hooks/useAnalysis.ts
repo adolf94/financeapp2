@@ -9,7 +9,7 @@ export function useAnalysis(selectedMonth: dayjs.Dayjs = dayjs()) {
   
   // Fetch transactions for the 6 months ending in the selected month
   const sixMonthsAgo = selectedMonth.subtract(5, 'month').startOf('month').format('YYYY-MM-DD')
-  const endOfSelectedMonth = selectedMonth.endOf('month').format('YYYY-MM-DD')
+  const endOfSelectedMonth = selectedMonth.add(1, 'month').startOf('month').format('YYYY-MM-DD')
   
   const { data: transactions = [], isLoading: isLoadingTransactions } = useGetTransactions(sixMonthsAgo, endOfSelectedMonth)
 

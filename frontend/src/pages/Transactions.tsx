@@ -18,7 +18,7 @@ export default function Transactions() {
   const [view, setView] = useState<ViewMode>('daily')
 
   const startDate = currentMonth.format('YYYY-MM-DD')
-  const endDate = currentMonth.endOf('month').format('YYYY-MM-DD')
+  const endDate = currentMonth.add(1, 'month').startOf('month').format('YYYY-MM-DD')
 
   const { data: transactions = [], isLoading, isFetching, refetch } = useGetTransactions(startDate, endDate)
   const { data: accounts = [] } = useGetAccounts()

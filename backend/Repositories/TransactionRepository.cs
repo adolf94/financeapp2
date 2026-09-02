@@ -27,12 +27,7 @@ namespace FinanceApp.Repositories
 
             if (endDate.HasValue)
             {
-                var endDateValue = endDate.Value;
-                if (endDateValue.TimeOfDay == TimeSpan.Zero)
-                {
-                    endDateValue = endDateValue.Date.AddDays(1).AddTicks(-1);
-                }
-                query = query.Where(t => t.Date <= endDateValue);
+                query = query.Where(t => t.Date < endDate.Value);
             }
 
             if (!string.IsNullOrEmpty(accountGroupId))
