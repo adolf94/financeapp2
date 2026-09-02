@@ -52,6 +52,7 @@ export default function TagInput({ tags = [], onChange, placeholder = 'Add tag..
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={tags.length === 0 ? placeholder : ''}
+        enterKeyHint="enter"
         className="flex-1 bg-transparent border-none outline-none text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 min-w-[80px] py-1"
         aria-label="Add tag and press Enter"
       />

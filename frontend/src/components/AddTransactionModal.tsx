@@ -517,6 +517,7 @@ function AddTransactionModalContent() {
                         <div className="flex items-center gap-1.5 mt-0.5">
                           <input
                             type="text"
+                            enterKeyHint="enter"
                             placeholder="Add reference / lookup string (e.g. account # or keyword)..."
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
@@ -530,6 +531,22 @@ function AddTransactionModalContent() {
                             }}
                             className="text-xs px-2.5 py-1 border border-slate-200 dark:border-slate-800 rounded-md bg-slate-50/50 dark:bg-slate-950/50 text-slate-800 dark:text-slate-200 w-full placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              const input = (e.currentTarget.parentElement?.querySelector('input') as HTMLInputElement)
+                              if (input) {
+                                const val = (input.value || '').trim()
+                                if (val && !selectedLookups.includes(val) && !selectedNewLookups.includes(val)) {
+                                  setSelectedLookups((prev) => [...prev, val])
+                                  input.value = ''
+                                }
+                              }
+                            }}
+                            className="shrink-0 px-2 py-1 text-xs font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
+                          >
+                            Add
+                          </button>
                         </div>
                       </div>
                     )}

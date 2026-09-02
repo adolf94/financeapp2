@@ -35,7 +35,7 @@ already been updated to point at these hostnames.
 
 ## Requirements
 
-- Docker with Compose v2 (`docker compose`)
+- Docker with Compose v2 (`docker compose`) — **or** Podman (see below)
 - VS Code with the **Dev Containers** extension (for the devcontainer workflow)
   - *or* no editor at all — the stack is usable standalone via compose
 
@@ -123,6 +123,46 @@ All of these run from the repo root:
   backend webhook via `host.docker.internal:7071`.
 - **First build** downloads the .NET 10 SDK, Azure Functions Core Tools and
   Node — allow several minutes.
+
+## Using Podman instead of Docker
+
+The whole stack works with Podman as the container engine. Two supported setups:
+
+**Option 1 — Podman as a Docker drop-in (for the standard Dev Containers workflow)**
+
+Install/unmask `podman-docker` (or alias `docker` to `podman`), which exposes a
+Docker-compatible socket at `/var/run/docker.sock`. VS Code's Dev Containers
+extension then talks to it as if it were Docker, so the **Dev Containers: Reopen
+in Container** flow works unchanged:
+
+```bash
+# Debian/Ubuntu/Fedora
+sudo apt-get install podman-docker        # or: dnf install podman-docker
+podman machine init && podman machine start   # macOS/Windows Podman Desktop
+```
+
+**Option 2 — `podman compose` (no Docker socket needed)**
+
+Drive compose directly with Podman's own compose support, then attach from VS Code:
+
+```bash
+podman compose -f .devcontainer/docker-compose.yml up -d --build
+
+# Attach the editor to the already-running container:
+#   Dev Containers: Attach to Running Container  →  finance3-dev
+```
+
+Everything else is identical — start the apps with `dev-up.sh` and open
+http://localhost:5173.
+
+**Caveats:**
+
+- Rootless Podman applies per-user UID remapping; if volume permissions look off,
+  the `user: "1000:1000"` + bind-mount in `docker-compose.yml` may need adjusting
+  for your remapping range.
+- The `dev` Dockerfile aliases (`dev-up`, `dev-stack`, `dev-down`) and the
+  scripts invoke `docker compose`; under a pure Podman setup (no Docker alias)
+  run the `podman compose` equivalents from this README instead.
 
 ## Troubleshooting
 
