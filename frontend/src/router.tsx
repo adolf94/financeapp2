@@ -1,4 +1,5 @@
-import { createRouter, createRootRoute, createRoute, lazyRouteComponent } from '@tanstack/react-router'
+import { createRouter, createRootRoute, createRoute, lazyRouteComponent, redirect } from '@tanstack/react-router'
+import dayjs from 'dayjs'
 import AppLayout from '@/layouts/AppLayout'
 
 // Root layout route
@@ -17,6 +18,30 @@ const transactionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/transactions',
   component: lazyRouteComponent(() => import('@/pages/Transactions')),
+  beforeLoad: () => {
+    throw redirect({
+      to: '/transactions/$month/daily',
+      params: { month: dayjs().format('YYYY-MM') },
+    })
+  },
+})
+
+const transactionsRecurringRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/transactions/recurring',
+  component: lazyRouteComponent(() => import('@/pages/TransactionsRecurring')),
+})
+
+const transactionsMonthlyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/transactions/$month/monthly',
+  component: lazyRouteComponent(() => import('@/pages/TransactionsMonthly')),
+})
+
+const transactionsDailyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/transactions/$month/daily',
+  component: lazyRouteComponent(() => import('@/pages/TransactionsDaily')),
 })
 
 const accountsRoute = createRoute({
@@ -53,6 +78,9 @@ const settingsRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   transactionsRoute,
+  transactionsRecurringRoute,
+  transactionsMonthlyRoute,
+  transactionsDailyRoute,
   accountsRoute,
   accountDetailsRoute,
   categoryDetailsRoute,
