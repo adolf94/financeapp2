@@ -3,10 +3,14 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+class Question(BaseModel):
+    Qid: str
+    Q: str
+
 class ChatMessage(BaseModel):
     role: str  # "user" | "ai"
     text: str
-    questions: Optional[List[str]] = Field(default_factory=list)
+    questions: Optional[List[Question]] = Field(default_factory=list)
 
 class RunbookReviewSession(BaseModel):
     id: str = "runbook-review-session"

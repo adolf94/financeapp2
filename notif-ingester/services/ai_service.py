@@ -34,6 +34,10 @@ from prompts.image_prompts import (
     IMAGE_CLASSIFICATION_SYSTEM_PROMPT,
     IMAGE_CLASSIFICATION_USER_PROMPT,
 )
+from prompts.runbook_prompts import (
+    RUNBOOK_REVIEW_PROMPT,
+    RUNBOOK_CHAT_PROMPT,
+)
 from services.image_optimizer import optimize_image_for_ai
 
 IS_FINANCIAL_PROMPT = APP_IS_FINANCIAL_PROMPT
@@ -1206,6 +1210,12 @@ Return ONLY valid JSON matching this schema:
         proposed_account_updates_text = json.dumps(proposed_account_updates, indent=2)
         proposed_vendor_updates_text = json.dumps(proposed_vendor_updates, indent=2)
 
+        prior_questions = 0
+        for h in chat_history:
+            if isinstance(h, dict) and h.get("questions"):
+                prior_questions += len(h["questions"])
+        next_question_number = prior_questions + 1
+
         prompt = RUNBOOK_CHAT_PROMPT.format(
             current_runbook=current_runbook,
             proposed_runbook=proposed_runbook,
@@ -1215,7 +1225,8 @@ Return ONLY valid JSON matching this schema:
             vendors=vendors_text,
             corrections_section=corrections_section,
             chat_history=history_text,
-            user_message=user_message
+            user_message=user_message,
+            next_question_number=next_question_number
         )
 
         response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(

@@ -21,6 +21,12 @@ import { RunbookEditorPanel } from './RunbookReview/RunbookEditorPanel'
 import { MessageSquare, FileEdit, Brain } from 'lucide-react'
 import ReasoningDrawer from './ReasoningDrawer'
 
+type PendingAnswer = {
+  key: string
+  qNum: string
+  answer: string
+}
+
 interface RunbookReviewModalProps {
   isOpen: boolean
   onClose: () => void
@@ -45,7 +51,7 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [currentOperationId, setCurrentOperationId] = useState('')
 
-  const [pendingAnswers, setPendingAnswers] = useState<Record<string, string>>({})
+  const [pendingAnswers, setPendingAnswers] = useState<PendingAnswer[]>([])
   const [pendingAccountFeedback, setPendingAccountFeedback] = useState<Record<string, string>>({})
   const [pendingVendorFeedback, setPendingVendorFeedback] = useState<Record<string, string>>({})
   
@@ -228,12 +234,9 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                   chatHistory={chatHistory}
                   isThinking={isThinking}
                   onSendMessage={(text) => {
-                    const answers = Object.entries(pendingAnswers)
-                      .filter(([_, ans]) => ans.trim() !== '')
-                      .map(([key, ans]) => {
-                        const qIdx = parseInt(key.split('-')[1])
-                        return `[Question ${qIdx + 1}]: ${ans}`
-                      })
+                    const answers = pendingAnswers
+                      .filter(a => a.answer.trim() !== '')
+                      .map(a => `[A${a.qNum}]: ${a.answer}`)
                       .join('\n')
 
                     const accFeedback = Object.entries(pendingAccountFeedback)
@@ -259,13 +262,18 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                     
                     chatReview.mutate({ user_message: fullMessage, operationId: opId, streamReasoning })
 
-                    setPendingAnswers({})
                     setPendingAccountFeedback({})
                     setPendingVendorFeedback({})
                   }}
                   sessionActive={!!session}
                   pendingAnswers={pendingAnswers}
-                  onAnswerChange={(key, val) => setPendingAnswers(prev => ({...prev, [key]: val}))}
+                  onAnswerChange={(key, qNum, val) => setPendingAnswers(prev => {
+                    const existing = prev.find(a => a.key === key)
+                    if (existing) {
+                      return prev.map(a => a.key === key ? { ...a, answer: val } : a)
+                    }
+                    return [...prev, { key, qNum, answer: val }]
+                  })}
                 />
               </div>
 

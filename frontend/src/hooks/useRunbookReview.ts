@@ -19,7 +19,7 @@ export type VendorUpdate = {
 export type ChatMessage = {
   role: 'user' | 'ai'
   text: string
-  questions?: string[]
+  questions?: { Qid: string; Q: string }[]
 }
 
 /** Shape of the persisted session document returned by the Python backend. */
