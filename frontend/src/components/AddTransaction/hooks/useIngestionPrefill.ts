@@ -226,9 +226,13 @@ export function useIngestionPrefill({
   useEffect(() => {
     if (reclassifyData && reclassifyData !== prevReclassifyDataRef.current) {
       prevReclassifyDataRef.current = reclassifyData
-      applyAiParsed(reclassifyData.ai_parsed, reclassifyData.received_at)
+      // When corrections were provided, the new refined output lives in ai_reclassified
+      // (the original ai_parsed is preserved). Prefill using the refined output so the
+      // user sees the updated recommendation.
+      const refined = reclassifyData.ai_reclassified || reclassifyData.ai_parsed
+      applyAiParsed(refined, reclassifyData.received_at)
       if (onSnapshot) {
-        onSnapshot(reclassifyData.ai_parsed)
+        onSnapshot(refined)
       }
     }
   }, [reclassifyData, applyAiParsed, onSnapshot])

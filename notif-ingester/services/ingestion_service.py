@@ -596,7 +596,15 @@ class IngestionService:
                 "score": score
             })
 
-        ingestion.ai_parsed = ai_parsed
+        if user_corrections:
+            # User provided corrections on the Reclassify modal: keep the original ai_parsed
+            # intact and stash the new refined output in ai_reclassified. user_confirmed is
+            # left untouched — it is only written by the confirm/learn flow.
+            ingestion.ai_reclassified = ai_parsed
+        else:
+            # Plain reclassify: regenerate the classification in place.
+            ingestion.ai_parsed = ai_parsed
+            ingestion.ai_reclassified = None
         ingestion.similarity_score = top_score
         ingestion.top_matches = matches
         ingestion.status = "Pending"

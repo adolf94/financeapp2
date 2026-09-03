@@ -756,7 +756,7 @@ function AddTransactionModalContent() {
         isPending={reclassifyMutation.isPending}
         thinkingEventName="reclassifyThinking"
         progressEventName="reclassifyProgress"
-        finalContent={reclassifyMutation.data ? JSON.stringify(reclassifyMutation.data.ai_parsed, null, 2) : undefined}
+        finalContent={reclassifyMutation.data ? JSON.stringify(reclassifyMutation.data.ai_reclassified || reclassifyMutation.data.ai_parsed, null, 2) : undefined}
       />
 
       {isEditVendorOpen && selectedVendorObj && (

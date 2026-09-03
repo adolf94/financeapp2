@@ -66,6 +66,7 @@ export interface PendingIngestion {
   raw_payload: Record<string, any>
   raw_msg: string
   ai_parsed: AiParsedData
+  ai_reclassified?: AiParsedData | null
   user_confirmed: Record<string, any>
   similarity_score: number
   top_matches: Array<{ vendor?: string; category?: string; score?: number }>

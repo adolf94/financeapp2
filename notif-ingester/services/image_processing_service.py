@@ -444,8 +444,16 @@ class ImageProcessingService(IngestionService):
                 related_context=related_context,
             )
 
-            ingestion.ai_parsed = ai_parsed
+            if user_corrections:
+                # User provided corrections on the Reclassify modal: keep the original ai_parsed
+                # intact and stash the new refined output in ai_reclassified. user_confirmed is
+                # left untouched — it is only written by the confirm/learn flow.
+                ingestion.ai_reclassified = ai_parsed
+            else:
+                ingestion.ai_parsed = ai_parsed
+                ingestion.ai_reclassified = None
             ingestion.status = "Pending"
+
             await self.detect_and_link_relations_async(ingestion)
             await self._repo.update_async(ingestion)
             return ingestion

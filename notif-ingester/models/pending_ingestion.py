@@ -62,6 +62,7 @@ class PendingIngestion(BaseModel):
     raw_payload: dict
     raw_msg: str
     ai_parsed: AiParsedData
+    ai_reclassified: Optional[AiParsedData] = None
     user_confirmed: Dict[str, Any] = Field(default_factory=dict)
     similarity_score: float = 0.0
     top_matches: List[dict] = Field(default_factory=list)
