@@ -8,6 +8,7 @@ from models.ledger_entry import LedgerEntry
 class Transaction(BaseModel):
     id: str = Field(alias="Id")
     user_id: str = Field(alias="UserId")
+    created_by: Optional[str] = Field(default=None, alias="CreatedBy")
     schedule_id: Optional[str] = Field(default=None, alias="ScheduleId")
     date: datetime = Field(alias="Date")
     note: str = Field(alias="Note")

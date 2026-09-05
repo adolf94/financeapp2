@@ -18,6 +18,6 @@ bleach
 bleach[css]
 tinycss2
 markdownify
-ar-auth-python-client @ https://github.com/adolf94/ar-oauth2/releases/download/1.1.2/ar_auth_python_client-1.1.2.tar.gz
+ar-auth-python-client @ https://github.com/adolf94/ar-oauth2/releases/download/v1.2.0/ar_auth_python_client-1.2.0.tar.gz
 azure-storage-blob
 Pillow

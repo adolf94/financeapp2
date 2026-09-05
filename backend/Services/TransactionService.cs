@@ -29,14 +29,25 @@ namespace FinanceApp.Services
             return await _transactionRepository.GetTransactionsByAccountIdAsync(userId, accountId);
         }
 
+        public async Task<IEnumerable<Transaction>> GetTransactionsCreatedByAsync(string ownerUserId, string createdBy, DateTime? startDate = null, DateTime? endDate = null)
+        {
+            return await _transactionRepository.GetTransactionsCreatedByAsync(ownerUserId, createdBy, startDate, endDate);
+        }
+
         public async Task<Transaction?> GetTransactionByIdAsync(string userId, string id)
         {
             return await _transactionRepository.GetTransactionByIdAsync(userId, id);
         }
 
+        public async Task<Transaction?> GetTransactionByCreatorAsync(string createdBy, string id)
+        {
+            return await _transactionRepository.GetTransactionByCreatorAsync(createdBy, id);
+        }
+
         public async Task<Transaction> CreateTransactionAsync(string userId, Transaction transaction)
         {
             transaction.UserId = userId;
+            transaction.CreatedBy ??= userId;
             CopyNoteAndReferenceNumberToEntries(transaction);
 
             foreach (var entry in transaction.Entries)

@@ -49,10 +49,14 @@ _auth_client = ArAuthAzureClient(authority="https://auth.adolfrey.com/api", clie
 # Set to track notif_ids currently in-flight / being inserted to prevent duplicates
 _processing_notif_ids = set()
 
-def _require_auth(req: func.HttpRequest, required_scopes: Optional[list] = None) -> Tuple[Optional[dict], Optional[func.HttpResponse]]:
-    """Validate Bearer JWT and optional scopes. Returns (payload, None) on success, (None, error_response) on failure."""
+def _require_auth(req: func.HttpRequest, required_scopes: Optional[list] = None, any_scopes: Optional[list] = None) -> Tuple[Optional[dict], Optional[func.HttpResponse]]:
+    """Validate Bearer JWT and optional scopes. Returns (payload, None) on success, (None, error_response) on failure.
 
-    return _auth_client.validate(req, required_scopes=["user"])
+    When neither required_scopes nor any_scopes is given, the baseline 'user' scope is enforced.
+    """
+    if required_scopes is None and any_scopes is None:
+        required_scopes = ["user"]
+    return _auth_client.validate(req, required_scopes=required_scopes, any_scopes=any_scopes)
 
 def validate_api_key(req: func.HttpRequest) -> Tuple[Optional[dict], Optional[func.HttpResponse]]:
     """Validate Bearer JWT using personal_access_token / Bearer auth with notif_ingestion scope (configurable via NOTIF_INGESTION_SCOPE env var)."""
@@ -433,7 +437,7 @@ async def LearnIngestionFunction(req: func.HttpRequest) -> func.HttpResponse:
 # ── Function 3.1: GetPendingIngestionsFunction ──────────────────────────
 @app.route(route="ingestions", methods=["GET"])
 async def GetPendingIngestionsFunction(req: func.HttpRequest) -> func.HttpResponse:
-    user, err = _require_auth(req)
+    user, err = _require_auth(req, any_scopes=["user", "ingestions:read"])
     if err: return err
 
     status = req.params.get("status", "Pending")
@@ -460,7 +464,7 @@ async def GetPendingIngestionsFunction(req: func.HttpRequest) -> func.HttpRespon
 # ── Function 3.1b: GetIngestionByIdFunction ──────────────────────────
 @app.route(route="ingestions/{ingestion_id}", methods=["GET"])
 async def GetIngestionByIdFunction(req: func.HttpRequest) -> func.HttpResponse:
-    user, err = _require_auth(req)
+    user, err = _require_auth(req, any_scopes=["user", "ingestions:read"])
     if err: return err
 
     ingestion_id = req.route_params.get("ingestion_id")
@@ -483,7 +487,7 @@ async def GetIngestionByIdFunction(req: func.HttpRequest) -> func.HttpResponse:
 # ── Function 3.1b2: GetImageBlobFunction ──────────────────────────────
 @app.route(route="images/{ingestion_id}", methods=["GET"])
 async def GetImageBlobFunction(req: func.HttpRequest) -> func.HttpResponse:
-    user, err = _require_auth(req)
+    user, err = _require_auth(req, any_scopes=["user", "ingestions:read"])
     if err:
         return err
 
@@ -598,7 +602,7 @@ async def RejectIngestionFunction(req: func.HttpRequest) -> func.HttpResponse:
 # ── Function 3.3: ConfirmStatusFunction ────────────────────────────────
 @app.route(route="ingestions/{ingestion_id}/confirm-status", methods=["POST"])
 async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
-    user, err = _require_auth(req)
+    user, err = _require_auth(req, any_scopes=["user", "transactions:create"])
     if err: return err
 
     ingestion_id = req.route_params.get("ingestion_id")
@@ -613,6 +617,20 @@ async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
         dismiss_status = body.get("dismiss_status", "Merged") # Default to Merged
     except ValueError:
         return func.HttpResponse("Invalid JSON", status_code=400)
+
+    # A 'user' token always acts as itself (sub). A pure 'transactions:create' caller
+    # (client_credentials) acts on behalf of a user and must supply body.user_id.
+    token_scopes = user.get("scope") or ""
+    if isinstance(token_scopes, list):
+        token_scopes = " ".join(token_scopes)
+    if not any(s.rsplit("/", 1)[-1] == "user" for s in token_scopes.split()):
+        owner_id = body.get("user_id")
+        if not owner_id:
+            return func.HttpResponse(
+                json.dumps({"error": "user_id is required when the caller does not have the 'user' scope."}),
+                status_code=400, mimetype="application/json"
+            )
+        user_id = owner_id
         
     ingestion_service = get_ingestion_service()
     try:

@@ -33,6 +33,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasAnyScope("user", "accounts:read")) return context.MissingScopeResult("user or accounts:read");
             var accounts = await _accountService.GetAccountsAsync(userId);
             return new OkObjectResult(accounts);
         }
@@ -44,6 +45,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasAnyScope("user", "accounts:read")) return context.MissingScopeResult("user or accounts:read");
             var account = await _accountService.GetAccountByIdAsync(userId, id);
             if (account == null)
             {
@@ -58,6 +60,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             var account = JsonSerializer.Deserialize<Account>(requestBody, _jsonOptions);
 
@@ -77,6 +80,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             var account = JsonSerializer.Deserialize<Account>(requestBody, _jsonOptions);
 
@@ -104,6 +108,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             await _accountService.DeleteAccountAsync(userId, id);
             return new NoContentResult();
         }
@@ -115,6 +120,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasAnyScope("user", "accounts:read")) return context.MissingScopeResult("user or accounts:read");
             var groups = await _accountService.GetAccountGroupsAsync(userId);
             return new OkObjectResult(groups);
         }
@@ -125,6 +131,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             var groupPayload = JsonSerializer.Deserialize<AccountGroup>(requestBody, _jsonOptions);
 
@@ -144,6 +151,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             await _accountService.DeleteAccountGroupAsync(userId, id);
             return new NoContentResult();
         }
@@ -153,6 +161,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             

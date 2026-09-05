@@ -76,6 +76,41 @@ namespace FinanceApp.Repositories
             return transactions;
         }
 
+        public async Task<IEnumerable<Transaction>> GetTransactionsCreatedByAsync(string ownerUserId, string createdBy, DateTime? startDate = null, DateTime? endDate = null)
+        {
+            var query = _context.Transactions
+                .WithPartitionKey(ownerUserId)
+                .Where(t => t.CreatedBy == createdBy);
+
+            if (startDate.HasValue)
+            {
+                query = query.Where(t => t.Date >= startDate.Value);
+            }
+
+            if (endDate.HasValue)
+            {
+                query = query.Where(t => t.Date < endDate.Value);
+            }
+
+            var transactions = await query.OrderByDescending(t => t.Date).ToListAsync();
+
+            var allTxIds = transactions.Select(t => t.Id).ToList();
+            if (allTxIds.Any())
+            {
+                var entries = await _context.LedgerEntries
+                    .WithPartitionKey(ownerUserId)
+                    .Where(e => allTxIds.Contains(e.TransactionId))
+                    .ToListAsync();
+
+                foreach (var t in transactions)
+                {
+                    t.Entries = entries.Where(e => e.TransactionId == t.Id).ToList();
+                }
+            }
+
+            return transactions;
+        }
+
         public async Task<IEnumerable<Transaction>> GetTransactionsByAccountIdAsync(string userId, string accountId)
         {
             var entries = await _context.LedgerEntries
@@ -121,6 +156,24 @@ namespace FinanceApp.Repositories
                     .ToListAsync();
             }
             
+            return transaction;
+        }
+
+        public async Task<Transaction?> GetTransactionByCreatorAsync(string createdBy, string id)
+        {
+            // Cross-partition lookup: transactions created by a client_credentials app
+            // live in the target user's partition, keyed by CreatedBy.
+            var transaction = await _context.Transactions
+                .FirstOrDefaultAsync(t => t.Id == id && t.CreatedBy == createdBy);
+
+            if (transaction != null)
+            {
+                transaction.Entries = await _context.LedgerEntries
+                    .WithPartitionKey(transaction.UserId)
+                    .Where(e => e.TransactionId == id)
+                    .ToListAsync();
+            }
+
             return transaction;
         }
 

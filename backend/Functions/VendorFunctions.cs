@@ -31,6 +31,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var vendors = await _vendorService.GetVendorsAsync(userId);
             return new OkObjectResult(vendors);
         }
@@ -41,6 +42,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             using var doc = JsonDocument.Parse(requestBody);
             
@@ -98,6 +100,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             var vendor = JsonSerializer.Deserialize<Models.Vendor>(requestBody, _jsonOptions);
@@ -128,6 +131,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             await _vendorService.DeleteVendorAsync(userId, id);
             return new NoContentResult();
         }
@@ -139,6 +143,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var lookups = await _vendorService.GetLookupsByVendorIdAsync(userId, id);
             return new OkObjectResult(lookups);
         }
@@ -150,6 +155,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
 
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             using var doc = JsonDocument.Parse(requestBody);
@@ -170,6 +176,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             await _vendorService.DeleteLookupAsync(userId, lookupId);
             return new NoContentResult();
         }

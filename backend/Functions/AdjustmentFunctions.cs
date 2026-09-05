@@ -34,6 +34,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
 
             string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             if (string.IsNullOrWhiteSpace(requestBody))

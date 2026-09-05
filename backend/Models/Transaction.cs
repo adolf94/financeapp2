@@ -16,6 +16,7 @@ namespace FinanceApp.Models
     {
         public string Id { get; set; } = Guid.CreateVersion7().ToString();
         public string UserId { get; set; } = string.Empty;
+        public string? CreatedBy { get; set; }
         public string? ScheduleId { get; set; }
         public DateTime Date { get; set; }
         public string Note { get; set; } = string.Empty;

@@ -33,6 +33,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var transactions = await _recurringTransactionService.GetRecurringTransactionsAsync(userId);
             return new OkObjectResult(transactions);
         }
@@ -43,6 +44,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var transaction = await _recurringTransactionService.GetRecurringTransactionByIdAsync(userId, id);
             
             if (transaction == null)
@@ -57,6 +59,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             
             try
@@ -80,6 +83,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             
             try
@@ -107,6 +111,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             await _recurringTransactionService.DeleteRecurringTransactionAsync(userId, id);
             return new NoContentResult();
         }

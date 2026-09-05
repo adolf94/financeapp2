@@ -35,6 +35,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             
             DateTime? startDate = null;
             DateTime? endDate = null;
@@ -54,6 +55,26 @@ namespace FinanceApp.Functions
             return new OkObjectResult(transactions);
         }
 
+        [Function("GetTransactionsByCreator")]
+        public async Task<IActionResult> GetTransactionsByCreator(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "transactions/owner/{userId}")] HttpRequest req, FunctionContext context,
+            string userId)
+        {
+            string? callerId = context.GetUserId();
+            if (string.IsNullOrEmpty(callerId)) return new UnauthorizedResult();
+            if (!context.HasScope("transactions:read:self")) return context.MissingScopeResult("transactions:read:self");
+
+            DateTime? startDate = null;
+            DateTime? endDate = null;
+            if (DateTime.TryParse(req.Query["startDate"], out var parsedStart)) startDate = parsedStart;
+            if (DateTime.TryParse(req.Query["endDate"], out var parsedEnd)) endDate = parsedEnd;
+
+            // Returns only transactions the caller created for the given owner:
+            // UserId == {userId} (partition) AND CreatedBy == {sub}.
+            var transactions = await _transactionService.GetTransactionsCreatedByAsync(userId, callerId, startDate, endDate);
+            return new OkObjectResult(transactions);
+        }
+
         [Function("GetTransactionById")]
         public async Task<IActionResult> GetTransactionById(
             [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "transactions/{id}")] HttpRequest req, FunctionContext context,
@@ -61,7 +82,13 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
-            var transaction = await _transactionService.GetTransactionByIdAsync(userId, id);
+            if (!context.HasAnyScope("user", "transactions:read:self")) return context.MissingScopeResult("user or transactions:read:self");
+
+            // 'user' scope reads its own transactions; a pure 'transactions:read:self' caller
+            // (client_credentials) can only read transactions it created (CreatedBy = sub).
+            var transaction = context.HasScope("user")
+                ? await _transactionService.GetTransactionByIdAsync(userId, id)
+                : await _transactionService.GetTransactionByCreatorAsync(userId, id);
             if (transaction == null)
             {
                 return new NotFoundResult();
@@ -76,6 +103,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var transactions = await _transactionService.GetTransactionsByAccountIdAsync(userId, accountId);
             return new OkObjectResult(transactions);
         }
@@ -86,6 +114,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasAnyScope("user", "transactions:create")) return context.MissingScopeResult("user or transactions:create");
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             var transaction = JsonSerializer.Deserialize<Transaction>(requestBody, _jsonOptions);
 
@@ -94,9 +123,21 @@ namespace FinanceApp.Functions
                 return new BadRequestObjectResult("Invalid transaction data.");
             }
 
+            // 'user' scope always acts as itself; a 'transactions:create'-only caller
+            // must supply the target userId explicitly. CreatedBy is always the caller's sub.
+            if (context.HasScope("user"))
+            {
+                transaction.UserId = userId;
+            }
+            else if (string.IsNullOrWhiteSpace(transaction.UserId))
+            {
+                return new BadRequestObjectResult("userId is required when the caller does not have the 'user' scope.");
+            }
+            transaction.CreatedBy = userId;
+
             try
             {
-                var createdTx = await _transactionService.CreateTransactionAsync(userId, transaction);
+                var createdTx = await _transactionService.CreateTransactionAsync(transaction.UserId, transaction);
                 return new CreatedResult($"/api/transactions/{createdTx.Id}", createdTx);
             }
             catch (KeyNotFoundException ex)
@@ -120,6 +161,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             var transaction = JsonSerializer.Deserialize<Transaction>(requestBody, _jsonOptions);
 
@@ -155,6 +197,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             try
             {
                 await _transactionService.DeleteTransactionAsync(userId, id);
@@ -171,6 +214,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             var aiData = JsonSerializer.Deserialize<AiParsedData>(requestBody, _jsonOptions);
@@ -230,6 +274,7 @@ namespace FinanceApp.Functions
             {
                 Id = Guid.CreateVersion7().ToString(),
                 UserId = userId,
+                CreatedBy = userId,
                 Date = aiData.Date ?? DateTime.UtcNow,
                 Vendor = aiData.Vendor?.Name,
                 Type = txType,
@@ -284,6 +329,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
 
             string? referenceNumber = req.Query["referenceNumber"];
             decimal? amount = null;
