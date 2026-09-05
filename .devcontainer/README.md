@@ -10,8 +10,8 @@ contains the full toolchain.
 ```
 ┌───────────────────────────── host ──────────────────────────────┐
 │                                                                │
-│   browser ─► http://localhost:5173  (frontend/Vite)            │
-│              http://localhost:7071  (backend API)              │
+│   browser ─► http://localhost:15173 (frontend/Vite)            │
+│              http://localhost:17071 (backend API)              │
 │              http://localhost:7072  (ingester API)             │
 │                                                                │
 │   docker compose (finance3-net bridge)                         │
@@ -55,7 +55,7 @@ already been updated to point at these hostnames.
    .devcontainer/scripts/dev-up.sh
    ```
 
-5. Open http://localhost:5173 in the host browser.
+5. Open http://localhost:15173 in the host browser.
 
 ### Option B — Standalone compose (no VS Code)
 
@@ -101,9 +101,9 @@ All of these run from the repo root:
 | Cosmos DB        | `finance3-cosmos`   | 8081        | 8081             | Default emulator key; cert is self-signed |
 | Azure Storage    | `finance3-azurite`  | 10000-10002 | 10000-10002      | Used by both Functions hosts            |
 | SignalR          | `finance3-signalr`  | 8888        | 6001             | Emulator listens on 8888 (not 8080); optional, ingester degrades gracefully |
-| backend (.NET)   | `finance3-dev`      | 7071        | 7071             | `func start` in `backend/`              |
+| backend (.NET)   | `finance3-dev`      | 7071        | 17071            | `func start` in `backend/`              |
 | notif-ingester   | `finance3-dev`      | 7072        | 7072             | `func start` in `notif-ingester/`       |
-| frontend (Vite)  | `finance3-dev`      | 5173        | 5173             | Hot reload mounted from the repo        |
+| frontend (Vite)  | `finance3-dev`      | 5173        | 15173            | Hot reload mounted from the repo        |
 
 ## Configuration notes
 
@@ -120,7 +120,7 @@ All of these run from the repo root:
   unreachable the ingester logs a warning and continues (see
   `notif-ingester/services/signalr_publisher.py`). The emulator listens on
   port **8888** and is mapped to host port 6001; the compose service reaches the
-  backend webhook via `host.docker.internal:7071`.
+  backend webhook via `host.docker.internal:17071`.
 - **First build** downloads the .NET 10 SDK, Azure Functions Core Tools and
   Node — allow several minutes.
 

@@ -6,10 +6,13 @@
 # `signalr` services are the Azure emulators that the apps connect to over the
 # shared `finance3-net` network, addressed by their service hostname.
 #
-#  Dev ports  (inside the `dev` container):
-#    7071  -> backend          (.NET Azure Functions)
-#    7072  -> notif-ingester   (Python Azure Functions)
-#    5173  -> frontend         (Vite dev server)
+  #  Dev ports  (inside the `dev` container):
+  #    7071  -> backend          (.NET Azure Functions)
+  #    7072  -> notif-ingester   (Python Azure Functions)
+  #    5173  -> frontend         (Vite dev server)
+  #
+  #  NOTE: the frontend is published to the host at :15173 (not :5173) because
+  #  the ar-loans-app devcontainer already claims 5173.
 #
 #  Emulator services (reachable from `dev` via <hostname>:<port>):
 #    cosmos  :8081   Cosmos DB emulator   (also published to host :8081)
@@ -109,8 +112,10 @@ services:
     ports:
       # Expose the app ports to the host so a browser can reach the frontend,
       # and the functions hosts are reachable from the host for testing.
-      - "5173:5173"
-      - "7071:7071"
+      # NOTE: the backend is published to the host at :17071 (not :7071) because
+      # the ar-loans-app devcontainer/VS Code forward already claims 7071.
+      - "15173:5173"
+      - "17071:7071"
       - "7072:7072"
     working_dir: /workspaces/finance3
     networks:

@@ -2,7 +2,7 @@ import axios from 'axios'
 import { getUserManager, refreshAccessToken } from '@adolf94/ar-auth-client'
 
 const apiClient = axios.create({
-  baseURL: window.authConfig?.apiBaseUrl ?? import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:7071/api',
+  baseURL: window.authConfig?.apiBaseUrl ?? import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:17071/api',
   headers: {
     'Content-Type': 'application/json',
   },
