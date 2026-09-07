@@ -33,7 +33,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
-            if (!context.HasAnyScope("user", "accounts:read")) return context.MissingScopeResult("user or accounts:read");
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var accounts = await _accountService.GetAccountsAsync(userId);
             return new OkObjectResult(accounts);
         }
@@ -45,7 +45,7 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
-            if (!context.HasAnyScope("user", "accounts:read")) return context.MissingScopeResult("user or accounts:read");
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var account = await _accountService.GetAccountByIdAsync(userId, id);
             if (account == null)
             {
@@ -120,8 +120,34 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
-            if (!context.HasAnyScope("user", "accounts:read")) return context.MissingScopeResult("user or accounts:read");
+            if (!context.HasScope("user")) return context.MissingScopeResult("user");
             var groups = await _accountService.GetAccountGroupsAsync(userId);
+            return new OkObjectResult(groups);
+        }
+
+        [Function("GetOwnerAccounts")]
+        public async Task<IActionResult> GetOwnerAccounts(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "owners/{userid}/accounts")] HttpRequest req, FunctionContext context,
+            string userid)
+        {
+            string? callerId = context.GetUserId();
+            if (string.IsNullOrEmpty(callerId)) return new UnauthorizedResult();
+            if (!context.HasScope("accounts:read")) return context.MissingScopeResult("accounts:read");
+            if (context.HasScope("user") && userid != callerId) return new NotFoundResult();
+            var accounts = await _accountService.GetAccountsAsync(userid);
+            return new OkObjectResult(accounts);
+        }
+
+        [Function("GetOwnerAccountGroups")]
+        public async Task<IActionResult> GetOwnerAccountGroups(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "owners/{userid}/account-group")] HttpRequest req, FunctionContext context,
+            string userid)
+        {
+            string? callerId = context.GetUserId();
+            if (string.IsNullOrEmpty(callerId)) return new UnauthorizedResult();
+            if (!context.HasScope("accounts:read")) return context.MissingScopeResult("accounts:read");
+            if (context.HasScope("user") && userid != callerId) return new NotFoundResult();
+            var groups = await _accountService.GetAccountGroupsAsync(userid);
             return new OkObjectResult(groups);
         }
 

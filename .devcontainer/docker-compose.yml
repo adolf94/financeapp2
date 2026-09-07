@@ -30,10 +30,20 @@ services:
   cosmos:
     image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-latest
     container_name: finance3-cosmos
-    restart: unless-stopped
+    restart: no
     environment:
       AZURE_COSMOS_EMULATOR_PARTITION_COUNT: "10"
       AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "true"
+    # Workaround: an unclean container stop can leave a stale
+    # /data/db/postmaster.pid (the vnext emulator keeps its data at /data,
+    # image default DATA_PATH), which makes the internal Postgres refuse to
+    # start on the next boot ("lock file postmaster.pid already exists") and
+    # the healthcheck then never passes. Clear the stale lock files before
+    # handing over to the real entrypoint.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'rm -f /data/db/postmaster.pid /data/db/pg_internal.pid; exec /home/cosmosdev/docker_entrypoint.sh'
     ports:
       - "8081:8081"
     volumes:
@@ -52,7 +62,7 @@ services:
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:latest
     container_name: finance3-azurite
-    restart: unless-stopped
+    restart: no
     command: "azurite --silent --skipApiVersionCheck --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0"
     ports:
       - "10000:10000"
@@ -75,7 +85,7 @@ services:
   signalr:
     image: mcr.microsoft.com/signalr/signalr-emulator:latest
     container_name: finance3-signalr
-    restart: unless-stopped
+    restart: no
     environment:
       ASPNETCORE_ENVIRONMENT: "Development"
     # On Linux docker, the emulator needs host.docker.internal to reach the
@@ -100,6 +110,12 @@ services:
     init: true
     tty: true
     stdin_open: true
+    # Inject the repo secrets (e.g. NPM_AUTH_TOKEN used by nuget.config for the
+    # GitHub Packages feed) into the container. Compose's auto-loaded .env is
+    # only used for variable substitution in this file, NOT passed to the
+    # container, so it must be referenced explicitly here.
+    env_file:
+      - ./.env
     environment:
       # The apps run inside this container so they reach each other on localhost.
       # The Azure emulators live in sibling containers on `finance3-net` and are

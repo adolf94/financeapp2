@@ -197,10 +197,19 @@ namespace FinanceApp.Functions
         {
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
-            if (!context.HasScope("user")) return context.MissingScopeResult("user");
+            if (!context.HasAnyScope("user", "transactions:delete:self")) return context.MissingScopeResult("user or transactions:delete:self");
             try
             {
-                await _transactionService.DeleteTransactionAsync(userId, id);
+                // 'user' scope deletes its own transactions; a pure 'transactions:delete:self'
+                // caller (client_credentials) can only delete transactions it created (CreatedBy = sub).
+                if (context.HasScope("user"))
+                {
+                    await _transactionService.DeleteTransactionAsync(userId, id);
+                }
+                else
+                {
+                    await _transactionService.DeleteTransactionByCreatorAsync(userId, id);
+                }
                 return new NoContentResult();
             }
             catch (KeyNotFoundException ex)

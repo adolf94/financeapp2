@@ -170,6 +170,21 @@ namespace FinanceApp.Services
             await _transactionRepository.SaveChangesAsync();
         }
 
+        public async Task DeleteTransactionByCreatorAsync(string createdBy, string id)
+        {
+            // Cross-partition lookup: transactions created by a client_credentials app
+            // live in the target user's partition, keyed by CreatedBy.
+            var existingTx = await _transactionRepository.GetTransactionByCreatorAsync(createdBy, id);
+            if (existingTx == null)
+            {
+                throw new KeyNotFoundException("Transaction not found.");
+            }
+
+            await RevertBalanceImpactAsync(existingTx.UserId, existingTx);
+            await _transactionRepository.DeleteTransactionAsync(existingTx.UserId, id);
+            await _transactionRepository.SaveChangesAsync();
+        }
+
         public async Task<IEnumerable<LedgerEntry>> SearchLedgerEntriesAsync(string userId, string? referenceNumber, decimal? amount, DateTime? aroundDate, int windowMinutes = 5)
         {
             return await _transactionRepository.SearchLedgerEntriesAsync(userId, referenceNumber, amount, aroundDate, windowMinutes);

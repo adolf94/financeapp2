@@ -39,6 +39,20 @@ set -a
 . "$ROOT/.devcontainer/.env"
 set +a
 
+echo "==> Persisting AI CLI bins on PATH in ~/.bashrc"
+# setup.sh only exports PATH for its own process; persist it so every new
+# terminal (which sources ~/.bashrc) can resolve `opencode` from anywhere.
+# Marker must match what we append so reruns don't duplicate.
+PATH_MARKER="ar-loans-app: put AI CLI bins (~/.opencode/bin, ~/.local/bin) on PATH."
+if ! grep -qsF "$PATH_MARKER" "$HOME/.bashrc"; then
+  cat >> "$HOME/.bashrc" <<EOF
+
+# $PATH_MARKER
+export PATH="\$HOME/.opencode/bin:\$HOME/.local/bin:\$PATH"
+EOF
+fi
+export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$PATH"
+
 
 
 

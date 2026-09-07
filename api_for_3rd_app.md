@@ -36,12 +36,13 @@ Every protected route returns:
 |-------|-----------------|-------------------|
 | `transactions:create` | **`client_credentials` only** | `POST /api/transactions`, `POST <INGESTER_BASE_URL>/ingestions/{id}/confirm-status` |
 | `transactions:read:self` | **`client_credentials` only** | `GET /api/transactions/owner/{userId}`, `GET /api/transactions/{id}` |
-| `accounts:read` | `client_credentials` **or** `spa` | `GET /api/accounts`, `GET /api/accounts/{id}`, `GET /api/account-groups` |
+| `transactions:delete:self` | **`client_credentials` only** | `DELETE /api/transactions/{id}` |
+| `accounts:read` | `client_credentials` **or** `spa` | `GET /api/owners/{userId}/accounts`, `GET /api/owners/{userId}/account-group` |
 | `ingestions:read` | `client_credentials` **or** `spa` | `GET <INGESTER_BASE_URL>/ingestions`, `GET <INGESTER_BASE_URL>/ingestions/{id}`, `GET <INGESTER_BASE_URL>/images/{ingestion_id}` |
 
-> `transactions:create` and `transactions:read:self` are issued exclusively to
-> confidential clients via `client_credentials`. SPA / user tokens cannot obtain
-> them. `accounts:read` works with either flow.
+> `transactions:create`, `transactions:read:self` and `transactions:delete:self`
+> are issued exclusively to confidential clients via `client_credentials`.
+> SPA / user tokens cannot obtain them. `accounts:read` works with either flow.
 
 ---
 
@@ -120,28 +121,47 @@ Authorization: Bearer <client_credentials token>
 
 `200 OK` → transaction with its ledger entries. `404` → not found or not created by you.
 
-### GET `/api/accounts`, GET `/api/accounts/{id}`, GET `/api/account-groups` — requires `accounts:read`
+### DELETE `/api/transactions/{id}` — requires `transactions:delete:self`
 
-Read the ledger account structure.
+Deletes a **single transaction created by this client**.
 
-- **SPA flow:** returns the signed-in user's accounts/groups.
-- **client_credentials flow:** returns accounts visible to the caller's
-  identity (`{sub}`).
+- Visibility rule: only transactions with `CreatedBy == {sub}` can be deleted.
+  A `client_credentials` token therefore deletes exactly what it created —
+  `404` for everything else, including other apps' transactions.
+- The owner's account balances (ledger side effects) are reverted
+  synchronously before the transaction is removed.
+- `DELETE` remains unavailable to `transactions:create`-only callers; this
+  scope must be requested explicitly.
 
 ```http
-GET <API_BASE_URL>/api/accounts
+DELETE <API_BASE_URL>/api/transactions/{id}
+Authorization: Bearer <client_credentials token>
+```
+
+`204 No Content` on success. `404` → not found or not created by you.
+
+### GET `/api/owners/{userId}/accounts`, GET `/api/owners/{userId}/account-group` — requires `accounts:read`
+
+Read the ledger account structure **for a given owner** (`{userId}` is the
+target user's id).
+
+- **client_credentials flow:** returns the owner's accounts/groups.
+- **SPA flow:** the caller must be the owner — a `user`-scoped token requesting
+  another `userId` gets `404`.
+
+```http
+GET <API_BASE_URL>/api/owners/{userId}/accounts
 Authorization: Bearer <token>
 ```
 
 ```http
-GET <API_BASE_URL>/api/accounts/{id}
+GET <API_BASE_URL>/api/owners/{userId}/account-group
 Authorization: Bearer <token>
 ```
 
-```http
-GET <API_BASE_URL>/api/account-groups
-Authorization: Bearer <token>
-```
+> The user-facing `GET /api/accounts`, `GET /api/accounts/{id}` and
+> `GET /api/account-groups` routes no longer accept `accounts:read`; they
+> require the `user` scope.
 
 ---
 
@@ -190,7 +210,7 @@ case-insensitive. IDs are GUIDv7 strings.
 }
 ```
 
-### `AccountGroup` — returned by `GET /api/account-groups`
+### `AccountGroup` — returned by `GET /api/owners/{userId}/account-group`
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -333,7 +353,7 @@ curl -X POST https://auth.adolfrey.com/api/connect/token \
   -d grant_type=client_credentials \
   -d client_id=<your-client-id> \
   -d client_secret=<your-client-secret> \
-  -d scope="api://finance-app-api/transactions:create api://finance-app-api/transactions:read:self api://finance-app-api/accounts:read api://finance-app-api/ingestions:read"
+  -d scope="api://finance-app-api/transactions:create api://finance-app-api/transactions:read:self api://finance-app-api/transactions:delete:self api://finance-app-api/accounts:read api://finance-app-api/ingestions:read"
 ```
 
 Onboarding checklist:
@@ -351,7 +371,8 @@ Onboarding checklist:
 
 - Ledger side effects (balance updates, vendor last-used tracking) run
   synchronously during creation; a `201` means the double-entry is committed.
-- `PATCH`/`PUT`/`DELETE` are **not** exposed to `transactions:create` callers —
-  user-scoped (`user`) tokens only.
+- `PATCH`/`PUT` are **not** exposed to granular client_credentials callers —
+  user-scoped (`user`) tokens only. `DELETE` is available to
+  `transactions:delete:self` callers for transactions they created.
 - Rate limiting / auditing is enforced at the API gateway; contact the Finance
   team for throughput guarantees.
