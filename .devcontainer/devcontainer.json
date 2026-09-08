@@ -36,7 +36,8 @@
         "bradlc.vscode-tailwindcss",
         "ms-azuretools.vscode-azurefunctions",
         "formulahendry.azure-storage-explorer",
-        "ms-azuretools.vscode-cosmosdb"
+        "ms-azuretools.vscode-cosmosdb",
+        "google.antigravity"
       ]
     }
   },

@@ -89,6 +89,17 @@ else
 fi
 
 
+echo "==> Ensuring agy (Antigravity CLI)"
+# Best-effort and idempotent: ai-cli.sh skips when agy is already present
+# and never blocks setup when offline. Binary lands in ~/.local/bin,
+# which the PATH block above already persists.
+if command -v agy >/dev/null 2>&1; then
+  echo "agy OK: $(agy --version 2>&1 | head -n1)"
+else
+  bash "$ROOT/.devcontainer/scripts/ai-cli.sh" --agy --no-extensions \
+    || echo "WARN: agy install failed (offline?) - rerun setup.sh when online, or run: curl -fsSL https://antigravity.google/cli/install.sh | bash" >&2
+fi
+
 echo "==> Restoring backend NuGet packages"
 dotnet restore backend/backend.csproj
 
