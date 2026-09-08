@@ -632,6 +632,63 @@ class FinanceApiService:
         """Persist the SMS-specific runbook."""
         await self.save_runbook_content_async(user_id, content, runbook_id="runbook-sms")
 
+    @staticmethod
+    def _normalize_package_id(package_id: str) -> str:
+        """Trim/lowercase a package id; reject ids invalid for Cosmos item ids."""
+        if not package_id or not isinstance(package_id, str):
+            return ""
+        clean = package_id.strip().lower()
+        if not clean or re.search(r'[/#?\\]', clean) or clean.startswith('.'):
+            return ""
+        return clean
+
+    async def get_app_runbook_content_async(self, user_id: str, package_id: str) -> str:
+        """Fetch the per-app (package id) runbook. Returns empty string if not found/invalid."""
+        pkg = self._normalize_package_id(package_id)
+        if not pkg:
+            return ""
+        return await self.get_runbook_content_async(user_id, runbook_id=f"runbook-app:{pkg}")
+
+    async def save_app_runbook_content_async(self, user_id: str, package_id: str, content: str, label: Optional[str] = None) -> None:
+        """Persist the per-app (package id) runbook."""
+        pkg = self._normalize_package_id(package_id)
+        if not pkg or not self.client:
+            return
+        db = self.client.get_database_client(self.db_name)
+        container = db.get_container_client("Settings")
+        doc = {
+            "id": f"runbook-app:{pkg}",
+            "UserId": user_id,
+            "packageId": pkg,
+            "content": content
+        }
+        if label:
+            doc["label"] = label
+        await container.upsert_item(doc)
+
+    async def list_app_runbooks_async(self, user_id: str) -> list[dict]:
+        """List configured per-app runbook summaries for a user."""
+        if not self.client:
+            return []
+        db = self.client.get_database_client(self.db_name)
+        container = db.get_container_client("Settings")
+        results = []
+        query = "SELECT c.id, c.packageId, c.label, c._ts FROM c WHERE STARTSWITH(c.id, 'runbook-app:')"
+        async for item in container.query_items(
+            query=query,
+            partition_key=user_id
+        ):
+            if item.get("UserId") != user_id:
+                continue
+            item_id = item.get("id", "")
+            pkg = item.get("packageId") or item_id.replace("runbook-app:", "", 1)
+            results.append({
+                "package_id": pkg,
+                "label": item.get("label", ""),
+                "updated": item.get("_ts")
+            })
+        return sorted(results, key=lambda r: r["package_id"])
+
     async def update_account_descriptions_async(self, user_id: str, updates: list[dict]) -> None:
         if not self.client or not updates:
             return

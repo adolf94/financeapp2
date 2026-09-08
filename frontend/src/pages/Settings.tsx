@@ -47,8 +47,9 @@ import {
 } from '@/hooks/useVendors'
 import EditVendorModal from '@/components/EditVendorModal'
 
-import { useGetRunbookCorrections, useGetRunbookSession } from '@/hooks/useRunbookReview'
+import { useGetRunbookCorrections, useGetRunbookSession, useAppRunbooks } from '@/hooks/useRunbookReview'
 import { RunbookReviewModal } from '@/components/RunbookReviewModal'
+import { AppRunbookPicker, AppRunbookOption } from '@/components/RunbookReview/AppRunbookPicker'
 import { useQuery } from '@tanstack/react-query'
 import ingesterClient from '@/lib/ingesterClient'
 import { TableListSkeleton } from '@/components/ui/Skeleton'
@@ -1049,15 +1050,39 @@ function NotificationLogSettings() {
 
 function RunbookReviewSettings() {
   const [runbookType, setRunbookType] = useState<'app' | 'sms' | 'email' | 'image'>('app')
+  const [appPkg, setAppPkg] = useState('')
   const { data: session } = useGetRunbookSession()
   const hasActiveSession = !!session
   const activeRunbookType = session?.runbook_type || runbookType
+  const activeAppPkg = activeRunbookType === 'app' ? (session ? session.pkg || '' : appPkg) : ''
 
-  const { data: corrections = [], isLoading } = useGetRunbookCorrections(activeRunbookType)
+  const { data: allCorrections = [], isLoading } = useGetRunbookCorrections(activeRunbookType)
+  const { data: appRunbooks = [] } = useAppRunbooks()
+
+  const corrections = useMemo(() => {
+    if (activeRunbookType !== 'app' || !activeAppPkg) return allCorrections
+    return allCorrections.filter(
+      (c) => (c.raw_payload?.notif_pkg || '').toLowerCase() === activeAppPkg
+    )
+  }, [allCorrections, activeRunbookType, activeAppPkg])
+
+  const appRunbookOptions = useMemo<AppRunbookOption[]>(() => {
+    const seen = new Map<string, AppRunbookOption>()
+    appRunbooks.forEach((a) =>
+      seen.set(a.package_id, { packageId: a.package_id, label: a.label, configured: true })
+    )
+    allCorrections.forEach((c) => {
+      const pkg = (c.raw_payload?.notif_pkg || '').toLowerCase()
+      if (pkg && !seen.has(pkg)) seen.set(pkg, { packageId: pkg, configured: false })
+    })
+    return Array.from(seen.values()).sort((a, b) => a.packageId.localeCompare(b.packageId))
+  }, [appRunbooks, allCorrections])
+
   const { data: runbookRes } = useQuery({
-    queryKey: ['runbook_content', activeRunbookType],
+    queryKey: ['runbook_content', activeRunbookType, activeAppPkg],
     queryFn: async () => {
-      const res = await ingesterClient.get(`/runbook?type=${activeRunbookType}`)
+      const pkgParam = activeRunbookType === 'app' && activeAppPkg ? `&pkg=${encodeURIComponent(activeAppPkg)}` : ''
+      const res = await ingesterClient.get(`/runbook?type=${activeRunbookType}${pkgParam}`)
       return res.data
     },
   })
@@ -1080,6 +1105,8 @@ function RunbookReviewSettings() {
       ? 'Email'
       : activeRunbookType === 'image'
       ? 'Image'
+      : activeAppPkg
+      ? `App (${activeAppPkg})`
       : 'App'
 
   const runbookTabs = [
@@ -1108,6 +1135,22 @@ function RunbookReviewSettings() {
           </button>
         ))}
       </div>
+
+      {activeRunbookType === 'app' && (
+        <div className="flex flex-col gap-1.5 max-w-lg">
+          <AppRunbookPicker
+            selectedPkg={activeAppPkg}
+            options={appRunbookOptions}
+            onChange={setAppPkg}
+            disabled={hasActiveSession}
+          />
+          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+            App-specific rules are {activeAppPkg ? 'additive' : 'optional'}: they are applied on
+            top of the global App runbook at classification
+            {activeAppPkg ? ' and only override it on conflict.' : '.'}
+          </p>
+        </div>
+      )}
 
       {hasActiveSession && (
         <div className="text-xs text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/30 p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/50 flex items-center gap-2.5">
@@ -1211,6 +1254,7 @@ function RunbookReviewSettings() {
         corrections={corrections}
         currentRunbook={currentRunbook}
         runbookType={activeRunbookType}
+        pkg={activeAppPkg}
       />
     </div>
   )

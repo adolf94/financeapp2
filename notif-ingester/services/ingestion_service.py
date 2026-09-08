@@ -51,6 +51,39 @@ class IngestionService:
         """Return the CosmosDB Settings id for this pipeline's runbook. Override in subclasses."""
         return "runbook"
 
+    def _uses_app_runbooks(self) -> bool:
+        """Whether the per-app (package id) runbook tier applies. App pipeline = True, subclasses = False."""
+        return True
+
+    async def _compose_runbook_content_async(self, user_id: str, base_content: str, raw_payload: Optional[dict]) -> str:
+        """Append the per-app (package id) runbook for notif_pkg when one exists (App pipeline only)."""
+        if not self._uses_app_runbooks():
+            return base_content
+        pkg = FinanceApiService._normalize_package_id((raw_payload or {}).get("notif_pkg") or "")
+        if not pkg:
+            return base_content
+        try:
+            app_runbook = await self._finance_api_service.get_app_runbook_content_async(user_id, pkg)
+        except Exception as e:
+            logging.warning(f"Failed to fetch app runbook for {pkg}: {e}")
+            return base_content
+        if not app_runbook or not app_runbook.strip():
+            return base_content
+        section = (
+            f"\n\n## App-Specific Rules ({pkg})\n\n"
+            f"These rules are ADDITIVE to the global runbook above and apply ONLY to "
+            f"notifications from the app `{pkg}`. They override conflicting rules above; "
+            f"all global rules still apply.\n\n{app_runbook}"
+        )
+        budget = 8000
+        if len(base_content) + len(section) > budget:
+            overflow = len(base_content) + len(section) - budget
+            if len(section) - overflow > 200:
+                section = section[:len(section) - overflow]
+            logging.info(f"[runbook] App runbook for {pkg} truncated to fit {budget}-char budget.")
+        logging.info(f"[runbook] Applied app-specific runbook 'runbook-app:{pkg}' for hook of user {user_id}")
+        return base_content + section
+
     def _use_is_financial_gate(self) -> bool:
         """Whether to run fast is_financial check before preprocessing. App & SMS = True, Email/Image = False."""
         return True
@@ -335,6 +368,7 @@ class IngestionService:
         runbook_content = await self._finance_api_service.get_runbook_content_async(hook.user_id, self._get_runbook_id())
         if not runbook_content:
             runbook_content = self._ai_service.get_default_runbook_content()
+        runbook_content = await self._compose_runbook_content_async(hook.user_id, runbook_content, hook.raw_payload)
         
         # 3.4 is_financial gate (fast pre-check for App & SMS)
         if self._use_is_financial_gate():
@@ -526,6 +560,7 @@ class IngestionService:
         runbook_content = await self._finance_api_service.get_runbook_content_async(user_id, self._get_runbook_id())
         if not runbook_content:
             runbook_content = self._ai_service.get_default_runbook_content()
+        runbook_content = await self._compose_runbook_content_async(user_id, runbook_content, ingestion.raw_payload)
         vendors = await self._finance_api_service.get_vendors_async(user_id)
 
         # 3d. Pre-process notification to extract account info and find vendor matches

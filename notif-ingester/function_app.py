@@ -1099,24 +1099,36 @@ async def GetRunbookSessionFunction(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error fetching runbook session: {e}")
         return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
 
+# ── Runbook helpers ──────────────────────────────────────────────────────────
+def _resolve_runbook_id(runbook_type: str, pkg: str = "") -> str:
+    """Map (runbook_type, pkg) to a CosmosDB Settings document id.
+    'app' + pkg resolves to the per-app runbook 'runbook-app:{pkg}'."""
+    if runbook_type == "sms":
+        return "runbook-sms"
+    elif runbook_type == "email":
+        return "runbook-email"
+    elif runbook_type == "image":
+        return "runbook-image"
+    if runbook_type == "app" and pkg:
+        from services.finance_api_service import FinanceApiService
+        normalized = FinanceApiService._normalize_package_id(pkg)
+        if normalized:
+            return f"runbook-app:{normalized}"
+    return "runbook"
+
 # ── Function 12.1: GetRunbookFunction ───────────────────────────────────────
 @app.route(route="runbook", methods=["GET"])
 async def GetRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
-    """Returns the current runbook content (accepts ?type=sms or ?type=app)."""
+    """Returns the current runbook content (accepts ?type=sms|email|image|app, plus ?pkg=<package_id> for per-app runbooks)."""
     user, err = _require_auth(req)
     if err: return err
     user_id = user.get("sub", "default")
     
     # Check runbook type
     r_type = req.params.get("type", "app").lower()
-    if r_type == "sms":
-        runbook_id = "runbook-sms"
-    elif r_type == "email":
-        runbook_id = "runbook-email"
-    elif r_type == "image":
-        runbook_id = "runbook-image"
-    else:
-        runbook_id = "runbook"
+    pkg = req.params.get("pkg", "") or ""
+    runbook_id = _resolve_runbook_id(r_type, pkg)
+    is_app_pkg_runbook = r_type == "app" and runbook_id.startswith("runbook-app:")
     
     ingestion_service = get_ingestion_service()
     try:
@@ -1131,39 +1143,56 @@ async def GetRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
         elif r_type == "image" and not content:
             image_service = get_image_ingestion_service()
             content = await image_service._get_or_bootstrap_image_runbook(user_id)
-            
-        return func.HttpResponse(json.dumps({"content": content or ""}), status_code=200, mimetype="application/json")
+
+        payload = {"content": content or ""}
+        if is_app_pkg_runbook:
+            payload["package_id"] = runbook_id.replace("runbook-app:", "", 1)
+        return func.HttpResponse(json.dumps(payload), status_code=200, mimetype="application/json")
     except Exception as e:
         logging.error(f"Error fetching runbook: {e}")
+        return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
+
+# ── Function 12.1.1: ListAppRunbooksFunction ────────────────────────────────
+@app.route(route="runbook/apps", methods=["GET"])
+async def ListAppRunbooksFunction(req: func.HttpRequest) -> func.HttpResponse:
+    """Lists configured per-app (package id) runbooks for the user."""
+    user, err = _require_auth(req)
+    if err: return err
+    user_id = user.get("sub", "default")
+
+    ingestion_service = get_ingestion_service()
+    try:
+        apps = await ingestion_service._finance_api_service.list_app_runbooks_async(user_id)
+        return func.HttpResponse(json.dumps({"apps": apps}, default=str), status_code=200, mimetype="application/json")
+    except Exception as e:
+        logging.error(f"Error listing app runbooks: {e}")
         return func.HttpResponse(json.dumps({"error": str(e)}), status_code=500, mimetype="application/json")
 
 # ── Function 12.2: UpdateRunbookFunction ────────────────────────────────────
 @app.route(route="runbook", methods=["PUT"])
 async def UpdateRunbookFunction(req: func.HttpRequest) -> func.HttpResponse:
-    """Updates the runbook content (accepts ?type=sms, ?type=email, ?type=image, or ?type=app)."""
+    """Updates the runbook content (accepts ?type=sms, ?type=email, ?type=image, or ?type=app; ?pkg=<package_id> targets a per-app runbook)."""
     user, err = _require_auth(req)
     if err: return err
     user_id = user.get("sub", "default")
     
     r_type = req.params.get("type", "app").lower()
-    if r_type == "sms":
-        runbook_id = "runbook-sms"
-    elif r_type == "email":
-        runbook_id = "runbook-email"
-    elif r_type == "image":
-        runbook_id = "runbook-image"
-    else:
-        runbook_id = "runbook"
+    pkg = req.params.get("pkg", "") or ""
+    runbook_id = _resolve_runbook_id(r_type, pkg)
     
     try:
         body = req.get_json()
         content = body.get("content", "")
+        label = body.get("label")
     except ValueError:
         return func.HttpResponse(json.dumps({"error": "Invalid JSON"}), status_code=400, mimetype="application/json")
         
     ingestion_service = get_ingestion_service()
     try:
-        await ingestion_service._finance_api_service.save_runbook_content_async(user_id, content, runbook_id=runbook_id)
+        if r_type == "app" and runbook_id.startswith("runbook-app:"):
+            await ingestion_service._finance_api_service.save_app_runbook_content_async(user_id, pkg, content, label=label)
+        else:
+            await ingestion_service._finance_api_service.save_runbook_content_async(user_id, content, runbook_id=runbook_id)
         return func.HttpResponse(json.dumps({"success": True}), status_code=200, mimetype="application/json")
     except Exception as e:
         logging.error(f"Error saving runbook: {e}")
@@ -1182,6 +1211,7 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
         body = req.get_json()
         corrections = body.get("corrections", [])
         runbook_type = body.get("runbook_type", "app")
+        pkg = (body.get("pkg") or "").strip()
         operation_id = body.get("operation_id", None)
         connection_id = body.get("connection_id", None)
         stream_reasoning = body.get("stream_reasoning", True)
@@ -1193,17 +1223,14 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
         from datetime import datetime, timezone
         accounts = await ingestion_service._finance_api_service.get_accounts_async(user_id)
         vendors = await ingestion_service._finance_api_service.get_vendors_async(user_id)
-        if runbook_type == "sms":
-            runbook_id = "runbook-sms"
-        elif runbook_type == "email":
-            runbook_id = "runbook-email"
-        elif runbook_type == "image":
-            runbook_id = "runbook-image"
-        else:
-            runbook_id = "runbook"
+        runbook_id = _resolve_runbook_id(runbook_type, pkg)
+        is_app_pkg_runbook = runbook_type == "app" and runbook_id.startswith("runbook-app:")
         current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
         if not current_runbook:
-            if runbook_type == "sms":
+            if is_app_pkg_runbook:
+                # Per-app runbooks are not bootstrapped with global defaults; start blank.
+                current_runbook = ""
+            elif runbook_type == "sms":
                 sms_service = get_sms_ingestion_service()
                 current_runbook = await sms_service._get_or_bootstrap_sms_runbook(user_id)
             elif runbook_type == "email":
@@ -1241,6 +1268,7 @@ async def StartRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse
             "UserId": user_id,
             "corrections": corrections,
             "runbook_type": runbook_type,
+            "pkg": pkg if is_app_pkg_runbook else "",
             "chat_history": [{"role": "ai", "text": ai_response.get("message", ""), "questions": ai_response.get("questions", [])}],
             "proposed_runbook": ai_response.get("proposed_runbook", current_runbook),
             "account_description_updates": ai_response.get("account_description_updates", []),
@@ -1291,17 +1319,14 @@ async def ChatRunbookReviewFunction(req: func.HttpRequest) -> func.HttpResponse:
         accounts = await ingestion_service._finance_api_service.get_accounts_async(user_id)
         vendors = await ingestion_service._finance_api_service.get_vendors_async(user_id)
         runbook_type = session.get("runbook_type", "app")
-        if runbook_type == "sms":
-            runbook_id = "runbook-sms"
-        elif runbook_type == "email":
-            runbook_id = "runbook-email"
-        elif runbook_type == "image":
-            runbook_id = "runbook-image"
-        else:
-            runbook_id = "runbook"
+        pkg = (session.get("pkg") or "").strip()
+        runbook_id = _resolve_runbook_id(runbook_type, pkg)
+        is_app_pkg_runbook = runbook_type == "app" and runbook_id.startswith("runbook-app:")
         current_runbook = await ingestion_service._finance_api_service.get_runbook_content_async(user_id, runbook_id=runbook_id)
         if not current_runbook:
-            if runbook_type == "sms":
+            if is_app_pkg_runbook:
+                current_runbook = ""
+            elif runbook_type == "sms":
                 sms_service = get_sms_ingestion_service()
                 current_runbook = await sms_service._get_or_bootstrap_sms_runbook(user_id)
             elif runbook_type == "email":
@@ -1412,15 +1437,12 @@ async def ApproveRunbookReviewFunction(req: func.HttpRequest) -> func.HttpRespon
 
         # Save updated runbook
         runbook_type = session.get("runbook_type", "app")
-        if runbook_type == "sms":
-            runbook_id = "runbook-sms"
-        elif runbook_type == "email":
-            runbook_id = "runbook-email"
-        elif runbook_type == "image":
-            runbook_id = "runbook-image"
+        pkg = (session.get("pkg") or "").strip()
+        runbook_id = _resolve_runbook_id(runbook_type, pkg)
+        if runbook_type == "app" and runbook_id.startswith("runbook-app:"):
+            await ingestion_service._finance_api_service.save_app_runbook_content_async(user_id, pkg, proposed_runbook)
         else:
-            runbook_id = "runbook"
-        await ingestion_service._finance_api_service.save_runbook_content_async(user_id, proposed_runbook, runbook_id=runbook_id)
+            await ingestion_service._finance_api_service.save_runbook_content_async(user_id, proposed_runbook, runbook_id=runbook_id)
         
         # Update account descriptions
         if account_updates:

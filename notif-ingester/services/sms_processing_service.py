@@ -55,6 +55,10 @@ class SmsProcessingService(IngestionService):
         """Use the dedicated SMS runbook document."""
         return self.RUNBOOK_ID
 
+    def _uses_app_runbooks(self) -> bool:
+        """Per-app runbook tier is App-pipeline only."""
+        return False
+
     async def _classify_hook_async(
         self,
         hook: PhoneHookMessage,

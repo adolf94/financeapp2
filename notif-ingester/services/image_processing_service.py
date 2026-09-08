@@ -54,6 +54,10 @@ class ImageProcessingService(IngestionService):
     def _get_runbook_id(self) -> str:
         return self.RUNBOOK_ID
 
+    def _uses_app_runbooks(self) -> bool:
+        """Per-app runbook tier is App-pipeline only."""
+        return False
+
     def _use_is_financial_gate(self) -> bool:
         """Image pipeline has dedicated flow; skip base is_financial gate."""
         return False

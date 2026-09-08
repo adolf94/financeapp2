@@ -33,9 +33,10 @@ interface RunbookReviewModalProps {
   corrections: PendingIngestion[]
   currentRunbook: string
   runbookType: 'app' | 'sms' | 'email' | 'image'
+  pkg?: string
 }
 
-export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunbook, runbookType }: RunbookReviewModalProps) {
+export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunbook, runbookType, pkg = '' }: RunbookReviewModalProps) {
   const [mode, setMode] = useState<'chat' | 'editor'>('chat')
   const [isMaximized, setIsMaximized] = useState(false)
   
@@ -72,9 +73,9 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
       const opId = crypto.randomUUID()
       setCurrentOperationId(opId)
       
-      startReview.mutate({ corrections, runbookType, operationId: opId, streamReasoning })
+      startReview.mutate({ corrections, runbookType, pkg, operationId: opId, streamReasoning })
     }
-  }, [isOpen, sessionLoading, session, runbookType])
+  }, [isOpen, sessionLoading, session, runbookType, pkg])
 
   // Sync local account and vendor updates with session data
   useEffect(() => {
@@ -123,7 +124,7 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
     setLocalVendorUpdates(prev => prev.map(u => u.vendor_id === vendorId ? { ...u, new_tags: newTags } : u))
   }
 
-  const runbookLabel = runbookType === 'sms' ? 'SMS' : runbookType === 'email' ? 'Email' : runbookType === 'image' ? 'Image' : 'App'
+  const runbookLabel = runbookType === 'sms' ? 'SMS' : runbookType === 'email' ? 'Email' : runbookType === 'image' ? 'Image' : pkg ? `App (${pkg})` : 'App'
 
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 ${isMaximized ? 'p-0' : ''}`}>

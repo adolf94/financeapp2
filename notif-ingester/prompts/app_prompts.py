@@ -38,7 +38,7 @@ Return ONLY valid JSON matching this schema:
 }}
 
 Rules:
-- Apply the User Runbook rules ABOVE everything else.
+- Apply the User Runbook rules ABOVE everything else. If the runbook contains an "App-Specific Rules" section, those rules apply ONLY to notifications from that app (package id) and OVERRIDE conflicting general rules; general rules still apply wherever the app-specific section is silent.
 - date = Extract transaction date and time if mentioned and format strictly as an ISO8601 UTC string ending in 'Z' (e.g. 8:13 PM GMT+8 becomes 20:13:00 GMT+8 -> convert to UTC: '2026-08-15T12:13:00Z'). Assume transaction time is GMT+08:00 (Asia/Manila) unless another timezone is explicitly stated. If no date/time is mentioned, set null.
 - For transaction_type: "Expense" means money leaving the user's personal accounts (e.g. purchases, payments to external parties for services/goods). "Income" means money entering the user's personal accounts (e.g. salary, deposits from external parties). "Transfer" means money moving between Asset, Liability, Bank, or Investment accounts. This includes moving money between the user's own accounts (e.g. Bank to Bank, Bank to EWallet/Asset, paying a Credit Card) AND receiving/sending money that affects a Liability/Receivable (e.g. receiving a loan payment from someone else).
 - For Expense: debit = expense account, credit = source bank/cash account

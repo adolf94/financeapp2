@@ -32,9 +32,29 @@ export type RunbookReviewSession = {
   account_description_updates: AccountDescriptionUpdate[]
   vendor_updates: VendorUpdate[]
   runbook_type?: 'app' | 'sms' | 'email' | 'image'
+  pkg?: string
   created_at: string
   updated_at: string
   partition_key: string
+}
+
+export type AppRunbookSummary = {
+  package_id: string
+  label: string
+  updated?: number
+}
+
+// ── App (per-package) runbooks ─────────────────────────────────────────────
+
+/** Lists configured per-app (package id) runbooks. */
+export function useAppRunbooks() {
+  return useQuery({
+    queryKey: ['runbook_apps'],
+    queryFn: async () => {
+      const { data } = await ingesterClient.get<{ apps: AppRunbookSummary[] }>('/runbook/apps')
+      return data.apps || []
+    },
+  })
 }
 
 // ── Corrections ────────────────────────────────────────────────────────────
@@ -77,11 +97,12 @@ export function useGetRunbookSession() {
 export function useStartRunbookReview() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ corrections, runbookType, operationId, streamReasoning = true }: { corrections: PendingIngestion[], runbookType: 'app' | 'sms' | 'email' | 'image', operationId: string, streamReasoning?: boolean }) => {
+    mutationFn: async ({ corrections, runbookType, pkg, operationId, streamReasoning = true }: { corrections: PendingIngestion[], runbookType: 'app' | 'sms' | 'email' | 'image', pkg?: string, operationId: string, streamReasoning?: boolean }) => {
       const connId = (window as any).signalRConnectionId || ''
       const { data } = await ingesterClient.post<RunbookReviewSession>('/runbook/review/start', {
         corrections,
         runbook_type: runbookType,
+        pkg: pkg || '',
         operation_id: operationId,
         connection_id: connId,
         stream_reasoning: streamReasoning
@@ -132,6 +153,7 @@ export function useApproveRunbookReview() {
       queryClient.invalidateQueries({ queryKey: ['runbook_corrections'] })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
       queryClient.invalidateQueries({ queryKey: ['runbook_content'] })
+      queryClient.invalidateQueries({ queryKey: ['runbook_apps'] })
     },
   })
 }

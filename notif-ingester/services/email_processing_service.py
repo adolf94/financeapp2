@@ -48,6 +48,10 @@ class EmailProcessingService(IngestionService):
         """Use the dedicated email runbook document."""
         return self.RUNBOOK_ID
 
+    def _uses_app_runbooks(self) -> bool:
+        """Per-app runbook tier is App-pipeline only."""
+        return False
+
     def _use_is_financial_gate(self) -> bool:
         """Emails are inherently financial; skip fast gate."""
         return False
