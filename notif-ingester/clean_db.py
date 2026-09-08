@@ -28,7 +28,7 @@ def main():
     
     query = f"SELECT * FROM c WHERE LOWER(c.LookupValue) IN ({param_str})"
     
-    items = list(container.query_items(query=query, parameters=params, enable_cross_partition_query=True))
+    items = list(container.query_items(query=query, parameters=params))
     
     deleted = 0
     for item in items:

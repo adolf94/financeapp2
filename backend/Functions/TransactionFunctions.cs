@@ -36,7 +36,7 @@ namespace FinanceApp.Functions
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
             if (!context.HasScope("user")) return context.MissingScopeResult("user");
-            
+
             DateTime? startDate = null;
             DateTime? endDate = null;
 
@@ -224,7 +224,7 @@ namespace FinanceApp.Functions
             string? userId = context.GetUserId();
             if (string.IsNullOrEmpty(userId)) return new UnauthorizedResult();
             if (!context.HasScope("user")) return context.MissingScopeResult("user");
-            
+
             var requestBody = await new StreamReader(req.Body).ReadToEndAsync();
             var aiData = JsonSerializer.Deserialize<AiParsedData>(requestBody, _jsonOptions);
 

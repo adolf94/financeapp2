@@ -58,6 +58,14 @@ def _require_auth(req: func.HttpRequest, required_scopes: Optional[list] = None,
         required_scopes = ["user"]
     return _auth_client.validate(req, required_scopes=required_scopes, any_scopes=any_scopes)
 
+def _has_user_scope(token: dict) -> bool:
+    """True when the token carries the 'user' scope (i.e. sub identifies a real user partition).
+    client_credentials callers lack it — their sub is the client id, not a UserId."""
+    scopes = token.get("scope") or ""
+    if isinstance(scopes, list):
+        scopes = " ".join(scopes)
+    return any(s.rsplit("/", 1)[-1] == "user" for s in scopes.split())
+
 def validate_api_key(req: func.HttpRequest) -> Tuple[Optional[dict], Optional[func.HttpResponse]]:
     """Validate Bearer JWT using personal_access_token / Bearer auth with notif_ingestion scope (configurable via NOTIF_INGESTION_SCOPE env var)."""
     scope = os.environ.get("NOTIF_INGESTION_SCOPE", "notif_ingestion")
@@ -452,7 +460,10 @@ async def GetPendingIngestionsFunction(req: func.HttpRequest) -> func.HttpRespon
         skip, top = 0, 50
         
     try:
-        ingestions = await ingestion_repo.get_by_status_async(user_id, status, skip=skip, top=top)
+        if _has_user_scope(user):
+            ingestions = await ingestion_repo.get_by_status_async(user_id, status, skip=skip, top=top)
+        else:
+            ingestions = await ingestion_repo.get_by_status_cross_partition_async(status, skip=skip, top=top)
         return func.HttpResponse(
             json.dumps([i.model_dump(by_alias=True, mode="json") for i in ingestions]),
             status_code=200, mimetype="application/json"
@@ -472,7 +483,10 @@ async def GetIngestionByIdFunction(req: func.HttpRequest) -> func.HttpResponse:
     
     ingestion_service = get_ingestion_service()
     try:
-        ingestion = await ingestion_service.ingestion_repo.get_by_id_async(ingestion_id, user_id)
+        if _has_user_scope(user):
+            ingestion = await ingestion_service.ingestion_repo.get_by_id_async(ingestion_id, user_id)
+        else:
+            ingestion = await ingestion_service.ingestion_repo.get_by_id_cross_partition_async(ingestion_id)
         if not ingestion:
             return func.HttpResponse("Ingestion not found", status_code=404)
             
@@ -496,7 +510,10 @@ async def GetImageBlobFunction(req: func.HttpRequest) -> func.HttpResponse:
 
     ingestion_repo = CosmosIngestionRepository()
     try:
-        ingestion = await ingestion_repo.get_by_id_async(ingestion_id, user_id)
+        if _has_user_scope(user):
+            ingestion = await ingestion_repo.get_by_id_async(ingestion_id, user_id)
+        else:
+            ingestion = await ingestion_repo.get_by_id_cross_partition_async(ingestion_id)
         if not ingestion:
             return func.HttpResponse(json.dumps({"error": "Ingestion not found"}), status_code=404, mimetype="application/json")
 
@@ -620,10 +637,7 @@ async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
 
     # A 'user' token always acts as itself (sub). A pure 'transactions:create' caller
     # (client_credentials) acts on behalf of a user and must supply body.user_id.
-    token_scopes = user.get("scope") or ""
-    if isinstance(token_scopes, list):
-        token_scopes = " ".join(token_scopes)
-    if not any(s.rsplit("/", 1)[-1] == "user" for s in token_scopes.split()):
+    if not _has_user_scope(user):
         owner_id = body.get("user_id")
         if not owner_id:
             return func.HttpResponse(

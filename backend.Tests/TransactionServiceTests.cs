@@ -167,5 +167,74 @@ namespace backend.Tests
 
             _mockTxRepo.Verify(r => r.LinkRecurringOccurrenceAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
         }
+
+        [Fact]
+        public async Task DeleteTransactionByCreator_ThrowsKeyNotFound_IfTransactionNotFound()
+        {
+            _mockTxRepo.Setup(r => r.GetTransactionByCreatorAsync("partner-app", "tx-1")).ReturnsAsync((Transaction?)null);
+
+            await Assert.ThrowsAsync<KeyNotFoundException>(() => _service.DeleteTransactionByCreatorAsync("partner-app", "tx-1"));
+
+            _mockTxRepo.Verify(r => r.DeleteTransactionAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockTxRepo.Verify(r => r.SaveChangesAsync(), Times.Never);
+        }
+
+        [Fact]
+        public async Task DeleteTransactionByCreator_RevertsBalancesInOwnerPartition_AndSaves()
+        {
+            var acc1 = new Account { Id = "acc-1", CurrentBalance = 450 };
+            var acc2 = new Account { Id = "acc-2", CurrentBalance = 150 };
+
+            var tx = new Transaction
+            {
+                Id = "tx-1",
+                UserId = "user-1",
+                CreatedBy = "partner-app",
+                Entries = new List<LedgerEntry>
+                {
+                    new LedgerEntry { AccountId = "acc-1", Amount = -50 },
+                    new LedgerEntry { AccountId = "acc-2", Amount = 50 }
+                }
+            };
+
+            _mockTxRepo.Setup(r => r.GetTransactionByCreatorAsync("partner-app", "tx-1")).ReturnsAsync(tx);
+            _mockAccRepo.Setup(r => r.GetAccountByIdAsync("user-1", "acc-1")).ReturnsAsync(acc1);
+            _mockAccRepo.Setup(r => r.GetAccountByIdAsync("user-1", "acc-2")).ReturnsAsync(acc2);
+
+            await _service.DeleteTransactionByCreatorAsync("partner-app", "tx-1");
+
+            // Revert: acc1 receives +50 (becomes 500), acc2 receives -50 (becomes 100)
+            Assert.Equal(500, acc1.CurrentBalance);
+            Assert.Equal(100, acc2.CurrentBalance);
+
+            _mockAccRepo.Verify(r => r.GetAccountByIdAsync("user-1", "acc-1"), Times.Once);
+            _mockAccRepo.Verify(r => r.GetAccountByIdAsync("user-1", "acc-2"), Times.Once);
+            _mockTxRepo.Verify(r => r.DeleteTransactionAsync("user-1", "tx-1"), Times.Once);
+            _mockTxRepo.Verify(r => r.SaveChangesAsync(), Times.Once);
+        }
+
+        [Fact]
+        public async Task DeleteTransactionByCreator_ThrowsKeyNotFound_IfEntryAccountMissing()
+        {
+            var tx = new Transaction
+            {
+                Id = "tx-1",
+                UserId = "user-1",
+                CreatedBy = "partner-app",
+                Entries = new List<LedgerEntry>
+                {
+                    new LedgerEntry { AccountId = "acc-missing", Amount = -50 },
+                    new LedgerEntry { AccountId = "acc-2", Amount = 50 }
+                }
+            };
+
+            _mockTxRepo.Setup(r => r.GetTransactionByCreatorAsync("partner-app", "tx-1")).ReturnsAsync(tx);
+            _mockAccRepo.Setup(r => r.GetAccountByIdAsync("user-1", "acc-missing")).ReturnsAsync((Account?)null);
+
+            await Assert.ThrowsAsync<KeyNotFoundException>(() => _service.DeleteTransactionByCreatorAsync("partner-app", "tx-1"));
+
+            _mockTxRepo.Verify(r => r.DeleteTransactionAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            _mockTxRepo.Verify(r => r.SaveChangesAsync(), Times.Never);
+        }
     }
 }

@@ -296,9 +296,10 @@ accept `user` OR `ingestions:read`.
 
 ### GET `/ingestions` — requires `ingestions:read`
 
-Lists the caller's ingestion records.
+Lists ingestion records.
 
-- Scoped to the token's `{sub}` — the caller only ever sees their own ingestions.
+- `user` tokens (SPA): scoped to the token's `{sub}` — the caller only ever sees their own ingestions.
+- `ingestions:read`-only tokens (`client_credentials`): `{sub}` is the client id, not a user partition, so the query runs **cross-partition** (all users' ingestions).
 - Query params: `status` (default `Pending`), `$skip`, `$top`.
 
 ```http
@@ -308,12 +309,16 @@ Authorization: Bearer <token>
 
 ### GET `/ingestions/{ingestion_id}` — requires `ingestions:read`
 
-Reads a single ingestion record; `404` if it doesn't exist or isn't the caller's.
+Reads a single ingestion record.
+
+- `user` tokens: `404` if it doesn't exist or isn't in the caller's partition.
+- `ingestions:read`-only tokens: looked up **cross-partition** by id (any user's ingestion).
 
 ### GET `/images/{ingestion_id}` — requires `ingestions:read`
 
 Returns the receipt/statement image blob attached to an ingestion (from Blob
-Storage); `404` if the ingestion has no image.
+Storage); `404` if the ingestion has no image. Same partitioning behavior as
+`GET /ingestions/{ingestion_id}` (cross-partition for `ingestions:read`-only tokens).
 
 ### POST `/ingestions/{ingestion_id}/confirm-status` — requires `user` OR `transactions:create`
 

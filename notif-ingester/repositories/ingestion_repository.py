@@ -19,6 +19,14 @@ class IIngestionRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_by_id_cross_partition_async(self, id: str) -> Optional[PendingIngestion]:
+        pass
+
+    @abstractmethod
+    async def get_by_status_cross_partition_async(self, status: str, skip: int = 0, top: int = 50) -> list[PendingIngestion]:
+        pass
+
+    @abstractmethod
     async def find_candidates_for_relation_async(self, user_id: str, days_lookback: int = 30) -> list[PendingIngestion]:
         pass
 
@@ -55,24 +63,22 @@ class CosmosIngestionRepository(IIngestionRepository):
         except Exception:
             return None
 
-    async def get_by_status_async(self, user_id: str, status: str, skip: int = 0, top: int = 50) -> list[PendingIngestion]:
+    async def get_by_id_cross_partition_async(self, id: str) -> Optional[PendingIngestion]:
         container = await self._get_container()
-        query = (
-            "SELECT * FROM c "
-            "WHERE c.UserId = @user_id AND c.status = @status"
-        )
-        parameters = [
-            {"name": "@user_id", "value": user_id},
-            {"name": "@status", "value": status}
-        ]
+        query = "SELECT TOP 1 * FROM c WHERE c.id = @id"
         items = container.query_items(
             query=query,
-            parameters=parameters
+            parameters=[{"name": "@id", "value": id}]
         )
-        results = []
-        async for item in items:
-            results.append(PendingIngestion(**item))
+        try:
+            async for item in items:
+                return PendingIngestion(**item)
+        except Exception:
+            return None
+        return None
 
+    @staticmethod
+    def _sort_and_page(results: list[PendingIngestion], skip: int, top: int) -> list[PendingIngestion]:
         from services.date_utils import parse_iso_or_local_to_utc
 
         def get_sort_key(item: PendingIngestion) -> datetime:
@@ -92,6 +98,42 @@ class CosmosIngestionRepository(IIngestionRepository):
 
         results.sort(key=get_sort_key, reverse=True)
         return results[skip : skip + top]
+
+    async def get_by_status_async(self, user_id: str, status: str, skip: int = 0, top: int = 50) -> list[PendingIngestion]:
+        container = await self._get_container()
+        query = (
+            "SELECT * FROM c "
+            "WHERE c.UserId = @user_id AND c.status = @status"
+        )
+        parameters = [
+            {"name": "@user_id", "value": user_id},
+            {"name": "@status", "value": status}
+        ]
+        items = container.query_items(
+            query=query,
+            parameters=parameters
+        )
+        results = []
+        async for item in items:
+            results.append(PendingIngestion(**item))
+
+        return self._sort_and_page(results, skip, top)
+
+    async def get_by_status_cross_partition_async(self, status: str, skip: int = 0, top: int = 50) -> list[PendingIngestion]:
+        container = await self._get_container()
+        query = "SELECT * FROM c WHERE c.status = @status"
+        parameters = [
+            {"name": "@status", "value": status}
+        ]
+        items = container.query_items(
+            query=query,
+            parameters=parameters
+        )
+        results = []
+        async for item in items:
+            results.append(PendingIngestion(**item))
+
+        return self._sort_and_page(results, skip, top)
 
     async def find_candidates_for_relation_async(self, user_id: str, days_lookback: int = 30) -> list[PendingIngestion]:
         container = await self._get_container()
