@@ -4,6 +4,7 @@ import dayjs from 'dayjs'
 import { PendingIngestion } from '@/hooks/useIngestions'
 import { AccountGroup } from '@/hooks/useAccounts'
 import AuthenticatedReceiptImage from '@/components/AuthenticatedReceiptImage'
+import IngestionMoreMenu from '@/components/Ingestion/IngestionMoreMenu'
 
 interface PendingIngestionCardProps {
   ingestion: PendingIngestion
@@ -145,14 +146,17 @@ export default function PendingIngestionCard({
             </p>
           )}
         </div>
-        <div className="text-right">
-          <span className="text-lg font-bold text-slate-900 dark:text-slate-50">
-            ₱{(ingestion.ai_parsed.amount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-          </span>
-          <div className="text-[10px] text-slate-400 flex items-center justify-end gap-1 mt-0.5">
-            <Sparkles className="w-3 h-3 text-blue-500" />
-            {(Math.max(confidence, similarity) * 100).toFixed(0)}% match
+        <div className="flex items-start gap-1">
+          <div className="text-right">
+            <span className="text-lg font-bold text-slate-900 dark:text-slate-50">
+              ₱{(ingestion.ai_parsed.amount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+            <div className="text-[10px] text-slate-400 flex items-center justify-end gap-1 mt-0.5">
+              <Sparkles className="w-3 h-3 text-blue-500" />
+              {(Math.max(confidence, similarity) * 100).toFixed(0)}% match
+            </div>
           </div>
+          <IngestionMoreMenu ingestionId={ingestion.id} />
         </div>
       </div>
 

@@ -5,5 +5,6 @@ window.authConfig = {
   scope: "openid profile email api://finance-app-api/user",
   apiBaseUrl: "http://localhost:17071/api",
   ingesterBaseUrl: "http://localhost:7072",
+  loansAppUrl: "http://localhost:5173/loans",
   enableReasoning: true
 };

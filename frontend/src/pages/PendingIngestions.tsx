@@ -39,6 +39,15 @@ export default function PendingIngestions() {
       setProcessingEmailsCount((prev) => Math.max(0, prev - 1))
     }
 
+    const handleReclassifyStarted = (e: Event) => {
+      const opId = (e as CustomEvent).detail?.operationId
+      if (opId) {
+        setReasoningOpId(opId)
+        setIsReasoningPending(true)
+        setIsReasoningDrawerOpen(true)
+      }
+    }
+
     const handleCheckEmailItem = (e: Event) => {
       const detail = (e as CustomEvent).detail
       refetch()
@@ -59,10 +68,12 @@ export default function PendingIngestions() {
     }
 
     window.addEventListener('reclassifyComplete', handleReclassifyComplete)
+    window.addEventListener('reclassifyStarted', handleReclassifyStarted)
     window.addEventListener('checkEmailItem', handleCheckEmailItem)
     window.addEventListener('checkEmailComplete', handleCheckEmailComplete)
     return () => {
       window.removeEventListener('reclassifyComplete', handleReclassifyComplete)
+      window.removeEventListener('reclassifyStarted', handleReclassifyStarted)
       window.removeEventListener('checkEmailItem', handleCheckEmailItem)
       window.removeEventListener('checkEmailComplete', handleCheckEmailComplete)
     }

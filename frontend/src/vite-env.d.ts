@@ -3,6 +3,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL: string
+  readonly VITE_INGESTER_BASE_URL: string
 }
 
 interface ImportMeta {
@@ -16,5 +17,7 @@ interface Window {
     redirectUri: string
     scope: string
     apiBaseUrl: string
+    ingesterBaseUrl?: string
+    loansAppUrl?: string
   }
 }
