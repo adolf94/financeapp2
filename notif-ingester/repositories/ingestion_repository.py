@@ -35,6 +35,10 @@ class IIngestionRepository(ABC):
         pass
 
     @abstractmethod
+    async def search_by_amount_and_range_async(self, amount: float, start_time: Optional[str] = None, end_time: Optional[str] = None, user_id: Optional[str] = None, skip: int = 0, top: int = 50) -> list[PendingIngestion]:
+        pass
+
+    @abstractmethod
     async def update_async(self, ingestion: PendingIngestion) -> None:
         pass
 
@@ -194,6 +198,41 @@ class CosmosIngestionRepository(IIngestionRepository):
             except Exception:
                 pass
         return results
+
+    async def search_by_amount_and_range_async(self, amount: float, start_time: Optional[str] = None, end_time: Optional[str] = None, user_id: Optional[str] = None, skip: int = 0, top: int = 50) -> list[PendingIngestion]:
+        container = await self._get_container()
+        clauses = []
+        parameters = []
+        if user_id is not None:
+            clauses.append("c.UserId = @user_id")
+            parameters.append({"name": "@user_id", "value": user_id})
+        if start_time is not None:
+            clauses.append("c.received_at >= @start_time")
+            parameters.append({"name": "@start_time", "value": start_time})
+        if end_time is not None:
+            clauses.append("c.received_at <= @end_time")
+            parameters.append({"name": "@end_time", "value": end_time})
+
+        query = "SELECT * FROM c"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+
+        items = container.query_items(
+            query=query,
+            parameters=parameters
+        )
+        results = []
+        target_amount = round(abs(float(amount)), 2)
+        async for item in items:
+            try:
+                ing = PendingIngestion(**item)
+                cand_amount = ing.ai_parsed.amount if ing.ai_parsed else None
+                if cand_amount is not None and round(abs(float(cand_amount)), 2) == target_amount:
+                    results.append(ing)
+            except Exception:
+                pass
+
+        return self._sort_and_page(results, skip, top)
 
     async def update_async(self, ingestion: PendingIngestion) -> None:
         container = await self._get_container()

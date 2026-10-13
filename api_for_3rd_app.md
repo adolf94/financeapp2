@@ -38,7 +38,7 @@ Every protected route returns:
 | `transactions:read:self` | **`client_credentials` only** | `GET /api/transactions/owner/{userId}`, `GET /api/transactions/{id}` |
 | `transactions:delete:self` | **`client_credentials` only** | `DELETE /api/transactions/{id}` |
 | `accounts:read` | `client_credentials` **or** `spa` | `GET /api/owners/{userId}/accounts`, `GET /api/owners/{userId}/account-group` |
-| `ingestions:read` | `client_credentials` **or** `spa` | `GET <INGESTER_BASE_URL>/ingestions`, `GET <INGESTER_BASE_URL>/ingestions/{id}`, `GET <INGESTER_BASE_URL>/images/{ingestion_id}` |
+| `ingestions:read` | `client_credentials` **or** `spa` | `GET <INGESTER_BASE_URL>/ingestions`, `GET <INGESTER_BASE_URL>/ingestions/search`, `GET <INGESTER_BASE_URL>/ingestions/{id}`, `GET <INGESTER_BASE_URL>/images/{ingestion_id}` |
 
 > `transactions:create`, `transactions:read:self` and `transactions:delete:self`
 > are issued exclusively to confidential clients via `client_credentials`.
@@ -306,6 +306,28 @@ Lists ingestion records.
 GET <INGESTER_BASE_URL>/ingestions?status=Pending&$top=50
 Authorization: Bearer <token>
 ```
+
+### GET `/ingestions/search` — requires `ingestions:read`
+
+Search ingestion records by **amount + received-at time range**.
+
+- Query params:
+  - `amount` (**required**, number) — matched against the AI-parsed amount as
+    `abs(round(amount, 2))`, so sign/rounding differences don't matter.
+  - `startDate`, `endDate` (optional, ISO-8601) — bounds on `received_at`;
+    naive dates are assumed Asia/Manila (GMT+8) and normalized to UTC.
+  - `$skip`, `$top` (paging; `top` default 50), results sorted newest-first.
+- `user` tokens (SPA): scoped to the token's `{sub}` partition.
+- `ingestions:read`-only tokens (`client_credentials`): runs **cross-partition**
+  (all users' ingestions).
+- `400` if `amount` is missing/non-numeric or a date is unparseable.
+
+```http
+GET <INGESTER_BASE_URL>/ingestions/search?amount=250.00&startDate=2026-09-01T00:00:00Z&endDate=2026-10-01T00:00:00Z
+Authorization: Bearer <client_credentials token>
+```
+
+`200 OK` → array of ingestion records (same shape as `GET /ingestions`).
 
 ### GET `/ingestions/{ingestion_id}` — requires `ingestions:read`
 

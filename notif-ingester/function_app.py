@@ -30,6 +30,7 @@ from services.ingestion_service import IngestionService
 from services.sms_processing_service import SmsProcessingService
 from services.notification_type_detector import NotificationTypeDetector
 from services.email_fetching_service import check_and_save_emails_async
+from services.date_utils import parse_iso_or_local_to_utc
 from services.automate_notification_service import send_error_notification_async
 
 
@@ -498,6 +499,68 @@ async def GetIngestionByIdFunction(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error fetching ingestion: {e}")
         return func.HttpResponse(f"Internal server error: {e}", status_code=500)
 
+# ── Function 3.1b3: SearchIngestionsFunction ─────────────────────────
+@app.route(route="ingestions/search", methods=["GET"])
+async def SearchIngestionsFunction(req: func.HttpRequest) -> func.HttpResponse:
+    """Search ingestions by amount + received-at time range.
+
+    Accepts 'user' (partition-scoped to sub) or 'ingestions:read'
+    (client_credentials, cross-partition) tokens."""
+    user, err = _require_auth(req, any_scopes=["user", "ingestions:read"])
+    if err: return err
+
+    try:
+        amount = float(req.params.get("amount"))
+    except (TypeError, ValueError):
+        return func.HttpResponse(
+            json.dumps({"error": "amount is required and must be a number."}),
+            status_code=400, mimetype="application/json"
+        )
+
+    start_raw = req.params.get("startDate")
+    end_raw = req.params.get("endDate")
+    start_iso = end_iso = None
+    if start_raw:
+        start_dt = parse_iso_or_local_to_utc(start_raw)
+        if not start_dt:
+            return func.HttpResponse(
+                json.dumps({"error": "startDate must be a valid ISO-8601 datetime."}),
+                status_code=400, mimetype="application/json"
+            )
+        start_iso = start_dt.isoformat()
+    if end_raw:
+        end_dt = parse_iso_or_local_to_utc(end_raw)
+        if not end_dt:
+            return func.HttpResponse(
+                json.dumps({"error": "endDate must be a valid ISO-8601 datetime."}),
+                status_code=400, mimetype="application/json"
+            )
+        end_iso = end_dt.isoformat()
+
+    try:
+        skip = int(req.params.get("$skip", 0))
+        top = int(req.params.get("$top", 50))
+    except (ValueError, TypeError):
+        skip, top = 0, 50
+
+    # 'user' tokens are scoped to their own partition; client_credentials
+    # (ingestions:read) callers get a cross-partition search (sub is not a UserId).
+    user_id = user.get("sub", "default") if _has_user_scope(user) else None
+
+    ingestion_repo = CosmosIngestionRepository()
+    try:
+        ingestions = await ingestion_repo.search_by_amount_and_range_async(
+            amount=amount, start_time=start_iso, end_time=end_iso,
+            user_id=user_id, skip=skip, top=top
+        )
+        return func.HttpResponse(
+            json.dumps([i.model_dump(by_alias=True, mode="json") for i in ingestions]),
+            status_code=200, mimetype="application/json"
+        )
+    except Exception as e:
+        logging.error(f"Error searching ingestions: {e}")
+        return func.HttpResponse(f"Internal server error: {e}", status_code=500)
+
 # ── Function 3.1b2: GetImageBlobFunction ──────────────────────────────
 @app.route(route="images/{ingestion_id}", methods=["GET"])
 async def GetImageBlobFunction(req: func.HttpRequest) -> func.HttpResponse:
@@ -626,6 +689,10 @@ async def ConfirmStatusFunction(req: func.HttpRequest) -> func.HttpResponse:
     user_id = user.get("sub", "default")
     
     try:
+        raw_body = req.get_body().decode("utf-8", errors="replace")
+        headers = {k: ("***" if k.lower() in ("authorization", "cookie", "x-functions-key") else v) for k, v in req.headers.items()}
+        logging.info(f"ConfirmStatusFunction headers for ingestion {ingestion_id}: {headers}")
+        logging.info(f"ConfirmStatusFunction body for ingestion {ingestion_id}: {raw_body}")
         body = req.get_json()
         transaction_id = body.get("transaction_id")
         user_confirmed = body.get("user_confirmed", {})
