@@ -500,7 +500,10 @@ async def GetIngestionByIdFunction(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(f"Internal server error: {e}", status_code=500)
 
 # ── Function 3.1b3: SearchIngestionsFunction ─────────────────────────
-@app.route(route="ingestions/search", methods=["GET"])
+# NOTE: registered as "ingestion-search" (not "ingestions/search") because the
+# Python worker matches routes in registration order, so the earlier
+# "ingestions/{ingestion_id}" route would capture "search" as an id.
+@app.route(route="ingestion-search", methods=["GET"])
 async def SearchIngestionsFunction(req: func.HttpRequest) -> func.HttpResponse:
     """Search ingestions by amount + received-at time range.
 

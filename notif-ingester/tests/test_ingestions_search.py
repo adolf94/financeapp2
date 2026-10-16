@@ -102,7 +102,7 @@ async def test_search_repo_respects_skip_top():
     assert [r.id for r in results] == ["ing-3", "ing-2"]
 
 
-# ── route: GET /ingestions/search ─────────────────────────────────────────────
+# ── route: GET /ingestion-search ───────────────────────────────────────────────
 
 class FakeRequest:
     def __init__(self, params):
