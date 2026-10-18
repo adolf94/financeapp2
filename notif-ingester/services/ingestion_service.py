@@ -9,6 +9,8 @@ from models.transaction_vector import TransactionVector
 from repositories.ingestion_repository import IIngestionRepository
 from services.embedding_service import EmbeddingService
 from services.vector_service import VectorService
+from services.retrieval_service import RetrievalService
+from services.transaction_card import build_learning_card_text, build_query_card_text, extract_vendor_name, resolve_account_names
 from services.ai_service import AiService
 from services.finance_api_service import FinanceApiService
 from services.preprocessing_service import PreprocessingService, ExtractedAccountInfo
@@ -21,11 +23,15 @@ class IngestionService:
         embedding_service: EmbeddingService,
         vector_service: VectorService,
         ai_service: AiService,
-        finance_api_service: FinanceApiService
+        finance_api_service: FinanceApiService,
+        retrieval_service: Optional[RetrievalService] = None,
+        runbook_index_service=None
     ):
         self._repo = ingestion_repo
         self._embedding_service = embedding_service
         self._vector_service = vector_service
+        self._retrieval_service = retrieval_service or RetrievalService(vector_service)
+        self._runbook_index_service = runbook_index_service
         self._ai_service = ai_service
         self._finance_api_service = finance_api_service
         self._preprocessing_service = PreprocessingService(debug_repo=ai_service._debug_repo)
@@ -87,6 +93,23 @@ class IngestionService:
     def _use_is_financial_gate(self) -> bool:
         """Whether to run fast is_financial check before preprocessing. App & SMS = True, Email/Image = False."""
         return True
+
+    async def _get_rules_context_async(self, user_id: str, raw_payload: Optional[dict], query_embedding, query_text: str) -> str:
+        """Retrieve pinned + relevant runbook rule chunks for this classification. Empty = fall back to whole doc."""
+        if not self._runbook_index_service:
+            return ""
+        runbook_ids = [self._get_runbook_id()]
+        if self._uses_app_runbooks():
+            pkg = FinanceApiService._normalize_package_id((raw_payload or {}).get("notif_pkg") or "")
+            if pkg:
+                runbook_ids.append(f"runbook-app:{pkg}")
+        try:
+            return await self._runbook_index_service.get_rules_context_async(
+                user_id, runbook_ids, query_embedding=query_embedding, query_text=query_text
+            )
+        except Exception as e:
+            logging.warning(f"[process_hook_async] Rules context retrieval failed: {e}")
+            return ""
 
     def _get_relation_window_minutes(self) -> float:
         """Time window for amount-only relation matching. App/SMS = 5.0, Email = 60.0, Image = 1440.0."""
@@ -348,29 +371,7 @@ class IngestionService:
                 logging.warning(f"Failed to back-port relation link to {cand_to_update.id}: {e}")
 
     async def process_hook_async(self, hook: PhoneHookMessage) -> PendingIngestion:
-        # 1. Embed raw message
-        logging.info(f"[process_hook_async] 1. Embedding raw message for hook {hook.id}...")
-        query_embedding = await self._embedding_service.embed_async(hook.raw_msg)
-
-        # 2. Vector search: find top-5 similar past transactions
-        logging.info("[process_hook_async] 2. Performing vector search...")
-        similar_vectors = await self._vector_service.find_similar_async(
-            query_embedding, hook.user_id, top_k=5
-        )
-        top_score = similar_vectors[0][1] if similar_vectors else 0.0
-
-        # 3. Fetch accounts and runbook
-        logging.info("[process_hook_async] 3. Fetching accounts...")
-        accounts = await self._finance_api_service.get_accounts_async(hook.user_id)
-        vendors = await self._finance_api_service.get_vendors_async(hook.user_id)
-        
-        logging.info("[process_hook_async] 3b. Fetching runbook...")
-        runbook_content = await self._finance_api_service.get_runbook_content_async(hook.user_id, self._get_runbook_id())
-        if not runbook_content:
-            runbook_content = self._ai_service.get_default_runbook_content()
-        runbook_content = await self._compose_runbook_content_async(hook.user_id, runbook_content, hook.raw_payload)
-        
-        # 3.4 is_financial gate (fast pre-check for App & SMS)
+        # 1. is_financial gate first (cheapest check, short-circuits everything)
         if self._use_is_financial_gate():
             is_financial = await self._ai_service.is_financial_transaction_async(hook)
             if not is_financial:
@@ -382,7 +383,7 @@ class IngestionService:
                     raw_payload=hook.raw_payload,
                     raw_msg=hook.raw_msg,
                     ai_parsed=AiParsedData(is_financial=False),
-                    similarity_score=top_score,
+                    similarity_score=0.0,
                     top_matches=[],
                     status="NonFinancial",
                     ttl=7 * 24 * 60 * 60,
@@ -392,8 +393,9 @@ class IngestionService:
                 )
                 return await self._repo.add_async(ingestion)
 
-        # 3.5 Preprocessing: extract account numbers and potential vendor names
-        logging.info("[process_hook_async] 3.5 Preprocessing raw message...")
+        # 2. Preprocess BEFORE embedding so the query vector uses the same
+        #    canonical "transaction card" representation as stored vectors.
+        logging.info("[process_hook_async] 2. Preprocessing raw message...")
         if hook.raw_payload and "extracted_info" in hook.raw_payload:
             logging.info("[process_hook_async] Bypassing extraction AI call (already present in payload)")
             extracted_info_dict = hook.raw_payload["extracted_info"]
@@ -435,26 +437,52 @@ class IngestionService:
                 if extracted_info.potential_vendor_names:
                     hook.raw_payload["extracted_info"]["potential_vendor_names"] = extracted_info.potential_vendor_names
         
-        # Build lookup values from extracted info for vendor matching
+        # 2.1 Vendor lookups (also used as a fusion signal for retrieval)
         pre_lookups = []
         pre_lookups.extend(extracted_info.account_numbers)
         pre_lookups.extend(extracted_info.account_names)
         pre_lookups.extend(extracted_info.potential_vendor_names)
         pre_lookups.append(extracted_info.application)
-        
-        # Search for vendor matches using extracted info
+
         vendor_matches = await self._finance_api_service.search_all_vendor_matches_by_lookups_async(
             hook.user_id, pre_lookups
         )
-        
+
+        # 3. Hybrid retrieval: embed the query card (vendor candidates + accounts
+        #    + application — NOT raw_msg) and fuse vector + lexical + vendor signal.
+        query_card_text = build_query_card_text(extracted_info)
+        logging.info(f"[process_hook_async] 3. Embedding query card and performing hybrid retrieval...")
+        query_embedding = await self._embedding_service.embed_async(query_card_text or hook.raw_msg)
+        similar_vectors = await self._retrieval_service.find_similar_async(
+            query_embedding, hook.user_id, query_text=query_card_text, top_k=5,
+            vendor_matches=vendor_matches
+        )
+        top_score = similar_vectors[0][1] if similar_vectors else 0.0
+
+        # 4. Fetch accounts and runbook
+        logging.info("[process_hook_async] 4. Fetching accounts...")
+        accounts = await self._finance_api_service.get_accounts_async(hook.user_id)
+        vendors = await self._finance_api_service.get_vendors_async(hook.user_id)
+
+        logging.info("[process_hook_async] 4b. Fetching runbook...")
+        runbook_content = await self._finance_api_service.get_runbook_content_async(hook.user_id, self._get_runbook_id())
+        if not runbook_content:
+            runbook_content = self._ai_service.get_default_runbook_content()
+        runbook_content = await self._compose_runbook_content_async(hook.user_id, runbook_content, hook.raw_payload)
+
+        # 4c. Runbook RAG: prefer pinned + retrieved rule chunks over whole-doc injection
+        rules_context = await self._get_rules_context_async(hook.user_id, hook.raw_payload, query_embedding, query_card_text)
+        if rules_context:
+            runbook_content = rules_context
+
         exchange_rate_info = ""
         if extracted_info.currency and extracted_info.currency.upper().strip() != "PHP":
             rate_str = await self._fetch_exchange_rate(extracted_info.currency.upper().strip(), "PHP")
             if rate_str:
                 exchange_rate_info = f"\n{rate_str}\n"
 
-        # 3.6 Early relation lookup pre-classification
-        logging.info("[process_hook_async] 3.6 Searching for related transactions pre-classify...")
+        # 5.1 Early relation lookup pre-classification
+        logging.info("[process_hook_async] 5.1 Searching for related transactions pre-classify...")
         from services.date_utils import parse_iso_or_local_to_utc
         pre_effective_time = parse_iso_or_local_to_utc(extracted_info.date)
         if not pre_effective_time and hook.raw_payload and hook.raw_payload.get("timestamp"):
@@ -470,8 +498,8 @@ class IngestionService:
             exclude_id=hook.id
         )
 
-        # 4. Classify via LLM with vendor match context and related transactions context
-        logging.info("[process_hook_async] 4. Classifying via LLM with vendor context and relations...")
+        # 6. Classify via LLM with vendor match context and related transactions context
+        logging.info("[process_hook_async] 6. Classifying via LLM with vendor context and relations...")
         ai_parsed = await self._classify_hook_async(
             hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, stream_reasoning=False, exchange_rate_info=exchange_rate_info, related_context=related_context, extracted_info=extracted_info
         )
@@ -485,6 +513,8 @@ class IngestionService:
                 "category": v_dict.get("category"),
                 "debit_account_id": v_dict.get("debit_account_id"),
                 "credit_account_id": v_dict.get("credit_account_id"),
+                "debit_account_name": v_dict.get("debit_account_name") or "",
+                "credit_account_name": v_dict.get("credit_account_name") or "",
                 "description": v_dict.get("summary"),
                 "score": score
             })
@@ -546,24 +576,7 @@ class IngestionService:
         if not ingestion:
             raise ValueError("Ingestion not found")
 
-        # 1. Re-embed raw_msg
-        query_embedding = await self._embedding_service.embed_async(ingestion.raw_msg)
-
-        # 2. Find similar past transactions
-        similar_vectors = await self._vector_service.find_similar_async(
-            query_embedding, user_id, top_k=3
-        )
-        top_score = similar_vectors[0][1] if similar_vectors else 0.0
-
-        # 3. Fetch accounts, runbook, and vendors
-        accounts = await self._finance_api_service.get_accounts_async(user_id)
-        runbook_content = await self._finance_api_service.get_runbook_content_async(user_id, self._get_runbook_id())
-        if not runbook_content:
-            runbook_content = self._ai_service.get_default_runbook_content()
-        runbook_content = await self._compose_runbook_content_async(user_id, runbook_content, ingestion.raw_payload)
-        vendors = await self._finance_api_service.get_vendors_async(user_id)
-
-        # 3d. Pre-process notification to extract account info and find vendor matches
+        # 1. Pre-process notification to extract account info and find vendor matches
         logging.info("[reclassify_ingestion_async] Pre-processing notification...")
         # Create a minimal hook-like object for preprocessing
         from models.phone_hook import PhoneHookMessage
@@ -579,18 +592,40 @@ class IngestionService:
             received_at=ingestion.received_at
         )
         extracted_info = await self._preprocessing_service.process_hook(hook_for_preprocess)
-        
-        # Build lookup values from extracted info for vendor matching
+
+        # 2. Vendor lookups (also a fusion signal for retrieval)
         pre_lookups = []
         pre_lookups.extend(extracted_info.account_numbers)
         pre_lookups.extend(extracted_info.account_names)
         pre_lookups.extend(extracted_info.potential_vendor_names)
         pre_lookups.append(extracted_info.application)
-        
-        # Search for vendor matches using extracted info
+
         vendor_matches = await self._finance_api_service.search_all_vendor_matches_by_lookups_async(
             user_id, pre_lookups
         )
+
+        # 3. Hybrid retrieval on the canonical query card (not raw_msg)
+        query_card_text = build_query_card_text(extracted_info)
+        logging.info("[reclassify_ingestion_async] Embedding query card and performing hybrid retrieval...")
+        query_embedding = await self._embedding_service.embed_async(query_card_text or ingestion.raw_msg)
+        similar_vectors = await self._retrieval_service.find_similar_async(
+            query_embedding, user_id, query_text=query_card_text, top_k=3,
+            vendor_matches=vendor_matches
+        )
+        top_score = similar_vectors[0][1] if similar_vectors else 0.0
+
+        # 4. Fetch accounts, runbook, and vendors
+        accounts = await self._finance_api_service.get_accounts_async(user_id)
+        runbook_content = await self._finance_api_service.get_runbook_content_async(user_id, self._get_runbook_id())
+        if not runbook_content:
+            runbook_content = self._ai_service.get_default_runbook_content()
+        runbook_content = await self._compose_runbook_content_async(user_id, runbook_content, ingestion.raw_payload)
+        vendors = await self._finance_api_service.get_vendors_async(user_id)
+
+        # 4c. Runbook RAG: prefer pinned + retrieved rule chunks over whole-doc injection
+        rules_context = await self._get_rules_context_async(user_id, ingestion.raw_payload, query_embedding, query_card_text)
+        if rules_context:
+            runbook_content = rules_context
 
         exchange_rate_info = ""
         if extracted_info.currency and extracted_info.currency.upper().strip() != "PHP":
@@ -627,6 +662,8 @@ class IngestionService:
                 "category": v_dict.get("category"),
                 "debit_account_id": v_dict.get("debit_account_id"),
                 "credit_account_id": v_dict.get("credit_account_id"),
+                "debit_account_name": v_dict.get("debit_account_name") or "",
+                "credit_account_name": v_dict.get("credit_account_name") or "",
                 "description": v_dict.get("summary"),
                 "score": score
             })
@@ -673,60 +710,32 @@ class IngestionService:
 
     async def embed_and_learn_async(self, ingestion: PendingIngestion) -> None:
         parsed = ingestion.user_confirmed if ingestion.user_confirmed else ingestion.ai_parsed.model_dump()
-        
-        vendor_val = parsed.get("vendor", "")
-        if isinstance(vendor_val, dict):
-            vendor = vendor_val.get("name") or ""
-        elif hasattr(vendor_val, "name"):
-            vendor = getattr(vendor_val, "name") or ""
-        else:
-            vendor = str(vendor_val) if vendor_val else ""
-            
-        category = parsed.get("category", "")
-        tx_type = parsed.get("transaction_type", "")
-        
-        # Fetch accounts to resolve human-readable names for embedding
+
+        # Fetch accounts to resolve human-readable names for the canonical card
         debit_id = parsed.get("debit_account_id")
         credit_id = parsed.get("credit_account_id")
         accounts = await self._finance_api_service.get_specific_accounts_async(ingestion.user_id, [debit_id, credit_id])
-        
-        debit_name = ""
-        credit_name = ""
-        for acc in accounts:
-            if acc.get("id") == debit_id:
-                debit_name = f"{acc.get('accountGroupName', '')} {acc.get('name', '')}"
-            if acc.get("id") == credit_id:
-                credit_name = f"{acc.get('accountGroupName', '')} {acc.get('name', '')}"
-        
-        details = [
-            vendor,
-            tx_type,
-            debit_name,
-            credit_name,
-            parsed.get("recipient_account_name", ""),
-            parsed.get("recipient_account_number", ""),
-            parsed.get("sender_account_name", ""),
-            parsed.get("sender_account_number", ""),
-            parsed.get("application", "")
-        ]
-        
-        # Filter out empty strings and join
-        embed_text = " ".join([str(d).strip() for d in details if d and str(d).strip()])
-        
+
+        embed_text = build_learning_card_text(parsed, accounts)
+        debit_name, credit_name = resolve_account_names(parsed, accounts)
+
         embedding = await self._embedding_service.embed_async(embed_text)
-        
+
         vector = TransactionVector(
             user_id=ingestion.user_id,
             transaction_id=ingestion.transaction_id or "",
-            vendor=vendor,
-            category=category,
+            vendor=extract_vendor_name(parsed) or None,
+            category=parsed.get("category", ""),
             summary=parsed.get("notes") or parsed.get("summary") or "",
+            raw_msg_summary=(ingestion.raw_msg or "")[:300],
             debit_account_id=parsed.get("debit_account_id", ""),
             credit_account_id=parsed.get("credit_account_id", ""),
+            debit_account_name=debit_name,
+            credit_account_name=credit_name,
             embed_text=embed_text,
             embedding=embedding
         )
-        
+
         await self._vector_service.upsert_async(vector)
 
     async def generate_account_description_async(self, user_id: str, account_name: str, account_type: str, group_name: str, context: str = "") -> str:

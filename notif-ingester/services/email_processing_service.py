@@ -31,14 +31,18 @@ class EmailProcessingService(IngestionService):
         embedding_service: EmbeddingService,
         vector_service: VectorService,
         ai_service: AiService,
-        finance_api_service: FinanceApiService
+        finance_api_service: FinanceApiService,
+        retrieval_service=None,
+        runbook_index_service=None,
     ):
         super().__init__(
             ingestion_repo=ingestion_repo,
             embedding_service=embedding_service,
             vector_service=vector_service,
             ai_service=ai_service,
-            finance_api_service=finance_api_service
+            finance_api_service=finance_api_service,
+            retrieval_service=retrieval_service,
+            runbook_index_service=runbook_index_service,
         )
         self._auto_confirm_threshold = float(
             os.environ.get("AUTO_CONFIRM_THRESHOLD", "0.95")

@@ -341,11 +341,6 @@ async def check_and_process_emails_stream_async(user_id: str = "3575cfa0-ec94-40
     from services.ai_service import AiService
     from repositories.prompt_debug_repository import CosmosPromptDebugRepository, NoOpPromptDebugRepository
     from services.email_processing_service import EmailProcessingService
-    from repositories.ingestion_repository import CosmosIngestionRepository
-    from repositories.vector_repository import CosmosVectorRepository
-    from services.embedding_service import EmbeddingService
-    from services.vector_service import VectorService
-    from services.finance_api_service import FinanceApiService
 
     prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
     debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
@@ -362,7 +357,12 @@ async def check_and_process_emails_stream_async(user_id: str = "3575cfa0-ec94-40
     vector_repo = CosmosVectorRepository()
     embedding_service = EmbeddingService()
     vector_service = VectorService(vector_repo)
+    from services.retrieval_service import RetrievalService
+    from services.runbook_index_service import RunbookIndexService, CosmosRunbookChunkRepository
+    retrieval_service = RetrievalService(vector_service)
+    runbook_index_service = RunbookIndexService(embedding_service, CosmosRunbookChunkRepository())
     finance_api_service = FinanceApiService()
+    finance_api_service.runbook_index_service = runbook_index_service
 
 
     email_service = EmailProcessingService(
@@ -371,6 +371,8 @@ async def check_and_process_emails_stream_async(user_id: str = "3575cfa0-ec94-40
         vector_service=vector_service,
         ai_service=ai_service,
         finance_api_service=finance_api_service,
+        retrieval_service=retrieval_service,
+        runbook_index_service=runbook_index_service,
     )
 
     unprocessed_emails = []

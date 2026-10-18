@@ -31,6 +31,7 @@ class FinanceApiService:
     def __init__(self):
         self.client = get_cosmos_client()
         self.db_name = os.environ.get("COSMOS_DB", "FinanceDb")
+        self.runbook_index_service = None
 
     async def get_accounts_async(self, user_id: str) -> list[dict]:
         if not self.client:
@@ -623,6 +624,7 @@ class FinanceApiService:
             "content": content
         }
         await container.upsert_item(doc)
+        await self._reindex_runbook_safe_async(user_id, runbook_id, content)
 
     async def get_sms_runbook_content_async(self, user_id: str) -> str:
         """Fetch the SMS-specific runbook. Returns empty string if not found."""
@@ -665,6 +667,18 @@ class FinanceApiService:
         if label:
             doc["label"] = label
         await container.upsert_item(doc)
+        await self._reindex_runbook_safe_async(user_id, f"runbook-app:{pkg}", content)
+
+    async def _reindex_runbook_safe_async(self, user_id: str, runbook_id: str, content: str) -> None:
+        """Re-chunk + re-embed the runbook into RunbookChunks after a save. Best-effort."""
+        index_service = getattr(self, "runbook_index_service", None)
+        if not index_service:
+            return
+        try:
+            await index_service.reindex_runbook_async(user_id, runbook_id, content)
+        except Exception as e:
+            import logging
+            logging.error(f"[runbook-index] Re-index of {runbook_id} after save failed: {e}")
 
     async def list_app_runbooks_async(self, user_id: str) -> list[dict]:
         """List configured per-app runbook summaries for a user."""

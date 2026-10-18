@@ -192,11 +192,9 @@ async def test_subclass_pipelines_never_fetch_app_runbook():
 
 
 @pytest.mark.asyncio
-async def test_app_pipeline_process_hook_composes_runbook_before_gate():
+async def test_app_pipeline_gate_short_circuits_before_runbook_compose():
     service = make_service(IngestionService)
     service._finance_api_service.get_runbook_content_async = AsyncMock(return_value="GLOBAL")
-    service._finance_api_service.get_accounts_async = AsyncMock(return_value=[])
-    service._finance_api_service.get_vendors_async = AsyncMock(return_value=[])
     service._embedding_service.embed_async = AsyncMock(return_value=[0.0])
     service._vector_service.find_similar_async = AsyncMock(return_value=[])
     service._ai_service.is_financial_transaction_async = AsyncMock(return_value=False)
@@ -219,8 +217,51 @@ async def test_app_pipeline_process_hook_composes_runbook_before_gate():
         notification_type="app",
     )
 
+    ingestion = await service.process_hook_async(hook)
+
+    assert ingestion.status == "NonFinancial"
+    service._compose_runbook_content_async.assert_not_awaited()
+    service._embedding_service.embed_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_app_pipeline_financial_hook_composes_runbook():
+    service = make_service(IngestionService)
+    service._finance_api_service.get_runbook_content_async = AsyncMock(return_value="GLOBAL")
+    service._finance_api_service.get_accounts_async = AsyncMock(return_value=[])
+    service._finance_api_service.get_vendors_async = AsyncMock(return_value=[])
+    service._finance_api_service.search_all_vendor_matches_by_lookups_async = AsyncMock(return_value=[])
+    service._finance_api_service.search_confirmed_ledger_entries_async = AsyncMock(return_value=[])
+    service._embedding_service.embed_async = AsyncMock(return_value=[0.0])
+    service._vector_service.find_similar_async = AsyncMock(return_value=[])
+    service._ai_service.is_financial_transaction_async = AsyncMock(return_value=True)
+    from models.pending_ingestion import AiParsedData
+    service._ai_service.classify_async = AsyncMock(return_value=AiParsedData(is_financial=True))
+    service._compose_runbook_content_async = AsyncMock(return_value="COMBINED")
+
+    service._repo.add_async = AsyncMock(side_effect=lambda x: x)
+
+    from datetime import datetime, timezone
+    from models.phone_hook import PhoneHookMessage
+    raw_payload = {
+        "notif_pkg": "com.example.app",
+        "extracted_info": {"potential_vendor_names": ["Grab"], "amount": 100},
+    }
+    hook = PhoneHookMessage(
+        id="hook-2",
+        user_id="user-1",
+        raw_msg="Paid 100",
+        raw_payload=raw_payload,
+        action="",
+        status="",
+        month_key="2026-09",
+        partition_key="user-1",
+        received_at=datetime.now(timezone.utc),
+        notification_type="app",
+    )
+
     await service.process_hook_async(hook)
 
     service._compose_runbook_content_async.assert_awaited_once_with(
-        "user-1", "GLOBAL", {"notif_pkg": "com.example.app"}
+        "user-1", "GLOBAL", {"notif_pkg": "com.example.app", "extracted_info": {"potential_vendor_names": ["Grab"], "amount": 100}}
     )

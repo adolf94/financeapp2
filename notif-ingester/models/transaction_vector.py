@@ -12,7 +12,10 @@ class TransactionVector(BaseModel):
     summary: str = ""
     debit_account_id: Optional[str] = None
     credit_account_id: Optional[str] = None
+    debit_account_name: str = ""
+    credit_account_name: str = ""
     embed_text: str
+    raw_msg_summary: str = ""
     embedding: List[float]
     confirmed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     partition_key: str = "default"

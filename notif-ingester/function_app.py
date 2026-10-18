@@ -27,6 +27,8 @@ from services.vector_service import VectorService
 from services.ai_service import AiService
 from services.finance_api_service import FinanceApiService
 from services.ingestion_service import IngestionService
+from services.retrieval_service import RetrievalService
+from services.runbook_index_service import RunbookIndexService, CosmosRunbookChunkRepository
 from services.sms_processing_service import SmsProcessingService
 from services.notification_type_detector import NotificationTypeDetector
 from services.email_fetching_service import check_and_save_emails_async
@@ -98,14 +100,19 @@ def get_ingestion_service():
     prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
     debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
     ai_service = AiService(debug_repo=debug_repo)
+    retrieval_service = RetrievalService(vector_service)
+    runbook_index_service = RunbookIndexService(embedding_service, CosmosRunbookChunkRepository())
     finance_api_service = FinanceApiService()
-    
+    finance_api_service.runbook_index_service = runbook_index_service
+
     return IngestionService(
         ingestion_repo=ingestion_repo,
         embedding_service=embedding_service,
         vector_service=vector_service,
         ai_service=ai_service,
-        finance_api_service=finance_api_service
+        finance_api_service=finance_api_service,
+        retrieval_service=retrieval_service,
+        runbook_index_service=runbook_index_service
     )
 
 @lru_cache(maxsize=1)
@@ -118,14 +125,19 @@ def get_sms_ingestion_service():
     prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
     debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
     ai_service = AiService(debug_repo=debug_repo)
+    retrieval_service = RetrievalService(vector_service)
+    runbook_index_service = RunbookIndexService(embedding_service, CosmosRunbookChunkRepository())
     finance_api_service = FinanceApiService()
+    finance_api_service.runbook_index_service = runbook_index_service
 
     return SmsProcessingService(
         ingestion_repo=ingestion_repo,
         embedding_service=embedding_service,
         vector_service=vector_service,
         ai_service=ai_service,
-        finance_api_service=finance_api_service
+        finance_api_service=finance_api_service,
+        retrieval_service=retrieval_service,
+        runbook_index_service=runbook_index_service
     )
 
 @lru_cache(maxsize=1)
@@ -138,7 +150,10 @@ def get_email_ingestion_service():
     prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
     debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
     ai_service = AiService(debug_repo=debug_repo)
+    retrieval_service = RetrievalService(vector_service)
+    runbook_index_service = RunbookIndexService(embedding_service, CosmosRunbookChunkRepository())
     finance_api_service = FinanceApiService()
+    finance_api_service.runbook_index_service = runbook_index_service
 
     from services.email_processing_service import EmailProcessingService
     return EmailProcessingService(
@@ -146,7 +161,9 @@ def get_email_ingestion_service():
         embedding_service=embedding_service,
         vector_service=vector_service,
         ai_service=ai_service,
-        finance_api_service=finance_api_service
+        finance_api_service=finance_api_service,
+        retrieval_service=retrieval_service,
+        runbook_index_service=runbook_index_service
     )
 
 @lru_cache(maxsize=1)
@@ -159,7 +176,10 @@ def get_image_ingestion_service():
     prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
     debug_repo = CosmosPromptDebugRepository() if prompt_debug else NoOpPromptDebugRepository()
     ai_service = AiService(debug_repo=debug_repo)
+    retrieval_service = RetrievalService(vector_service)
+    runbook_index_service = RunbookIndexService(embedding_service, CosmosRunbookChunkRepository())
     finance_api_service = FinanceApiService()
+    finance_api_service.runbook_index_service = runbook_index_service
 
     from services.blob_storage_service import BlobStorageService
     from services.image_processing_service import ImageProcessingService
@@ -169,7 +189,9 @@ def get_image_ingestion_service():
         vector_service=vector_service,
         ai_service=ai_service,
         finance_api_service=finance_api_service,
-        blob_storage_service=BlobStorageService()
+        blob_storage_service=BlobStorageService(),
+        retrieval_service=retrieval_service,
+        runbook_index_service=runbook_index_service
     )
 
 

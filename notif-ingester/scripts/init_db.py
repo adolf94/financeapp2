@@ -53,7 +53,8 @@ def main():
         "PhoneHookMessages",
         "PendingIngestions",
         "TransactionVectors",
-        "Settings"
+        "Settings",
+        "RunbookChunks"
     ]
     
     for container_name in user_partitioned_containers:

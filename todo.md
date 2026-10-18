@@ -2,6 +2,17 @@
 
 Based on the `spec.md`, the following features are pending implementation:
 
+## 0. AI Knowledge Base Retrieval Upgrade (PBI-022)
+**Description:** Fix retrieval fundamentals, add hybrid search + runbook RAG, and grounding hooks in `notif-ingester/` per `plans/PBI-022-AI-Knowledge-Base-Retrieval-Upgrade.md`.
+- [x] **1.1 Unified embedding space:** `services/transaction_card.py` — query side embeds a "transaction card" (vendor candidates + accounts + app) matching the learning-side `embed_text`; store `raw_msg_summary` on `TransactionVector` (+ synced C# model).
+- [x] **1.2/2 Hybrid retrieval:** `services/retrieval_service.py` — vector + in-process BM25 lexical channels fused via Reciprocal Rank Fusion; vendor-lookup signal as third channel; storage-agnostic (swappable `IVectorRepository`).
+- [x] **3 Runbook RAG:** `services/runbook_index_service.py` — rule-atomic chunking (### / per-bullet for fat sections), section-title context carried, `pinned` rules always injected, stable rule IDs (`R-APP-xxxx`), hybrid retrieval per classification; `RunbookChunks` Cosmos container (partition `/UserId`); re-index on runbook save.
+- [x] **Wiring:** preprocess-before-embed ordering in `ingestion_service.process_hook_async` + `reclassify_ingestion_async`; RetrievalService replaces raw vector search; rule chunks replace whole-runbook injection (fallback preserved); image pipeline retrieval (dropped hardcoded `similar_vectors=[]`); DI in `function_app.py` / `email_fetching_service.py`.
+- [x] **4 Grounding (partial):** rule IDs injected with rules; abstention prompt hardening deferred to follow-up.
+- [x] **Tests:** `tests/test_retrieval_upgrade.py` — 37 tests covering chunker, BM25/RRF, card alignment, wiring, pinned-rule retrieval, save-trigger reindex, account-name grounding in similar-transaction context.
+- [ ] **Deployment:** provision the `RunbookChunks` Cosmos container (partition `/UserId`) in the target DB before deploying; do a one-time `reindex_runbook_async` pass (or save each runbook once) to populate chunks.
+- [ ] **5 Eval harness + 4 full grounding/corrections loop + cross-encoder reranker:** deferred follow-up (Phase 4–5 of PBI-022).
+
 ## 1. Recurring Transactions (Section 2.3)
 **Description:** Automate data entry for recurring schedules and auto-generate transactions on scheduled dates.
 - [x] **Backend:** Create `RecurringTransaction` entity, DTOs, and interface.

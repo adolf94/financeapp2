@@ -41,6 +41,8 @@ class ImageProcessingService(IngestionService):
         ai_service: AiService,
         finance_api_service: FinanceApiService,
         blob_storage_service: Optional[BlobStorageService] = None,
+        retrieval_service=None,
+        runbook_index_service=None,
     ):
         super().__init__(
             ingestion_repo=ingestion_repo,
@@ -48,6 +50,8 @@ class ImageProcessingService(IngestionService):
             vector_service=vector_service,
             ai_service=ai_service,
             finance_api_service=finance_api_service,
+            retrieval_service=retrieval_service,
+            runbook_index_service=runbook_index_service,
         )
         self._blob_storage = blob_storage_service or BlobStorageService()
 
@@ -274,6 +278,20 @@ class ImageProcessingService(IngestionService):
                 exclude_id=target_id
             )
 
+        # 3.5 Hybrid retrieval over past transactions using the OCR transaction card
+        similar_vectors: list = []
+        try:
+            from services.transaction_card import build_ocr_query_card_text
+            ocr_card_text = build_ocr_query_card_text(extracted_ocr_info)
+            if ocr_card_text:
+                query_embedding = await self._embedding_service.embed_async(ocr_card_text)
+                similar_vectors = await self._retrieval_service.find_similar_async(
+                    query_embedding, user_id, query_text=ocr_card_text, top_k=5,
+                    vendor_matches=vendor_matches
+                )
+        except Exception as e:
+            logger.warning(f"[ImageProcessingService] Similar transaction retrieval failed: {e}")
+
         # 4. Pass 2: Classify image with multimodal AI with vendor match context and relations
         ai_parsed: AiParsedData = await self._ai_service.classify_image_async(
             image_bytes=ai_image_bytes,
@@ -431,7 +449,7 @@ class ImageProcessingService(IngestionService):
             ai_parsed = await self._ai_service.classify_image_async(
                 image_bytes=ai_image_bytes,
                 mime_type=ai_mime_type,
-                similar_vectors=[],
+            similar_vectors=similar_vectors,
                 accounts=accounts,
                 runbook_content=runbook_content,
                 vendors=vendors,

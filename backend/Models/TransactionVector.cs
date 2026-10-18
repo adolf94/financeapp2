@@ -31,8 +31,17 @@ namespace FinanceApp.Models
         [JsonPropertyName("credit_account_id")]
         public string CreditAccountId { get; set; } = string.Empty;
 
+        [JsonPropertyName("debit_account_name")]
+        public string DebitAccountName { get; set; } = string.Empty;
+
+        [JsonPropertyName("credit_account_name")]
+        public string CreditAccountName { get; set; } = string.Empty;
+
         [JsonPropertyName("embed_text")]
         public string EmbedText { get; set; } = string.Empty;
+
+        [JsonPropertyName("raw_msg_summary")]
+        public string RawMsgSummary { get; set; } = string.Empty;
 
         [JsonPropertyName("embedding")]
         public List<float> Embedding { get; set; } = new();

@@ -275,16 +275,25 @@ class AiService:
     def _build_context(self, similar_vectors: List[Tuple[TransactionVector, float]]) -> str:
         if not similar_vectors:
             return "No previous similar transactions found."
-        
+
         context_parts = []
         for vec, score in similar_vectors:
+            vec_dict = vec if isinstance(vec, dict) else (vec.model_dump() if hasattr(vec, 'model_dump') else getattr(vec, '__dict__', {}))
+            debit_label = self._format_account_label(vec_dict.get("debit_account_id"), vec_dict.get("debit_account_name"))
+            credit_label = self._format_account_label(vec_dict.get("credit_account_id"), vec_dict.get("credit_account_name"))
             context_parts.append(
-                f"Vendor: {vec.vendor}, Category: {vec.category}, "
-                f"Summary: {vec.summary}, "
-                f"Debit Acc: {vec.debit_account_id}, Credit Acc: {vec.credit_account_id} "
+                f"Vendor: {vec_dict.get('vendor')}, Category: {vec_dict.get('category')}, "
+                f"Summary: {vec_dict.get('summary')}, "
+                f"Debit Acc: {debit_label}, Credit Acc: {credit_label} "
                 f"(Similarity: {score:.2f})"
             )
         return "\n".join(context_parts)
+
+    def _format_account_label(self, account_id, account_name) -> str:
+        """Render an account as `ID (Group Name)` so the LLM can copy IDs from the accounts list without guessing."""
+        if account_name and account_id:
+            return f"{account_id} ({account_name})"
+        return account_name or account_id or "N/A"
 
     def _format_accounts(self, accounts: list[dict]) -> str:
         if not accounts:
