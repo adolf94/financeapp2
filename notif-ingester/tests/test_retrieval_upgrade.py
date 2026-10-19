@@ -325,6 +325,45 @@ async def test_reindex_skips_reembed_on_same_content():
 
 
 @pytest.mark.asyncio
+async def test_reindex_assigns_unique_non_empty_doc_ids():
+    """Cosmos requires a unique non-empty `id`; regression for empty-id BadRequest."""
+    svc, _, _ = _make_index_service()
+    chunks = await svc.reindex_runbook_async("user-1", "runbook-sms", RUNBOOK_MD)
+    ids = [c.id for c in chunks]
+    assert all(i for i in ids), "every chunk must have a non-empty document id"
+    assert len(ids) == len(set(ids)), "document ids must be unique within a runbook"
+    assert all(i.startswith("R-SMS-") for i in ids)
+
+
+@pytest.mark.asyncio
+async def test_cosmos_repo_serializes_camel_case_aliases():
+    """Stored keys must match the `c.runbookId` query / reader in get_by_runbook_async."""
+    from services.runbook_index_service import CosmosRunbookChunkRepository, RunbookChunk
+
+    chunk = RunbookChunk(
+        runbook_id="runbook-sms", section_title="Grab",
+        rule_id="R-SMS-CCC", content="## Grab\n\nGrab ride = Expense.",
+    )
+    chunk.user_id = "user-1"
+    chunk.id = "R-SMS-CCC"
+
+    repo = CosmosRunbookChunkRepository.__new__(CosmosRunbookChunkRepository)
+    container = MagicMock()
+    container.upsert_item = AsyncMock()
+    repo._get_container = AsyncMock(return_value=container)
+    repo.get_by_runbook_async = AsyncMock(return_value=[])
+
+    await repo.replace_all_async("user-1", "runbook-sms", [chunk])
+    (item,), _ = container.upsert_item.await_args
+    assert item["id"] == "R-SMS-CCC"
+    assert item["runbookId"] == "runbook-sms"
+    assert item["sectionTitle"] == "Grab"
+    assert item["ruleId"] == "R-SMS-CCC"
+    assert item["UserId"] == "user-1"
+    assert "runbook_id" not in item and "rule_id" not in item
+
+
+@pytest.mark.asyncio
 async def test_get_rules_context_pinned_always_included():
     pinned = RunbookChunk(
         runbook_id="runbook-sms", section_title="Strict ID Handling",

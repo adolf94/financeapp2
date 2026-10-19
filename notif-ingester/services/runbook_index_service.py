@@ -201,7 +201,9 @@ class CosmosRunbookChunkRepository(IRunbookChunkRepository):
             except Exception as e:
                 logging.warning(f"[runbook-index] Failed to delete stale chunk {chunk.id}: {e}")
         for chunk in chunks:
-            await container.upsert_item(chunk.model_dump(mode="json"))
+            # Serialize with aliases so stored keys (runbookId, sectionTitle, ...)
+            # match the queries and readers in get_by_runbook_async.
+            await container.upsert_item(chunk.model_dump(mode="json", by_alias=True))
 
     async def get_by_runbook_async(self, user_id: str, runbook_id: str) -> List[RunbookChunk]:
         container = await self._get_container()
@@ -237,9 +239,16 @@ class RunbookIndexService:
             return cached[1]
 
         chunks = chunk_runbook(content, runbook_id)
+        seen_doc_ids: Dict[str, int] = {}
         for chunk in chunks:
             chunk.user_id = user_id
             chunk.etag_version = etag
+            # Cosmos requires a unique, non-empty document id. Derive it from the
+            # stable rule id; disambiguate duplicate rules within one runbook.
+            base = chunk.rule_id or _rule_id_for(runbook_id, chunk.section_title, chunk.content)
+            n = seen_doc_ids.get(base, 0)
+            seen_doc_ids[base] = n + 1
+            chunk.id = base if n == 0 else f"{base}-{n + 1}"
             try:
                 chunk.embedding = await self._embedding_service.embed_async(chunk.content)
             except Exception as e:
