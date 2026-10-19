@@ -643,10 +643,19 @@ Return ONLY valid JSON matching this schema:
         if len(parts) == 1:
             return "", ""
 
-        parts.append("- Note on suggested_rule: Formulate a concise, reusable rule string in 'suggested_rule' based on these user corrections / comments for RUNBOOK.md.")
+        parts.append(
+            "- Note on suggested_rule: The user's corrections exist because the current RUNBOOK.md rules "
+            "(shown above) misclassified this transaction — treat them as feedback on the runbook itself, not as "
+            "text to quote. In 'suggested_rule', act as the runbook's editor: infer the GENERAL principle behind "
+            "the correction and draft the actual RUNBOOK.md change — a new rule, or a rewrite of the specific "
+            "existing rule that failed — written in the same style as the runbook and phrased so that any future "
+            "similar notification (same app/vendor/account pattern) classifies correctly without a correction. "
+            "CRITICAL: Do NOT echo, restate, or paraphrase the user's comments in 'suggested_rule'; write the rule "
+            "as if the user had never said anything."
+        )
 
         section = "\n" + "\n".join(parts) + "\n"
-        suggested_rule_field = ',\n  "suggested_rule": string (A concise, reusable rule or instruction suitable for adding to the user\'s RUNBOOK.md based on this transaction and user corrections/instructions. Return null or empty string if not applicable.)'
+        suggested_rule_field = ',\n  "suggested_rule": string (A draft edit for the user\'s RUNBOOK.md derived from the user\'s corrections: the generalized rule — or the amended version of the existing rule that failed — that would have classified this transaction correctly WITHOUT any user correction. Written in runbook style as a durable, reusable instruction for future similar transactions. Must NOT restate or quote the user\'s comments. Return null or empty string if not applicable.)'
         return section, suggested_rule_field
 
     async def classify_async(
