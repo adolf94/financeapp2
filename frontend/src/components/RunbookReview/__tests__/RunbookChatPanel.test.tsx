@@ -94,7 +94,7 @@ describe('RunbookChatPanel', () => {
     expect(onAnswerChange).toHaveBeenCalledWith('0-0', '1', 'BPI')
   })
 
-  it('makes the answer textarea readonly once an answer is provided', () => {
+  it('keeps the answer textarea editable while an answer has not been submitted', () => {
     renderPanel({
       chatHistory: [
         {
@@ -104,6 +104,23 @@ describe('RunbookChatPanel', () => {
         },
       ],
       pendingAnswers: [{ key: '0-0', qNum: '1', answer: 'BPI' }],
+    })
+
+    const textarea = screen.getByPlaceholderText('Your answer...') as HTMLTextAreaElement
+    expect(textarea.readOnly).toBe(false)
+    expect(textarea.value).toBe('BPI')
+  })
+
+  it('makes the answer textarea readonly once the answer is submitted', () => {
+    renderPanel({
+      chatHistory: [
+        {
+          role: 'ai',
+          text: 'Clarifications',
+          questions: [{ Qid: 'Q1', Q: 'What bank is this?' }],
+        },
+      ],
+      pendingAnswers: [{ key: '0-0', qNum: '1', answer: 'BPI', submitted: true }],
     })
 
     const textarea = screen.getByPlaceholderText('Your answer...') as HTMLTextAreaElement

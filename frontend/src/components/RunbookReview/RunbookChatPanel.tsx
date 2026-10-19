@@ -6,6 +6,8 @@ interface PendingAnswer {
   key: string
   qNum: string
   answer: string
+  /** True once the answer has been sent to the backend; locks the textarea. */
+  submitted?: boolean
 }
 
 interface RunbookChatPanelProps {
@@ -111,7 +113,9 @@ export function RunbookChatPanel({
                   const key = `${i}-${qIdx}`
                   const qNum = q.Qid.replace(/^Q/i, '')
                   const qText = q.Q
-                  const answer = pendingAnswers.find(a => a.key === key)?.answer || ''
+                  const pending = pendingAnswers.find(a => a.key === key)
+                  const answer = pending?.answer || ''
+                  const isSubmitted = pending?.submitted === true
                   return (
                     <div key={key} className="border border-neutral-700/60 rounded-lg overflow-hidden">
                       <div className="flex items-start gap-2 px-3 py-2 bg-neutral-800/60">
@@ -121,17 +125,17 @@ export function RunbookChatPanel({
                       <div className="px-3 py-2 bg-neutral-900">
                         <textarea
                           value={answer}
-                          readOnly={answer.trim() !== ''}
+                          readOnly={isSubmitted}
                           onChange={e => onAnswerChange(key, qNum, e.target.value)}
                           placeholder="Your answer..."
                           rows={2}
                           className={`w-full rounded-lg px-3 py-2 text-sm text-white outline-none resize-none border ${
-                            answer.trim() !== ''
+                            isSubmitted
                               ? 'bg-neutral-950 border-neutral-700/50 text-neutral-400'
                               : 'bg-neutral-950 border-neutral-700 focus:ring-1 focus:ring-indigo-500'
                           }`}
                           disabled={isThinking}
-                          title={answer.trim() !== '' ? 'Answer locked. Clear and click away to edit (answers reset on send)' : ''}
+                          title={isSubmitted ? 'Answer submitted and locked until the next round of questions' : ''}
                         />
                       </div>
                     </div>

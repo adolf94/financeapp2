@@ -25,6 +25,8 @@ type PendingAnswer = {
   key: string
   qNum: string
   answer: string
+  /** True once the answer has been sent to the backend; locks the textarea. */
+  submitted?: boolean
 }
 
 interface RunbookReviewModalProps {
@@ -236,7 +238,7 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                   isThinking={isThinking}
                   onSendMessage={(text) => {
                     const answers = pendingAnswers
-                      .filter(a => a.answer.trim() !== '')
+                      .filter(a => !a.submitted && a.answer.trim() !== '')
                       .map(a => `[A${a.qNum}]: ${a.answer}`)
                       .join('\n')
 
@@ -263,6 +265,8 @@ export function RunbookReviewModal({ isOpen, onClose, corrections, currentRunboo
                     
                     chatReview.mutate({ user_message: fullMessage, operationId: opId, streamReasoning })
 
+                    // Lock submitted answers (readonly) and reset other pending feedback
+                    setPendingAnswers(prev => prev.map(a => (a.answer.trim() !== '' ? { ...a, submitted: true } : a)))
                     setPendingAccountFeedback({})
                     setPendingVendorFeedback({})
                   }}
