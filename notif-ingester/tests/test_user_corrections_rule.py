@@ -4,6 +4,8 @@ os.environ["GEMINI_API_KEY"] = "fake-test-key"
 os.environ["CLASSIFICATION_AI"] = "openai:gpt-4o"
 os.environ["CLASSIFICATION_APIKEY"] = "fake-key"
 
+from unittest.mock import AsyncMock
+
 from services.ai_service import AiService
 
 
@@ -18,12 +20,16 @@ def ai_service():
     return AiService()
 
 
-def test_no_corrections_returns_empty_sections(ai_service):
+# ---------------------------------------------------------------------------
+# _format_user_corrections — code behavior, not prompt wording
+# ---------------------------------------------------------------------------
+
+def test_no_corrections_produce_no_prompt_injection(ai_service):
     assert ai_service._format_user_corrections(None) == ("", "")
     assert ai_service._format_user_corrections({}) == ("", "")
 
 
-def test_correction_section_renders_user_context(ai_service):
+def test_correction_section_never_leaks_account_guids(ai_service):
     corrections = {
         "user_why": "This is groceries, not dining",
         "transaction_type": "Expense",
@@ -32,28 +38,62 @@ def test_correction_section_renders_user_context(ai_service):
     }
     section, rule_field = ai_service._format_user_corrections(corrections, ACCOUNTS)
 
-    assert "This is groceries, not dining" in section
-    assert "Expected Transaction Type: Expense" in section
-    # Accounts must be rendered as labels, never raw GUIDs
-    assert "Asset | BPI Savings" in section
     assert "Food | Groceries" in section
-    assert "e-food-1" not in section and "a-bpi-1" not in section
+    assert "Asset | BPI Savings" in section
+    for guid in ("e-food-1", "a-bpi-1"):
+        assert guid not in section
+        assert guid not in rule_field
 
 
-def test_suggested_rule_must_not_echo_user_comments(ai_service):
-    corrections = {"comment": "Put this under Groceries"}
-    section, rule_field = ai_service._format_user_corrections(corrections, ACCOUNTS)
-
-    assert "Do NOT echo" in section
-    assert "Must NOT restate" in rule_field
-    assert "as if the user had never said anything" in section
+def test_user_comment_reaches_prompt_as_context(ai_service):
+    section, _ = ai_service._format_user_corrections({"comment": "Put this under Groceries"}, ACCOUNTS)
+    assert "Put this under Groceries" in section
 
 
-def test_suggested_rule_is_a_runbook_draft(ai_service):
-    corrections = {"comment": "Put this under Groceries"}
-    section, rule_field = ai_service._format_user_corrections(corrections, ACCOUNTS)
+# ---------------------------------------------------------------------------
+# Review workflow plumbing — corrections (incl. user_why) actually reach the model
+# ---------------------------------------------------------------------------
 
-    # The rule field must describe a durable RUNBOOK.md edit, not a restatement
-    assert "RUNBOOK.md" in rule_field
-    assert "WITHOUT any user correction" in rule_field
-    assert "durable, reusable instruction" in rule_field
+def _correction():
+    return {
+        "raw_msg": "GCash: You paid PHP 250.00 to Puregold",
+        "ai_parsed": {"summary": "Purchase"},
+        "user_confirmed": {"user_why": "Put this under Groceries"},
+    }
+
+
+async def _capture_review_prompt(ai_service, entry_point):
+    captured = {}
+
+    async def _fake_generate(provider, prompt, **kwargs):
+        captured["prompt"] = prompt
+        return ("{}", 0, 0, 0)
+
+    ai_service._generate_stream_to_signalr = _fake_generate
+    ai_service._debug_log = AsyncMock()
+
+    if entry_point == "start":
+        await ai_service.start_runbook_review_async(
+            corrections=[_correction()], accounts=ACCOUNTS, vendors=[], current_runbook="# Runbook",
+        )
+    else:
+        await ai_service.chat_runbook_review_async(
+            chat_history=[], user_message="ok apply it", proposed_runbook="# Runbook v2",
+            proposed_account_updates=[], proposed_vendor_updates=[],
+            corrections=[_correction()], accounts=ACCOUNTS, vendors=[], current_runbook="# Runbook",
+        )
+    return captured["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_review_session_receives_user_why(ai_service):
+    prompt = await _capture_review_prompt(ai_service, "start")
+    assert "Put this under Groceries" in prompt
+    assert "INTENT" in prompt  # canary: the intent-only caveat ships with it
+
+
+@pytest.mark.asyncio
+async def test_review_chat_receives_user_why(ai_service):
+    prompt = await _capture_review_prompt(ai_service, "chat")
+    assert "Put this under Groceries" in prompt
+    assert "INTENT" in prompt

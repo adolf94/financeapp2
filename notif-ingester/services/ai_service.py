@@ -644,18 +644,16 @@ Return ONLY valid JSON matching this schema:
             return "", ""
 
         parts.append(
-            "- Note on suggested_rule: The user's corrections exist because the current RUNBOOK.md rules "
-            "(shown above) misclassified this transaction — treat them as feedback on the runbook itself, not as "
-            "text to quote. In 'suggested_rule', act as the runbook's editor: infer the GENERAL principle behind "
-            "the correction and draft the actual RUNBOOK.md change — a new rule, or a rewrite of the specific "
-            "existing rule that failed — written in the same style as the runbook and phrased so that any future "
-            "similar notification (same app/vendor/account pattern) classifies correctly without a correction. "
-            "CRITICAL: Do NOT echo, restate, or paraphrase the user's comments in 'suggested_rule'; write the rule "
-            "as if the user had never said anything."
+            "- Note on suggested_rule: Restate the user's corrections as ONE clear, self-contained statement of "
+            "INTENT for this transaction, phrased for an AI runbook reviewer to act on: name the app/vendor, the "
+            "corrected transaction type, and the corrected debit/credit accounts using their exact 'Group | Name' "
+            "labels. Clarify vague wording and normalize messy phrasing, but do NOT invent reasons the user did "
+            "not give, do NOT write a runbook rule, and do NOT copy the user's wording verbatim — revise it so it "
+            "is unambiguous."
         )
 
         section = "\n" + "\n".join(parts) + "\n"
-        suggested_rule_field = ',\n  "suggested_rule": string (A draft edit for the user\'s RUNBOOK.md derived from the user\'s corrections: the generalized rule — or the amended version of the existing rule that failed — that would have classified this transaction correctly WITHOUT any user correction. Written in runbook style as a durable, reusable instruction for future similar transactions. Must NOT restate or quote the user\'s comments. Return null or empty string if not applicable.)'
+        suggested_rule_field = ',\n  "suggested_rule": string (A clarified restatement of the user\'s correction intent for THIS transaction: normalized wording that names the app/vendor, corrected transaction type, and corrected debit/credit accounts as exact \'Group | Name\' labels, phrased so an AI reviewer can act on it unambiguously. NOT a runbook rule, NOT a verbatim quote of the user\'s words. Return null or empty string if not applicable.)'
         return section, suggested_rule_field
 
     async def classify_async(
@@ -1200,7 +1198,14 @@ Return ONLY valid JSON matching this schema:
                     "user_corrected_classification": c.get("user_confirmed"),
                 })
             corrections_text = json.dumps(clean_corrections, indent=2)
-            corrections_section = f"The user has manually corrected one or more AI classifications. Here are the corrections:\n{corrections_text}"
+            corrections_section = (
+                "The user has manually corrected one or more AI classifications. Here are the corrections:\n"
+                f"{corrections_text}\n"
+                "IMPORTANT: The user's 'why' comments (and any 'suggested_rule' clarifications) are statements of "
+                "the user's INTENT for specific transactions — never runbook wording. Do NOT quote or copy them "
+                "verbatim; use them as the source of intent and generalize it ONCE into a durable rule written in "
+                "the runbook's own style."
+            )
         else:
             corrections_section = "CRITICAL INSTRUCTION: This is an ad-hoc runbook chat. No recent corrections were provided. The user wants to manually update the runbook or some tags directly. DO NOT propose any changes to the runbook, account descriptions, or vendor tags yet. Just greet the user and ask how you can help."
 
@@ -1256,7 +1261,14 @@ Return ONLY valid JSON matching this schema:
                     "user_corrected_classification": c.get("user_confirmed"),
                 })
             corrections_text = json.dumps(clean_corrections, indent=2)
-            corrections_section = f"The user has manually corrected one or more AI classifications. Here are the corrections:\n{corrections_text}"
+            corrections_section = (
+                "The user has manually corrected one or more AI classifications. Here are the corrections:\n"
+                f"{corrections_text}\n"
+                "IMPORTANT: The user's 'why' comments (and any 'suggested_rule' clarifications) are statements of "
+                "the user's INTENT for specific transactions — never runbook wording. Do NOT quote or copy them "
+                "verbatim; use them as the source of intent and generalize it ONCE into a durable rule written in "
+                "the runbook's own style."
+            )
         else:
             corrections_section = "This is an ad-hoc runbook chat. No recent corrections were provided."
             
