@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Check, X, Edit, Sparkles, PlusCircle, MessageSquare, Bell, Mail, Image as ImageIcon, Link2, AlertTriangle, ExternalLink } from 'lucide-react'
 import dayjs from 'dayjs'
 import { PendingIngestion } from '@/hooks/useIngestions'
+import { mergeSummaryNotes } from '@/lib/aiParsedText'
 import { AccountGroup } from '@/hooks/useAccounts'
 import AuthenticatedReceiptImage from '@/components/AuthenticatedReceiptImage'
 import IngestionMoreMenu from '@/components/Ingestion/IngestionMoreMenu'
@@ -112,7 +113,7 @@ export default function PendingIngestionCard({
                 Email Summary
               </span>
               <p className="text-sm font-medium text-slate-800 dark:text-slate-200 italic leading-snug">
-                "{ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ingestion.raw_msg}"
+                "{mergeSummaryNotes(ingestion.ai_parsed.summary, ingestion.ai_parsed.notes, ingestion.raw_msg)}"
               </p>
               <button
                 type="button"
@@ -129,7 +130,7 @@ export default function PendingIngestionCard({
                 Receipt Summary
               </span>
               <p className="text-sm font-medium text-slate-800 dark:text-slate-200 italic leading-snug">
-                "{ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ingestion.raw_msg}"
+                "{mergeSummaryNotes(ingestion.ai_parsed.summary, ingestion.ai_parsed.notes, ingestion.raw_msg)}"
               </p>
               <button
                 type="button"
@@ -253,7 +254,7 @@ export default function PendingIngestionCard({
                   Raw / Summary Content
                 </span>
                 <p className="text-slate-800 dark:text-slate-200 font-medium text-xs whitespace-pre-wrap leading-relaxed">
-                  {selectedRelatedItem.ai_parsed?.summary || selectedRelatedItem.raw_msg}
+                  {mergeSummaryNotes(selectedRelatedItem.ai_parsed?.summary, selectedRelatedItem.ai_parsed?.notes, selectedRelatedItem.raw_msg)}
                 </p>
               </div>
 

@@ -8,6 +8,9 @@ const apiClient = axios.create({
   },
 })
 
+const REQUIRED_SCOPES =
+  window.authConfig?.scope ?? 'openid profile email api://finance-app-api/user'
+
 // Auth interceptor: attach Bearer token to every request
 apiClient.interceptors.request.use(async (config) => {
   let token: string | null = null
@@ -15,7 +18,7 @@ apiClient.interceptors.request.use(async (config) => {
     const userManager = getUserManager()
     let user = await userManager.getUser()
     if (user && (user.expired || (user.expires_at && user.expires_at <= Math.floor(Date.now() / 1000) + 30))) {
-      user = await refreshAccessToken()
+      user = await refreshAccessToken(REQUIRED_SCOPES)
     }
     if (user && user.access_token) {
       token = user.access_token
@@ -68,10 +71,13 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const isInsufficientScope =
+      error.response?.status === 403 &&
+      String(error.response?.headers?.['www-authenticate'] ?? '').includes('insufficient_scope')
+    if ((error.response?.status === 401 || isInsufficientScope) && !originalRequest._retry) {
       originalRequest._retry = true
       try {
-        const user = await refreshAccessToken()
+        const user = await refreshAccessToken(REQUIRED_SCOPES)
         if (user?.access_token) {
           originalRequest.headers.Authorization = `Bearer ${user.access_token}`
           return apiClient(originalRequest)

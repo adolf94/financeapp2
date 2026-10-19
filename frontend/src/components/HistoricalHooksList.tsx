@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useGetHistoricalHooks, useImportHistoricalHook, useIgnoreHistoricalHook, useConfirmIngestion } from '@/hooks/useIngestions'
 import { Sparkles, Calendar, Bell, ShieldCheck, EyeOff } from 'lucide-react'
 import dayjs from 'dayjs'
+import { mergeSummaryNotes } from '@/lib/aiParsedText'
 
 export default function HistoricalHooksList() {
   const { data: hooks = [], isLoading, error } = useGetHistoricalHooks()
@@ -29,7 +30,7 @@ export default function HistoricalHooksList() {
               transaction_type: data.ai_parsed.transaction_type,
               debit_account_id: data.ai_parsed.debit_account_id,
               credit_account_id: data.ai_parsed.credit_account_id,
-              notes: data.ai_parsed.summary || data.ai_parsed.notes || '',
+              notes: mergeSummaryNotes(data.ai_parsed.summary, data.ai_parsed.notes),
               user_why: null
             }
           }, {

@@ -3,6 +3,7 @@ import { useGetPendingIngestions, useConfirmIngestion, useRejectIngestion, useUp
 import { BellDot } from 'lucide-react'
 import { useGetAccounts, useCreateAccount, useGetAccountGroups, useCreateAccountGroup } from '@/hooks/useAccounts'
 import PendingIngestionCard from '@/components/PendingIngestionCard'
+import { mergeSummaryNotes } from '@/lib/aiParsedText'
 
 interface PendingIngestionsListProps {
   filter: 'all' | 'sms' | 'app' | 'email' | 'image'
@@ -55,7 +56,7 @@ export default function PendingIngestionsList({ filter, viewMode = 'Pending', on
         transaction_type: ingestion.ai_parsed.transaction_type,
         debit_account_id: ingestion.ai_parsed.debit_account_id,
         credit_account_id: ingestion.ai_parsed.credit_account_id,
-        notes: ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ''
+        notes: mergeSummaryNotes(ingestion.ai_parsed.summary, ingestion.ai_parsed.notes)
       },
       dismissRelatedIds: dismissRelatedIds || [],
       dismissStatus: 'Duplicate'
