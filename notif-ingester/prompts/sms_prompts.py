@@ -41,11 +41,10 @@ Return ONLY valid JSON matching this schema:
   }},
   "amount": number (positive) - in PHP,
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
-  "debit_account_id": string (account id from the list provided, or null - DO NOT hallucinate),
-  "credit_account_id": string (account id from the list provided, or null - DO NOT hallucinate),
+  "debit_account_name": string (EXACT "Group | Name" line copied from the Available accounts list, or null),
+  "credit_account_name": string (EXACT "Group | Name" line copied from the Available accounts list, or null),
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string"]}}],
-  "notes": string,
-  "summary": string (A concise summary.),
+  "summary": string (A concise summary. Do NOT use the raw SMS text. Include any sender/recipient names or numbers mentioned.),
   "confidence": number (0.0-1.0),
   "recipient_account_number": string,
   "recipient_account_name": string,
@@ -64,7 +63,7 @@ Rules:
 - For Expense: debit = expense account, credit = source bank/cash account
 - For Income: debit = bank account, credit = income account
 - For Transfer: debit = receiving account, credit = sending account
-- **Account IDs**: DO NOT hallucinate account IDs/GUIDs. Use exact account IDs/GUIDs from the provided available accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`. CRITICAL: Never invent, guess, or hallucinate account IDs/GUIDs. If you are not 100% certain an account ID exists in the provided list, set it to null.
+- **Account Selection**: Reference accounts ONLY by the exact `Group | Name` line from the "Available accounts" list (e.g. `Asset | BPI Savings`). NEVER invent, guess, or paraphrase account names. If no appropriate account exists, set the account field to null and provide a `suggested_account_creation`.
 
 SMS-Specific Rules:
 - "sent to" / "transferred to" patterns → likely Transfer or Expense

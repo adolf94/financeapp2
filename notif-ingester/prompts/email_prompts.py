@@ -20,10 +20,9 @@ Return ONLY valid JSON matching this schema:
   }},
   "amount": number (positive) - in PHP,
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
-  "debit_account_id": string (account id from the list provided, or null - DO NOT hallucinate),
-  "credit_account_id": string (account id from the list provided, or null - DO NOT hallucinate),
+  "debit_account_name": string (EXACT "Group | Name" line copied from the Available accounts list, or null),
+  "credit_account_name": string (EXACT "Group | Name" line copied from the Available accounts list, or null),
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string (2-4 concise lowercase tags complementary to vendor tags)"]}}],
-  "notes": string,
   "summary": string (A concise, human-readable summary or description of this transaction based on the email context),
   "confidence": number (0.0-1.0),
   "recipient_account_number": string,
@@ -43,7 +42,7 @@ Rules:
 - For Expense: debit = expense account, credit = source bank/cash account
 - For Income: debit = bank account, credit = income account
 - For Transfer: debit = receiving account, credit = sending account
-- **Account IDs**: DO NOT hallucinate account IDs/GUIDs. Use exact account IDs/GUIDs from the provided available accounts list. If no appropriate account exists, set the debit/credit account ID to null and provide a `suggested_account_creation`. CRITICAL: Never invent, guess, or hallucinate account IDs/GUIDs. If you are not 100% certain an account ID exists in the provided list, set it to null.
+- **Account Selection**: Reference accounts ONLY by the exact `Group | Name` line from the "Available accounts" list (e.g. `Asset | BPI Savings`). NEVER invent, guess, or paraphrase account names. If no appropriate account exists, set the account field to null and provide a `suggested_account_creation`.
 - **Pre-matched Vendors**: You are provided with "Vendor Matches Found" - these vendors were matched based on extracted account numbers/names from the notification text. **STRONGLY PRIORITIZE THESE MATCHES** in your classification. Set `vendor.matched = true`, `vendor.is_recommendation = false`, and map `vendor.lookups` to the matching strings.
 - **Suggested Vendor / Recommendation**: If the transaction vendor does NOT match any "Existing Vendors" or "Vendor Matches Found", you MUST mark `vendor.is_recommendation = true`, `vendor.matched = false`, and provide suggestions for `vendor.tags` (2-4 concise lowercase tags describing the vendor's activity). Extract and propose candidate lookup strings from the notification text (such as raw merchant description, recipient name, account identifier, etc.) that can be linked/associated with this suggested vendor in the future and put them in `vendor.lookups`. **CRITICAL: NEVER put transaction reference numbers, trace numbers, receipt numbers, or order IDs in `vendor.lookups`** (those belong only in `reference_number`).
 
@@ -89,7 +88,7 @@ Your task:
    - Extract `reference_number` = Order ID / Order Number. Include the `#` if present.
    - Extract `vendor` = Seller/Store name.
    - Extract `notes` = Summary of item(s) purchased in this order.
-   - Classify `debit_account_id` = Specific expense category account ID from the Available accounts list that best matches the purchased items/seller for this specific order (e.g., Food & Beverages, Household, Electronics, Clothing, etc. rather than generic shopping, whenever a specific category exists).
+   - Classify `debit_account_name` = Specific expense category account selected by copying the EXACT `Group | Name` line from the Available accounts list that best matches the purchased items/seller for this specific order (e.g., Food & Beverages, Household, Electronics, Clothing, etc. rather than generic shopping, whenever a specific category exists).
 2. Compute `total_checkout_amount` = sum of all per-order `Total Payment` amounts.
 
 Output Schema:
@@ -108,9 +107,8 @@ Return ONLY valid JSON matching this schema:
     "tags": ["shopping", "ecommerce"]
   }},
   "amount": number (total checkout amount),
-  "credit_account_id": string or null (check Related Transactions Context to see if a bank/card payment matches the total checkout amount. If matched, use that source credit account id; otherwise leave null),
+  "credit_account_name": string or null (check Related Transactions Context to see if a bank/card payment matches the total checkout amount. If matched, use that source account's EXACT `Group | Name` line from the Available accounts list; otherwise leave null),
   "suggested_account_creation": [],
-  "notes": "Shopee checkout (N orders)",
   "summary": string (Concise summary of the multi-order checkout, e.g. "Shopee checkout for N orders totaling ₱X.XX"),
   "confidence": number (0.0-1.0),
   "application": "Shopee",
@@ -120,7 +118,7 @@ Return ONLY valid JSON matching this schema:
       "amount": number (Total Payment for this order),
       "reference_number": string (Order ID),
       "vendor": string (seller name),
-      "debit_account_id": string (specific expense category account id matching the order items/seller from accounts list, or null),
+      "debit_account_name": string (EXACT `Group | Name` line from the Available accounts list matching the order items/seller, or null),
       "notes": string (items summary for this order)
     }}
   ]
@@ -128,8 +126,8 @@ Return ONLY valid JSON matching this schema:
 
 Rules:
 - Apply the Shopee / Email Runbook rules ABOVE everything else.
-- Classify each order individually: For each order, determine and assign the specific expense category account ID (`debit_account_id`) matching the purchased items/seller from the Available accounts list (e.g. Groceries/Food & Beverages, Electronics, Clothing, Household, etc.), rather than defaulting all orders to generic shopping when specific categories fit.
-- Check "Related Transactions Context" (if provided): If a card/bank SMS or notification matches the total checkout amount, assign that source payment account ID to `credit_account_id`.
+- Classify each order individually: For each order, determine and assign the specific expense category account by copying the EXACT `Group | Name` line from the Available accounts list matching the purchased items/seller (e.g. Groceries/Food & Beverages, Electronics, Clothing, Household, etc.), rather than defaulting all orders to generic shopping when specific categories fit.
+- Check "Related Transactions Context" (if provided): If a card/bank SMS or notification matches the total checkout amount, assign that source payment account's exact `Group | Name` line from the Available accounts list to `credit_account_name`.
 - Use `Total Payment` as the order amount. Voucher discounts are already reflected in Total Payment, do NOT deduct them again.
 - Shipping fee of 0.00 is normal and should not be added.
 - Always set transaction_type to "Expense".

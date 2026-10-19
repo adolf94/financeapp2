@@ -665,7 +665,7 @@ def test_resolve_account_names_formats_group_and_name():
     assert debit == "Cash"
 
 
-def test_build_context_renders_account_names_with_ids():
+def test_build_context_renders_account_names_without_ids():
     from services.ai_service import AiService
     vec = _vec("tx-a", "Grab", "grab ride expense", [1.0, 0.0])
     vec.debit_account_id = "acc-1"
@@ -677,11 +677,14 @@ def test_build_context_renders_account_names_with_ids():
     ai._debug_repo = None
     context = ai._build_context([(vec, 0.9)])
 
-    assert "acc-1 (GCash Wallet)" in context
-    assert "acc-2 (Maybank Savings)" in context
+    # Label-based rendering — historical account names only, never raw GUIDs
+    assert "Debit Acc: GCash Wallet" in context
+    assert "Credit Acc: Maybank Savings" in context
+    assert "acc-1" not in context
+    assert "acc-2" not in context
 
 
-def test_build_context_falls_back_to_id_or_na_when_name_missing():
+def test_build_context_falls_back_to_na_when_name_missing():
     from services.ai_service import AiService
     vec = _vec("tx-a", "Grab", "grab ride expense", [1.0, 0.0])
     vec.debit_account_id = "acc-1"
@@ -693,5 +696,8 @@ def test_build_context_falls_back_to_id_or_na_when_name_missing():
     ai._debug_repo = None
     context = ai._build_context([(vec, 0.9)])
 
-    assert "Debit Acc: acc-1" in context
-    assert "Credit Acc: acc-2" in context
+    # Missing names render as N/A — never fall back to echoing the GUID
+    assert "Debit Acc: N/A" in context
+    assert "Credit Acc: N/A" in context
+    assert "acc-1" not in context
+    assert "acc-2" not in context

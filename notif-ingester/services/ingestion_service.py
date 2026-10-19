@@ -11,6 +11,7 @@ from services.embedding_service import EmbeddingService
 from services.vector_service import VectorService
 from services.retrieval_service import RetrievalService
 from services.transaction_card import build_learning_card_text, build_query_card_text, extract_vendor_name, resolve_account_names
+from services.account_label_registry import AccountLabelRegistry
 from services.ai_service import AiService
 from services.finance_api_service import FinanceApiService
 from services.preprocessing_service import PreprocessingService, ExtractedAccountInfo
@@ -132,7 +133,7 @@ class IngestionService:
         if re.search(r'\d{4,}', name):
             return True
         return False
-    def _format_candidate_summary(self, cand: PendingIngestion, cand_time: Optional[datetime] = None, time_offset_str: str = "") -> str:
+    def _format_candidate_summary(self, cand: PendingIngestion, cand_time: Optional[datetime] = None, time_offset_str: str = "", account_labels: Optional[dict] = None) -> str:
         app = (cand.notification_type or "notification").upper()
         amt_str = f"₱{cand.ai_parsed.amount:,.2f}" if (cand.ai_parsed and cand.ai_parsed.amount is not None) else "N/A"
         ref_str = f"Ref: {cand.ai_parsed.reference_number}" if (cand.ai_parsed and cand.ai_parsed.reference_number) else "No Ref"
@@ -159,7 +160,9 @@ class IngestionService:
 
         credit_acc = cand.ai_parsed.credit_account_id if (cand.ai_parsed and cand.ai_parsed.credit_account_id) else None
         if credit_acc:
-            parts.append(f"CreditAccId: {credit_acc}")
+            # Render as `Group | Name` — never leak raw GUIDs into AI-facing context.
+            label = (account_labels or {}).get(credit_acc) or "Unknown account"
+            parts.append(f"CreditAcc: {label}")
 
         summary = cand.ai_parsed.summary if (cand.ai_parsed and cand.ai_parsed.summary) else cand.raw_msg
         if summary:
@@ -234,8 +237,27 @@ class IngestionService:
 
         # Sort: Definite first, then by time closest to effective_time, limit to top 5
         matched_candidates.sort(key=lambda x: (not x[0], abs((effective_time - x[2]).total_seconds())))
-        for is_definite, cand, cand_time, time_offset_str in matched_candidates[:5]:
-            summary = self._format_candidate_summary(cand, cand_time, time_offset_str)
+        matched_candidates = matched_candidates[:5]
+
+        # Resolve candidate credit accounts to `Group | Name` labels (single batched
+        # call) so AI-facing context never contains raw GUIDs.
+        credit_ids = {
+            cand.ai_parsed.credit_account_id
+            for _, cand, _, _ in matched_candidates
+            if cand.ai_parsed and cand.ai_parsed.credit_account_id
+        }
+        account_labels: dict = {}
+        if credit_ids:
+            try:
+                credit_accounts = await self._finance_api_service.get_specific_accounts_async(
+                    user_id, list(credit_ids)
+                )
+                account_labels = {a.get("id"): AccountLabelRegistry.label_for(a) for a in credit_accounts if a.get("id")}
+            except Exception as e:
+                logging.warning(f"[related-context] Failed to resolve credit account labels: {e}")
+
+        for is_definite, cand, cand_time, time_offset_str in matched_candidates:
+            summary = self._format_candidate_summary(cand, cand_time, time_offset_str, account_labels=account_labels)
             if is_definite:
                 context_lines.append(f"- [DEFINITE MATCH (Same Ref)] {summary}")
             else:
@@ -559,7 +581,8 @@ class IngestionService:
                 # If auto-confirm fails, fallback to Pending
                 ingestion.status = "Pending"
                 if ingestion.ai_parsed:
-                    ingestion.ai_parsed.notes = f"Auto-confirm failed: {str(e)}"
+                    existing_notes = ingestion.ai_parsed.notes or ""
+                    ingestion.ai_parsed.notes = f"Auto-confirm failed: {str(e)}" + (f" | {existing_notes}" if existing_notes else "")
                 logging.warning(f"Auto-confirm failed for hook {hook.id}: {e}")
         else:
             ingestion.status = "Pending"
@@ -715,6 +738,18 @@ class IngestionService:
         debit_id = parsed.get("debit_account_id")
         credit_id = parsed.get("credit_account_id")
         accounts = await self._finance_api_service.get_specific_accounts_async(ingestion.user_id, [debit_id, credit_id])
+
+        # Learning-loop guard: refuse to embed selections that don't resolve to
+        # real accounts — a hallucinated ID stored as a "similar past transaction"
+        # would be re-fed into future prompts and propagate the hallucination.
+        found_ids = {a.get("id") for a in accounts}
+        missing = {i for i in (debit_id, credit_id) if i} - found_ids
+        if missing:
+            logging.warning(
+                "[embed_and_learn] Refusing to learn ingestion %s: unknown account id(s) %s",
+                ingestion.id, sorted(missing),
+            )
+            return
 
         embed_text = build_learning_card_text(parsed, accounts)
         debit_name, credit_name = resolve_account_names(parsed, accounts)

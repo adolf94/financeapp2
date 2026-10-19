@@ -464,7 +464,24 @@ class FinanceApiService:
         parsed = ingestion.ai_parsed
         if not parsed.amount or not parsed.debit_account_id or not parsed.credit_account_id:
             raise Exception("Amount, DebitAccountId, and CreditAccountId are required")
-            
+
+        # Last line of defense against hallucinated/stale account IDs: verify every
+        # referenced account actually exists (partitioned point query) before
+        # writing the transaction. Never create orphan LedgerEntry documents.
+        needed_ids = {parsed.debit_account_id, parsed.credit_account_id}
+        for order in (parsed.multi_order_items or []):
+            if order.get("debit_account_id"):
+                needed_ids.add(order["debit_account_id"])
+        requested_ids = [i for i in needed_ids if i]
+        existing_accounts = await self.get_specific_accounts_async(ingestion.user_id, requested_ids)
+        existing_ids = {a.get("id") for a in existing_accounts}
+        missing_ids = set(requested_ids) - existing_ids
+        if missing_ids:
+            raise Exception(
+                f"Unknown account id(s) {sorted(missing_ids)} — refusing to create transaction. "
+                f"Accounts must exist before transactions reference them."
+            )
+
         tx_type = parsed.transaction_type or "Expense"
         if tx_type not in ["Income", "Expense", "Transfer", "Journal"]:
             tx_type = "Expense"
@@ -493,7 +510,8 @@ class FinanceApiService:
             "Date": tx_date_iso,
             "Vendor": parsed.vendor.name if parsed.vendor else None,
             "Type": tx_type,
-            "Note": parsed.notes or "",
+            # AI emits only `summary` now; `notes` is reserved for backend annotations.
+            "Note": parsed.notes or parsed.summary or "",
             "IsAutoConfirmed": parsed.is_auto_confirmed if parsed.is_auto_confirmed is not None else False,
             "IngestionId": ingestion.id,
             "MergedIngestionIds": ingestion.related_ingestion_ids or [],
@@ -556,7 +574,7 @@ class FinanceApiService:
                 "TransactionId": tx_id,
                 "AccountId": parsed.debit_account_id,
                 "Amount": parsed.amount,
-                "Note": parsed.notes or "",
+                "Note": parsed.notes or parsed.summary or "",
                 "ReferenceNumber": parsed.reference_number,
                 "$type": "LedgerEntry"
             }

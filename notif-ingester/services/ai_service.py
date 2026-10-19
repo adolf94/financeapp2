@@ -38,6 +38,12 @@ from prompts.runbook_prompts import (
     RUNBOOK_REVIEW_PROMPT,
     RUNBOOK_CHAT_PROMPT,
 )
+from services.account_label_registry import (
+    AccountLabelRegistry,
+    AccountSelectionError,
+    build_fail_safe_parsed_data,
+    resolve_parsed_accounts,
+)
 from services.image_optimizer import optimize_image_for_ai
 
 IS_FINANCIAL_PROMPT = APP_IS_FINANCIAL_PROMPT
@@ -290,10 +296,16 @@ class AiService:
         return "\n".join(context_parts)
 
     def _format_account_label(self, account_id, account_name) -> str:
-        """Render an account as `ID (Group Name)` so the LLM can copy IDs from the accounts list without guessing."""
-        if account_name and account_id:
-            return f"{account_id} ({account_name})"
-        return account_name or account_id or "N/A"
+        """Render a historical account for the similar-transactions context.
+        Label-based (Group · Name style) — never expose raw GUIDs to classification prompts."""
+        return account_name or "N/A"
+
+    def _get_account_select_max_retries(self) -> int:
+        """Bounded repair-retry cap for invalid account selections (user decision: retry until valid)."""
+        try:
+            return max(0, int(os.environ.get("AI_ACCOUNT_SELECT_MAX_RETRIES", "3")))
+        except ValueError:
+            return 3
 
     def _format_accounts(self, accounts: list[dict]) -> str:
         if not accounts:
@@ -333,6 +345,109 @@ class AiService:
             sections.append(f"{header}\n" + "\n".join(lines))
             
         return "\n\n".join(sections)
+
+    def _format_accounts_for_classification(self, accounts: list[dict]) -> str:
+        """Label-based rendering for classification prompts.
+        The model selects accounts by copying the exact `Group | Name` line —
+        GUIDs are NEVER included in the output."""
+        if not accounts:
+            return "No accounts available."
+        
+        groups = {}
+        for acc in accounts:
+            groups.setdefault(acc.get('accountType') or 'Other', []).append(acc)
+            
+        sections = []
+        for type_name, acc_list in groups.items():
+            lines = []
+            for acc in acc_list:
+                label = AccountLabelRegistry.label_for(acc)
+                tags = ", ".join(acc.get('tags') or [])
+                lines.append(f"{label} | {tags}")
+            header = f"{type_name}\nGroup | Name | Tags"
+            sections.append(f"{header}\n" + "\n".join(lines))
+            
+        return "\n\n".join(sections)
+
+    async def _classify_with_account_repair_async(
+        self,
+        provider,
+        base_user_prompt: str,
+        system_instruction: str,
+        accounts: list[dict],
+        finalize,
+        notification_type: str,
+        call_type: str = "classify",
+        operation_id=None,
+        connection_id=None,
+        user_id=None,
+        stream_reasoning_to_client: bool = True,
+        include_reasoning: bool = True,
+        image_bytes: bytes | None = None,
+        mime_type: str | None = None,
+        target: str = "reclassifyProgress",
+    ) -> AiParsedData:
+        """Shared classification executor: run the LLM call, resolve the model's
+        label-based account selections against the fetched accounts list, and on
+        invalid/ambiguous selections retry with corrective feedback (bounded by
+        AI_ACCOUNT_SELECT_MAX_RETRIES). Terminal failure returns the fail-safe
+        payload (null IDs, confidence <= 0.5, auto-confirm disabled)."""
+        registry = AccountLabelRegistry(accounts)
+        max_retries = self._get_account_select_max_retries()
+        feedback = ""
+        
+        for attempt in range(max_retries + 1):
+            prompt = base_user_prompt + feedback
+            response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
+                provider,
+                prompt=prompt,
+                system=system_instruction,
+                json_mode=True,
+                include_reasoning=include_reasoning,
+                target=target,
+                operation_id=operation_id,
+                user_id=user_id,
+                connection_id=connection_id,
+                stream_reasoning_to_client=stream_reasoning_to_client,
+                image_bytes=image_bytes,
+                mime_type=mime_type,
+            )
+            
+            await self._debug_log(
+                call_type if attempt == 0 else f"{call_type}_retry{attempt}",
+                provider,
+                prompt,
+                response_text,
+                system=system_instruction,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+                cost=cost,
+                notification_type=notification_type,
+            )
+            
+            data = self._extract_json(response_text)
+            
+            try:
+                data = resolve_parsed_accounts(data, registry)
+            except AccountSelectionError as e:
+                if attempt >= max_retries:
+                    logging.warning(
+                        "[classify] Account selection still invalid after %d attempt(s): %s",
+                        attempt + 1, e,
+                    )
+                    return AiParsedData(**build_fail_safe_parsed_data(e, attempt + 1))
+                feedback = "\n\n" + e.build_feedback()
+                continue
+            
+            return finalize(data)
+        
+        # Unreachable: loop always returns on the last attempt.
+        raise RuntimeError("classification retry loop exited unexpectedly")
+
+    def _finalize_with_application(self, data: dict, fallback_app: str) -> AiParsedData:
+        if not data.get("application"):
+            data["application"] = fallback_app
+        return AiParsedData(**data)
 
     def _format_vendors(self, vendors: list, days: int = 30) -> str:
         if not vendors:
@@ -514,8 +629,8 @@ Return ONLY valid JSON matching this schema:
             if accounts:
                 for a in accounts:
                     if a.get("id") == acc_id:
-                        return f"{a.get('name')} (ID: {acc_id})"
-            return acc_id
+                        return AccountLabelRegistry.label_for(a)
+            return "N/A"
 
         debit_id = user_corrections.get("debit_account_id")
         if debit_id:
@@ -551,7 +666,7 @@ Return ONLY valid JSON matching this schema:
     ) -> AiParsedData:
         
         context = self._build_context(similar_vectors)
-        accounts_text = self._format_accounts(accounts)
+        accounts_text = self._format_accounts_for_classification(accounts)
         
         if vendor_matches and not self._always_include_vendors:
             vendors_section = ""
@@ -595,38 +710,20 @@ Return ONLY valid JSON matching this schema:
             suggested_rule_field=suggested_rule_field
         )
         
-        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
-            self.classification_provider,
-            prompt=user_prompt,
-            system=system_instruction,
-            json_mode=True,
-            include_reasoning=False,
-            target="reclassifyProgress",
-            operation_id=operation_id,
-            user_id=hook.user_id,
-            connection_id=connection_id,
-            stream_reasoning_to_client=stream_reasoning_to_client
-        )
-
-        await self._debug_log(
-            "classify",
-            self.classification_provider,
-            user_prompt,
-            response_text,
-            system=system_instruction,
-            input_tokens=in_tok,
-            output_tokens=out_tok,
-            cost=cost,
+        return await self._classify_with_account_repair_async(
+            provider=self.classification_provider,
+            base_user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            accounts=accounts,
+            finalize=lambda d: self._finalize_with_application(d, app_name),
             notification_type="app",
+            call_type="classify",
+            operation_id=operation_id,
+            connection_id=connection_id,
+            user_id=hook.user_id,
+            stream_reasoning_to_client=stream_reasoning_to_client,
+            include_reasoning=False,
         )
-
-        data = self._extract_json(response_text)
-        
-        # Fallback for application field
-        if not data.get("application"):
-            data["application"] = app_name
-            
-        return AiParsedData(**data)
 
     async def classify_sms_async(
         self,
@@ -645,7 +742,7 @@ Return ONLY valid JSON matching this schema:
     ) -> AiParsedData:
         """Classify using SMS-specific prompt (tailored for SMS banking messages)."""
         context = self._build_context(similar_vectors)
-        accounts_text = self._format_accounts(accounts)
+        accounts_text = self._format_accounts_for_classification(accounts)
         if vendor_matches and not self._always_include_vendors:
             vendors_section = ""
         else:
@@ -690,37 +787,20 @@ Return ONLY valid JSON matching this schema:
             suggested_rule_field=suggested_rule_field
         )
 
-        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
-            self.classification_provider,
-            prompt=user_prompt,
-            system=system_instruction,
-            json_mode=True,
-            include_reasoning=True,
-            target="reclassifyProgress",
-            operation_id=operation_id,
-            user_id=hook.user_id,
-            connection_id=connection_id,
-            stream_reasoning_to_client=stream_reasoning_to_client
-        )
-
-        await self._debug_log(
-            "classify",
-            self.classification_provider,
-            user_prompt,
-            response_text,
-            system=system_instruction,
-            input_tokens=in_tok,
-            output_tokens=out_tok,
-            cost=cost,
+        return await self._classify_with_account_repair_async(
+            provider=self.classification_provider,
+            base_user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            accounts=accounts,
+            finalize=lambda d: self._finalize_with_application(d, app_name),
             notification_type="sms",
+            call_type="classify",
+            operation_id=operation_id,
+            connection_id=connection_id,
+            user_id=hook.user_id,
+            stream_reasoning_to_client=stream_reasoning_to_client,
+            include_reasoning=True,
         )
-
-        data = self._extract_json(response_text)
-
-        if not data.get("application"):
-            data["application"] = app_name
-
-        return AiParsedData(**data)
 
     async def classify_email_async(
         self,
@@ -739,7 +819,7 @@ Return ONLY valid JSON matching this schema:
     ) -> AiParsedData:
         """Classify using Email-specific prompt (tailored for email receipts/statements)."""
         context = self._build_context(similar_vectors)
-        accounts_text = self._format_accounts(accounts)
+        accounts_text = self._format_accounts_for_classification(accounts)
         if vendor_matches and not self._always_include_vendors:
             vendors_section = ""
         else:
@@ -779,38 +859,21 @@ Return ONLY valid JSON matching this schema:
             suggested_rule_field=suggested_rule_field
         )
 
-        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
-            self.classification_provider,
-            prompt=user_prompt,
-            system=system_instruction,
-            json_mode=True,
-            include_reasoning=True,
-            target="reclassifyProgress",
-            operation_id=operation_id,
-            user_id=hook.user_id,
-            connection_id=connection_id,
-            stream_reasoning_to_client=stream_reasoning_to_client
-        )
-
-        await self._debug_log(
-            "classify",
-            self.classification_provider,
-            user_prompt,
-            response_text,
-            system=system_instruction,
-            input_tokens=in_tok,
-            output_tokens=out_tok,
-            cost=cost,
+        fallback_app = sender.split("@")[-1].replace(">", "") if "@" in sender else sender
+        return await self._classify_with_account_repair_async(
+            provider=self.classification_provider,
+            base_user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            accounts=accounts,
+            finalize=lambda d: self._finalize_with_application(d, fallback_app),
             notification_type="email",
+            call_type="classify",
+            operation_id=operation_id,
+            connection_id=connection_id,
+            user_id=hook.user_id,
+            stream_reasoning_to_client=stream_reasoning_to_client,
+            include_reasoning=True,
         )
-
-        data = self._extract_json(response_text)
-
-        if not data.get("application"):
-            # Use sender email/domain or fallback
-            data["application"] = sender.split("@")[-1].replace(">", "") if "@" in sender else sender
-
-        return AiParsedData(**data)
 
     async def classify_email_shopee_async(
         self,
@@ -829,7 +892,7 @@ Return ONLY valid JSON matching this schema:
     ) -> AiParsedData:
         """Classify Shopee email, detecting multi-order checkout or single-order."""
         context = self._build_context(similar_vectors)
-        accounts_text = self._format_accounts(accounts)
+        accounts_text = self._format_accounts_for_classification(accounts)
         if vendor_matches and not self._always_include_vendors:
             vendors_section = ""
         else:
@@ -857,33 +920,24 @@ Return ONLY valid JSON matching this schema:
 
         system_instruction = SHOPEE_MULTI_ORDER_SYSTEM_PROMPT
 
-        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
-            self.classification_provider,
-            prompt=user_prompt,
-            system=system_instruction,
-            json_mode=True,
-            include_reasoning=True,
-            target="reclassifyProgress",
-            operation_id=operation_id,
-            user_id=hook.user_id,
-            connection_id=connection_id,
-            stream_reasoning_to_client=stream_reasoning_to_client
-        )
-
-        await self._debug_log(
-            "classify_shopee",
-            self.classification_provider,
-            user_prompt,
-            response_text,
-            system=system_instruction,
-            input_tokens=in_tok,
-            output_tokens=out_tok,
-            cost=cost,
+        return await self._classify_with_account_repair_async(
+            provider=self.classification_provider,
+            base_user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            accounts=accounts,
+            finalize=self._finalize_shopee,
             notification_type="email",
+            call_type="classify_shopee",
+            operation_id=operation_id,
+            connection_id=connection_id,
+            user_id=hook.user_id,
+            stream_reasoning_to_client=stream_reasoning_to_client,
+            include_reasoning=True,
         )
 
-        raw_parsed = self._extract_json(response_text)
-
+    def _finalize_shopee(self, raw_parsed) -> AiParsedData:
+        """Shopee multi-order response shaping (account labels are already
+        resolved to real GUIDs by the shared account-repair executor)."""
         # Multi-order response handling (array response or dict with orders array)
         if isinstance(raw_parsed, list):
             orders = raw_parsed
@@ -938,7 +992,7 @@ Return ONLY valid JSON matching this schema:
     ) -> AiParsedData:
         """Classify a financial receipt/statement using multimodal vision AI."""
         context = self._build_context(similar_vectors)
-        accounts_text = self._format_accounts(accounts)
+        accounts_text = self._format_accounts_for_classification(accounts)
         if vendor_matches and not self._always_include_vendors:
             vendors_section = ""
         else:
@@ -984,38 +1038,22 @@ Return ONLY valid JSON matching this schema:
             quality=80,
         )
 
-        response_text, in_tok, out_tok, cost = await self._generate_stream_to_signalr(
-            self.classification_provider,
-            prompt=user_prompt,
-            system=system_instruction,
-            json_mode=True,
-            include_reasoning=True,
-            target="reclassifyProgress",
+        return await self._classify_with_account_repair_async(
+            provider=self.classification_provider,
+            base_user_prompt=user_prompt,
+            system_instruction=system_instruction,
+            accounts=accounts,
+            finalize=lambda d: self._finalize_with_application(d, inferred_app or "Physical Receipt"),
+            notification_type="image",
+            call_type="classify",
             operation_id=operation_id,
-            user_id=user_id,
             connection_id=connection_id,
+            user_id=user_id,
             stream_reasoning_to_client=stream_reasoning_to_client,
+            include_reasoning=True,
             image_bytes=opt_image_bytes,
             mime_type=opt_mime_type,
         )
-
-        await self._debug_log(
-            "classify",
-            self.classification_provider,
-            user_prompt,
-            response_text,
-            system=system_instruction,
-            input_tokens=in_tok,
-            output_tokens=out_tok,
-            cost=cost,
-            notification_type="image",
-        )
-
-        data = self._extract_json(response_text)
-        if not data.get("application"):
-            data["application"] = inferred_app or "Physical Receipt"
-
-        return AiParsedData(**data)
 
     async def extract_image_info_async(
         self,

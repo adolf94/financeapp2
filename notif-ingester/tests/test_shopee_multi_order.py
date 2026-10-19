@@ -155,6 +155,10 @@ class TestShopeeMultiOrderFlow(unittest.IsolatedAsyncioTestCase):
 
         finance_api = FinanceApiService()
         finance_api.client = mock_cosmos_client
+        # Account-existence guard: stub the Accounts container lookup
+        finance_api.get_specific_accounts_async = AsyncMock(
+            return_value=[{"id": "acc-shopee-expense"}, {"id": "acc-credit-card-bpi"}]
+        )
 
         now = datetime.now(timezone.utc)
         multi_orders = [
@@ -206,6 +210,47 @@ class TestShopeeMultiOrderFlow(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(debit_entries[0]["ReferenceNumber"], "#260808R1R49PTC")
         self.assertEqual(debit_entries[1]["Amount"], 500.00)
         self.assertEqual(debit_entries[1]["ReferenceNumber"], "#260808XYZABC")
+
+    async def test_create_transaction_rejects_unknown_account(self):
+        """Hallucinated/stale account IDs must never produce orphan LedgerEntries."""
+        mock_cosmos_client = MagicMock()
+        mock_db = MagicMock()
+        mock_tx_container = AsyncMock()
+        mock_cosmos_client.get_database_client.return_value = mock_db
+        mock_db.get_container_client.side_effect = (
+            lambda name: mock_tx_container if name == "Transactions" else AsyncMock()
+        )
+
+        finance_api = FinanceApiService()
+        finance_api.client = mock_cosmos_client
+        # Only the credit account exists — the debit ID is a hallucination
+        finance_api.get_specific_accounts_async = AsyncMock(
+            return_value=[{"id": "acc-credit-card-bpi"}]
+        )
+
+        ingestion = PendingIngestion(
+            id="ing-bad-acc",
+            user_id="user-1",
+            hook_id="hook-1",
+            received_at=datetime.now(timezone.utc),
+            raw_payload={},
+            raw_msg="msg",
+            ai_parsed=AiParsedData(
+                amount=100.0,
+                transaction_type="Expense",
+                credit_account_id="acc-credit-card-bpi",
+                debit_account_id="hallucinated-account-guid",
+            ),
+            month_key="2026-08",
+            partition_key="user-1",
+            notification_type="email"
+        )
+
+        with self.assertRaises(Exception) as ctx:
+            await finance_api.create_transaction_async(ingestion)
+        self.assertIn("hallucinated-account-guid", str(ctx.exception))
+        # Nothing was written
+        mock_tx_container.create_item.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

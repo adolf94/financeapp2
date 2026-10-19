@@ -18,7 +18,7 @@ def test_image_classification_prompt_formatting():
         app_branding_section="",
         runbook_content="# Runbook Rules",
         accounts="Available accounts text",
-        vendors="Existing vendors text",
+        vendors_section="Existing vendors text",
         vendor_matches="Vendor matches text",
         similar_context="Similar context text",
         related_context="",

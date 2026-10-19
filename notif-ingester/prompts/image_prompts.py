@@ -68,11 +68,10 @@ Analyze the image carefully and return ONLY valid JSON matching this schema:
   }},
   "amount": number (positive total amount paid/transacted in PHP, after taxes and discounts),
   "transaction_type": "Expense"|"Income"|"Transfer"|"Journal",
-  "debit_account_id": string (account id from the list provided, or null - DO NOT hallucinate),
-  "credit_account_id": string (account id from the list provided, or null - DO NOT hallucinate),
+  "debit_account_name": string (EXACT "Group | Name" line copied from the Available accounts list, or null),
+  "credit_account_name": string (EXACT "Group | Name" line copied from the Available accounts list, or null),
   "suggested_account_creation": [{{"type": "Cash"|"Bank"|"CreditCard"|"Investment"|"Asset"|"Liability"|"Equity"|"Income"|"Expense"|"Adjustment", "account_group": "string", "name": "string", "tags": ["string"]}}],
-  "notes": "string (A descriptive note, e.g. 'Parsed from receipt image: [Merchant]')",
-  "summary": "string (A concise, human-readable summary of this transaction)",
+  "summary": "string (A concise, human-readable summary of this transaction; include the merchant name, e.g. 'Parsed from receipt image: [Merchant]')",
   "confidence": number (0.0-1.0),
   "recipient_account_number": string (if visible on receipt/statement),
   "recipient_account_name": string (if visible on receipt/statement),
@@ -98,7 +97,7 @@ Rules:
 - For Expense: debit = expense account, credit = source bank/cash/credit card account.
 - For Income: debit = receiving bank/cash account, credit = income account.
 - For Transfer: debit = receiving account, credit = sending account.
-- Account IDs: DO NOT hallucinate account IDs. Use exact account IDs from the available accounts list. If no matching account exists, set null and suggest account creation.
+- Account Selection: Reference accounts ONLY by the exact `Group | Name` line from the "Available accounts" list (e.g. `Asset | BPI Savings`). NEVER invent, guess, or paraphrase account names. If no matching account exists, set null and suggest account creation.
 """
 
 IMAGE_CLASSIFICATION_USER_PROMPT = """
