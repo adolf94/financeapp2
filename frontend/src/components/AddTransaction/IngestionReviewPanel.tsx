@@ -6,6 +6,7 @@ import { useAddTransaction } from './AddTransactionContext'
 import { useUpdateIngestionVendor, useGetPendingIngestions, PendingIngestion } from '@/hooks/useIngestions'
 import { useGetVendors, useCreateVendor } from '@/hooks/useVendors'
 import { useGetAccounts } from '@/hooks/useAccounts'
+import { mergeSummaryNotes } from '@/lib/aiParsedText'
 import SuggestedAccountsPanel from './SuggestedAccountsPanel'
 import { IngestionReviewSkeleton } from '@/components/ui/Skeleton'
 import AuthenticatedReceiptImage from '@/components/AuthenticatedReceiptImage'
@@ -261,7 +262,7 @@ export default function IngestionReviewPanel() {
             </button>
           </div>
           <p className="text-slate-900 dark:text-slate-100 font-medium text-xs leading-relaxed">
-            "{ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ingestion.raw_msg}"
+            "{mergeSummaryNotes(ingestion.ai_parsed.summary, ingestion.ai_parsed.notes, ingestion.raw_msg)}"
           </p>
         </div>
       ) : ingestion.notification_type === 'image' ? (
@@ -279,7 +280,7 @@ export default function IngestionReviewPanel() {
             </button>
           </div>
           <p className="text-slate-900 dark:text-slate-100 font-medium text-xs leading-relaxed">
-            "{ingestion.ai_parsed.summary || ingestion.ai_parsed.notes || ingestion.raw_msg}"
+            "{mergeSummaryNotes(ingestion.ai_parsed.summary, ingestion.ai_parsed.notes, ingestion.raw_msg)}"
           </p>
         </div>
       ) : ingestion.notification_type === 'sms' ? (
@@ -585,7 +586,7 @@ export default function IngestionReviewPanel() {
                   Raw / Summary Content
                 </span>
                 <p className="text-slate-800 dark:text-slate-200 font-medium text-xs whitespace-pre-wrap leading-relaxed">
-                  {selectedRelatedItem.ai_parsed?.summary || selectedRelatedItem.raw_msg}
+                  {mergeSummaryNotes(selectedRelatedItem.ai_parsed?.summary, selectedRelatedItem.ai_parsed?.notes, selectedRelatedItem.raw_msg)}
                 </p>
               </div>
 
