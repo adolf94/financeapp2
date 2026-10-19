@@ -1,6 +1,6 @@
 
 import { useState } from 'react'
-import { RotateCcw, Sparkles, Plus, X, Check, Mail, MessageSquare, Bell, Image as ImageIcon, AlertTriangle, Link2, ExternalLink } from 'lucide-react'
+import { RotateCcw, Sparkles, Plus, X, Check, Mail, MessageSquare, Bell, Image as ImageIcon, AlertTriangle, Link2, ExternalLink, FileJson } from 'lucide-react'
 import dayjs from 'dayjs'
 import { useAddTransaction } from './AddTransactionContext'
 import { useUpdateIngestionVendor, useGetPendingIngestions, PendingIngestion } from '@/hooks/useIngestions'
@@ -8,6 +8,7 @@ import { useGetVendors, useCreateVendor } from '@/hooks/useVendors'
 import { useGetAccounts } from '@/hooks/useAccounts'
 import { mergeSummaryNotes } from '@/lib/aiParsedText'
 import SuggestedAccountsPanel from './SuggestedAccountsPanel'
+import IngestionJsonDebugModal from './IngestionJsonDebugModal'
 import { IngestionReviewSkeleton } from '@/components/ui/Skeleton'
 import AuthenticatedReceiptImage from '@/components/AuthenticatedReceiptImage'
 
@@ -63,6 +64,7 @@ export default function IngestionReviewPanel() {
   const updateIngestionVendorMutation = useUpdateIngestionVendor()
 
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [isJsonDebugOpen, setIsJsonDebugOpen] = useState(false)
   const [selectedRelatedItem, setSelectedRelatedItem] = useState<PendingIngestion | null>(null)
 
   // Resolve relation fields
@@ -150,14 +152,25 @@ export default function IngestionReviewPanel() {
             </span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setIsReviewOpen(!isReviewOpen)}
-          className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-bold cursor-pointer normal-case text-[11px]"
-          aria-expanded={isReviewOpen}
-        >
-          {isReviewOpen ? 'Hide AI Details' : 'Show AI Details'}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setIsJsonDebugOpen(true)}
+            title="Debug: View notification JSON"
+            aria-label="Debug: View notification JSON"
+            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-700/60"
+          >
+            <FileJson className="w-3.5 h-3.5" strokeWidth={1.5} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsReviewOpen(!isReviewOpen)}
+            className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-bold cursor-pointer normal-case text-[11px]"
+            aria-expanded={isReviewOpen}
+          >
+            {isReviewOpen ? 'Hide AI Details' : 'Show AI Details'}
+          </button>
+        </div>
       </div>
 
       {/* Confirmed Match Warning Banner */}
@@ -649,6 +662,11 @@ export default function IngestionReviewPanel() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Debug: Raw Notification JSON Modal */}
+      {isJsonDebugOpen && ingestion && (
+        <IngestionJsonDebugModal ingestion={ingestion} onClose={() => setIsJsonDebugOpen(false)} />
       )}
     </div>
   )
