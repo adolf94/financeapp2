@@ -24,3 +24,10 @@ settings.local.json
 .env
 github.env
 .devcontainer/logs/
+
+# Local Cosmos DB emulator data / snapshot tooling (never commit user data)
+cosmos/
+AzuriteConfig/
+scripts/azure-em/
+scripts/cosmos_copy.py
+scripts/sync_cosmos_emulator.py

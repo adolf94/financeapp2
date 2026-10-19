@@ -67,8 +67,8 @@ export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$PATH"
 if command -v opencode >/dev/null 2>&1 && opencode --version >/dev/null 2>&1; then
   echo "opencode OK: $(opencode --version 2>&1 | head -n1)"
 else
-  echo "opencode missing/broken - installing via https://opencode.ai/install ..."
-  if curl -fsSL https://opencode.ai/install | bash; then
+  echo "opencode missing/broken - installing via https://opencode.ai/v2/install ..."
+  if curl -fsSL https://opencode.ai/v2/install | bash; then
     export PATH="$HOME/.opencode/bin:$HOME/.local/bin:$PATH"
   else
     echo "WARN: opencode install script failed (offline?) - trying npm postinstall repair" >&2
@@ -84,21 +84,21 @@ else
   if opencode --version >/dev/null 2>&1; then
     echo "opencode OK: $(opencode --version 2>&1 | head -n1)"
   else
-    echo "WARN: opencode still unavailable - rerun setup.sh when online, or run: curl -fsSL https://opencode.ai/install | bash" >&2
+    echo "WARN: opencode still unavailable - rerun setup.sh when online, or run: curl -fsSL https://opencode.ai/v2/install | bash" >&2
   fi
 fi
 
 
-echo "==> Ensuring agy (Antigravity CLI)"
-# Best-effort and idempotent: ai-cli.sh skips when agy is already present
-# and never blocks setup when offline. Binary lands in ~/.local/bin,
-# which the PATH block above already persists.
-if command -v agy >/dev/null 2>&1; then
-  echo "agy OK: $(agy --version 2>&1 | head -n1)"
-else
-  bash "$ROOT/.devcontainer/scripts/ai-cli.sh" --agy --no-extensions \
-    || echo "WARN: agy install failed (offline?) - rerun setup.sh when online, or run: curl -fsSL https://antigravity.google/cli/install.sh | bash" >&2
-fi
+# echo "==> Ensuring agy (Antigravity CLI)"
+# # Best-effort and idempotent: ai-cli.sh skips when agy is already present
+# # and never blocks setup when offline. Binary lands in ~/.local/bin,
+# # which the PATH block above already persists.
+# if command -v agy >/dev/null 2>&1; then
+#   echo "agy OK: $(agy --version 2>&1 | head -n1)"
+# else
+#   bash "$ROOT/.devcontainer/scripts/ai-cli.sh" --agy --no-extensions \
+#     || echo "WARN: agy install failed (offline?) - rerun setup.sh when online, or run: curl -fsSL https://antigravity.google/cli/install.sh | bash" >&2
+# fi
 
 echo "==> Restoring backend NuGet packages"
 dotnet restore backend/backend.csproj

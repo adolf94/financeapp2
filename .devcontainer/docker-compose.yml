@@ -125,6 +125,10 @@ services:
       DOTNET_NOLOGO: "1"
     volumes:
       - ../:/workspaces/finance3
+      # Host Pictures folder, so screenshots can be shared with OpenCode
+      # (reference files under /workspaces/pictures in prompts).
+      # Override PICTURES_PATH in .devcontainer/.env if yours lives elsewhere.
+      - ${PICTURES_PATH:-$HOME/Pictures}:/workspaces/pictures
     ports:
       # Expose the app ports to the host so a browser can reach the frontend,
       # and the functions hosts are reachable from the host for testing.

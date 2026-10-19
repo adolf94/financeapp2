@@ -95,6 +95,7 @@ if [ "$RUN_INGESTER" -eq 1 ]; then
   (
     cd notif-ingester
     env "languageWorkers:python:defaultExecutablePath=$ROOT/notif-ingester/.venv/bin/python" \
+      "AzureFunctionsJobHost__extensionBundle__ensureLatest=false" \
       func start --address 0.0.0.0
   ) >"$LOGDIR/ingester.log" 2>&1 &
   echo $! > "$PIDFILE_INGESTER"

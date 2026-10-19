@@ -1655,8 +1655,19 @@ def negotiate(req: func.HttpRequest) -> func.HttpResponse:
         if endpoint.endswith('/'):
             endpoint = endpoint[:-1]
 
+        # The connection-string endpoint (e.g. http://signalr:8888) is only
+        # reachable inside the docker network, where the server-to-server
+        # publishing happens. The URL returned here is used by the BROWSER,
+        # which needs a host-reachable endpoint (the SignalR emulator is
+        # published to the host at localhost:6001). Fall back to the
+        # connection-string endpoint in production (real Azure SignalR), where
+        # both are the same public URL.
+        client_endpoint = os.environ.get("SignalRClientEndpoint") or endpoint
+        if client_endpoint.endswith('/'):
+            client_endpoint = client_endpoint[:-1]
+
         hub_name = "notificationHub"
-        client_url = f"{endpoint}/client/?hub={hub_name}"
+        client_url = f"{client_endpoint}/client/?hub={hub_name}"
 
         import jwt
         import time

@@ -63,6 +63,11 @@ RUN dotnet --version \
     && python3 --version
 
 # Non-root user (matches devcontainers/base) and useful aliases.
+# Pre-create the XDG directories owned by vscode so tools that mkdir
+# ~/.local/share and ~/.local/state don't hit EACCES.
+RUN mkdir -p /home/vscode/.local/state /home/vscode/.local/share \
+    && chown -R vscode:vscode /home/vscode/.local
+
 USER vscode
 WORKDIR /workspaces/finance3
 
