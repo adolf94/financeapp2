@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   RefreshCw,
   RotateCcw,
   X,
   Loader2,
   Sparkles,
+  Calendar,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { uuidv7 } from 'uuidv7'
@@ -181,6 +182,7 @@ function AddTransactionModalContent() {
   const createVendorMutation = useCreateVendor()
 
   const [isEditVendorOpen, setIsEditVendorOpen] = useState(false)
+  const dateInputRef = useRef<HTMLInputElement>(null)
 
   // Combine DB Vendors with presets
   const vendorOptions = useMemo(
@@ -561,14 +563,32 @@ function AddTransactionModalContent() {
                       >
                         Date
                       </label>
-                      <input
-                        id="transaction-date-input"
-                        type="datetime-local"
-                        value={date}
-                        onChange={(e) => setDate(e.target.value)}
-                        required
-                        className="min-h-[42px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
-                      />
+                      <div className="relative">
+                        <input
+                          id="transaction-date-input"
+                          ref={dateInputRef}
+                          type="datetime-local"
+                          value={date}
+                          onChange={(e) => setDate(e.target.value)}
+                          required
+                          className="hide-native-picker min-h-[42px] px-3 pr-10 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 w-full text-xs sm:text-sm"
+                        />
+                        <button
+                          type="button"
+                          aria-label="Open date picker"
+                          title="Open date picker"
+                          onClick={() => {
+                            try {
+                              dateInputRef.current?.showPicker()
+                            } catch {
+                              dateInputRef.current?.focus()
+                            }
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer"
+                        >
+                          <Calendar className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1">
                       <label

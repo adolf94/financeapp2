@@ -56,6 +56,26 @@ export default function AppLayout() {
 
   const [isModalOpen, setIsModalOpen] = useState(false)
 
+  // Pressing "N" opens the Add Transaction modal (same as the FAB).
+  // Ignored while typing in inputs, textareas, selects, or contenteditable elements.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'n' || e.ctrlKey || e.metaKey || e.altKey) return
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.isContentEditable ||
+          ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+      ) {
+        return
+      }
+      e.preventDefault()
+      setIsModalOpen(true)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       login({ useRedirect: true })

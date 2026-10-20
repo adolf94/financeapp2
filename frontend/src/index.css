@@ -29,6 +29,15 @@
 }
 
 @layer utilities {
+  /* Hide the native datetime-local picker indicator (custom calendar button is used instead) */
+  .hide-native-picker::-webkit-calendar-picker-indicator {
+    display: none;
+    -webkit-appearance: none;
+  }
+  .hide-native-picker::-webkit-date-and-time-value {
+    text-align: left;
+  }
+
   .safe-pb {
     padding-bottom: env(safe-area-inset-bottom, 0);
   }
