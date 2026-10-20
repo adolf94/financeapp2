@@ -9,7 +9,7 @@ beforeAll(() => {
 
 function renderPanel({
   chatHistory = [] as ChatMessage[],
-  pendingAnswers = [] as { key: string; qNum: string; answer: string }[],
+  pendingAnswers = [] as { key: string; qNum: string; answer: string; submitted?: boolean }[],
   onAnswerChange = vi.fn(),
   onSendMessage = vi.fn(),
   isThinking = false,
