@@ -644,16 +644,19 @@ Return ONLY valid JSON matching this schema:
             return "", ""
 
         parts.append(
-            "- Note on suggested_rule: Restate the user's corrections as ONE clear, self-contained statement of "
-            "INTENT for this transaction, phrased for an AI runbook reviewer to act on: name the app/vendor, the "
-            "corrected transaction type, and the corrected debit/credit accounts using their exact 'Group | Name' "
-            "labels. Clarify vague wording and normalize messy phrasing, but do NOT invent reasons the user did "
-            "not give, do NOT write a runbook rule, and do NOT copy the user's wording verbatim — revise it so it "
-            "is unambiguous."
+            "- Note on suggested_rule: Restate ONLY what the user actually gave you, as ONE clear, "
+            "self-contained statement of intent for this transaction. Mirror the user's level of specificity: if "
+            "their comment is vague (e.g. 'It was incorrectly placed.'), the restatement stays vague (e.g. 'User "
+            "says the current classification placement is incorrect and wants it adjusted.') — do NOT fill in "
+            "specifics yourself, even if the transaction context suggests them. Name the app/vendor, transaction "
+            "type, or accounts ONLY if the user explicitly stated or selected them (with exact 'Group | Name' "
+            "labels and the exact debit/credit roles they chose — never swapped). Never phrase it as a rule for "
+            "future transactions, never invent reasons the user did not give, and never copy their wording "
+            "verbatim. Deciding the general rule is the runbook reviewer's job."
         )
 
         section = "\n" + "\n".join(parts) + "\n"
-        suggested_rule_field = ',\n  "suggested_rule": string (A clarified restatement of the user\'s correction intent for THIS transaction: normalized wording that names the app/vendor, corrected transaction type, and corrected debit/credit accounts as exact \'Group | Name\' labels, phrased so an AI reviewer can act on it unambiguously. NOT a runbook rule, NOT a verbatim quote of the user\'s words. Return null or empty string if not applicable.)'
+        suggested_rule_field = ',\n  "suggested_rule": string (A clarified restatement of what the user ACTUALLY said or selected for THIS transaction — at the same level of specificity the user gave. Vague comment in, vague restatement out: do NOT invent specifics (accounts, types, patterns) the user never provided. Name accounts/types only if the user explicitly stated or selected them. NOT a rule for future transactions, NOT a verbatim quote. Return null or empty string if not applicable.)'
         return section, suggested_rule_field
 
     async def classify_async(
