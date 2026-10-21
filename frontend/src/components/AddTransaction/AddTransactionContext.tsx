@@ -409,7 +409,10 @@ export function AddTransactionProvider({
         mode: initialData.type === 'Journal' ? 'Advanced' : 'Simple',
         type: initialData.type,
         totalAmount: initialData.type === 'Journal' ? '' : (initialData.entries.find((e) => e.amount > 0)?.amount.toString() || ''),
-        sourceAccountId: initialData.type === 'Expense' ? (initialData.entries.find((e) => e.amount < 0)?.accountId || '') : '',
+        sourceAccountId:
+          initialData.type === 'Income'
+            ? (initialData.entries.find((e) => e.amount > 0)?.accountId || '')
+            : (initialData.entries.find((e) => e.amount < 0)?.accountId || ''),
         toAccountId: initialData.type === 'Transfer' ? (initialData.entries.find((e) => e.amount > 0)?.accountId || '') : '',
         splits: initialData.type === 'Expense' ? initialData.entries.filter((e) => e.amount > 0).map((e) => ({ categoryId: accounts.find((a) => a.id === e.accountId)?.accountGroupId || '', subCategoryId: e.accountId, amount: '' })) : [{ categoryId: '', subCategoryId: '', amount: '' }],
         journalLines: initialData.type === 'Journal' ? initialData.entries.map((e) => ({ categoryId: accounts.find((a) => a.id === e.accountId)?.accountGroupId || '', subCategoryId: e.accountId, amount: Math.abs(e.amount).toString(), type: e.amount > 0 ? 'Debit' : 'Credit', note: e.note || '', referenceNumber: e.referenceNumber || '' })) : [{ categoryId: '', subCategoryId: '', amount: '', type: 'Debit', note: '', referenceNumber: '' }, { categoryId: '', subCategoryId: '', amount: '', type: 'Credit', note: '', referenceNumber: '' }],
