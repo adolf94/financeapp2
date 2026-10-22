@@ -67,17 +67,29 @@ class PreprocessingService:
     
     def __init__(self, debug_repo: Optional[IPromptDebugRepository] = None):
         self.logger = logging.getLogger(__name__)
-        self.extraction_provider = make_provider("CLASSIFICATION")
+        # PREPROCESSING role inherits the CLASSIFICATION lane config when
+        # PREPROCESSING_AI is unset (same routed primary/backup treatment).
+        self.extraction_provider = make_provider("PREPROCESSING")
+        # Lane-aware extraction (plans/model-routing-plan.md): preprocessing
+        # during a reclassification run rides the reclassification lane
+        # (go:glm-5.3-flash), new-notification preprocessing rides the
+        # classification lane (go-anthropic:qwen3.7-plus).
+        self.reclass_extraction_provider = make_provider("RECLASSIFICATION")
         self._debug_repo = debug_repo or NoOpPromptDebugRepository()
         self._prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
-    
-    async def extract_with_ai(self, text: str) -> Dict:
+
+    def _provider_for_lane(self, lane: str = "CLASSIFICATION"):
+        if lane == "RECLASSIFICATION":
+            return self.reclass_extraction_provider
+        return self.extraction_provider
+
+    async def extract_with_ai(self, text: str, lane: str = "CLASSIFICATION") -> Dict:
         """Use AI to extract account/vendor information from text"""
         prompt = self.EXTRACTION_PROMPT.format(raw_msg=text)
         response_text = ""
         in_tok, out_tok, cost = None, None, None
         try:
-            response_text, in_tok, out_tok, cost = await self.extraction_provider.generate(
+            response_text, in_tok, out_tok, cost = await self._provider_for_lane(lane).generate(
                 prompt=prompt,
                 json_mode=True,
                 temperature=0.1,
@@ -275,14 +287,14 @@ class PreprocessingService:
 
 
     
-    async def process_hook(self, hook: PhoneHookMessage) -> ExtractedAccountInfo:
+    async def process_hook(self, hook: PhoneHookMessage, lane: str = "CLASSIFICATION") -> ExtractedAccountInfo:
         """Main method to extract all account information from a hook using AI"""
         text = hook.raw_msg
-        
+
         self.logger.info(f"[PreprocessingService] Extracting account info from: {text[:100]}...")
-        
+
         # Use AI for extraction
-        extracted_data = await self.extract_with_ai(text)
+        extracted_data = await self.extract_with_ai(text, lane=lane)
         
         application = self.extract_application(hook)
         

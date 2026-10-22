@@ -10,7 +10,12 @@ from typing import Optional, Tuple
 # Pricing table: (input_price_per_1m, output_price_per_1m) in USD
 MODEL_PRICING: dict[str, Tuple[float, float]] = {
     # Qwen models (OpenRouter / Alibaba Cloud)
-    "qwen/qwen3.7-flash": (0.07, 0.28),
+    "qwen/qwen3.7-flash": (0.03, 0.13),
+    "qwen3.7-flash": (0.03, 0.13),
+    # OpenCode Go models (plans/model-routing-plan.md)
+    "qwen3.7-plus": (0.40, 1.60),
+    "glm-5.3-flash": (0.15, 0.50),
+    "qwen/qwen3.8-flash": (0.15, 0.47),
     "qwen/qwen-2.5-72b-instruct": (0.12, 0.39),
     "qwen/qwen-2.5-coder-32b-instruct": (0.07, 0.16),
     "qwen-turbo": (0.05, 0.20),

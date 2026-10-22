@@ -34,6 +34,7 @@ from services.notification_type_detector import NotificationTypeDetector
 from services.email_fetching_service import check_and_save_emails_async
 from services.date_utils import parse_iso_or_local_to_utc
 from services.automate_notification_service import send_error_notification_async
+from services.llm_provider import get_circuit_states, reset_circuits
 
 
 from ar_auth.azure import ArAuthAzureClient
@@ -196,6 +197,25 @@ def get_image_ingestion_service():
 
 
 _type_detector = NotificationTypeDetector()
+
+# ── LLM routing circuit admin (plans/model-routing-plan.md §3) ────────────
+# GET  /routing/circuits        → current latch state per lane
+# POST /routing/circuits        → manual ops reset; ?lane=CLASSIFICATION|RECLASSIFICATION
+#                                 restores that lane to primary-first (omit to reset all)
+@app.route(route="routing/circuits", methods=["GET", "POST"])
+async def RoutingCircuitsFunction(req: func.HttpRequest) -> func.HttpResponse:
+    user, err = _require_auth(req)
+    if err:
+        return err
+
+    if req.method == "POST":
+        lane = req.params.get("lane")
+        reset_circuits(lane)
+
+    return func.HttpResponse(
+        json.dumps({"circuits": get_circuit_states()}),
+        status_code=200, mimetype="application/json"
+    )
 
 @app.route(route="health", methods=["GET", "POST", "PUT", "PATCH"])
 async def HealthFunction(req: func.HttpRequest) -> func.HttpResponse:

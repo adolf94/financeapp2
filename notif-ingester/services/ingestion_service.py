@@ -281,9 +281,9 @@ class IngestionService:
 
         return "\n".join(context_lines)
 
-    async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id: str = None, connection_id: str = None, stream_reasoning: bool = True, exchange_rate_info: str = "", user_corrections: Optional[dict] = None, related_context: str = "", extracted_info = None) -> 'AiParsedData':
+    async def _classify_hook_async(self, hook: PhoneHookMessage, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id: str = None, connection_id: str = None, stream_reasoning: bool = True, exchange_rate_info: str = "", user_corrections: Optional[dict] = None, related_context: str = "", extracted_info = None, lane: str = "CLASSIFICATION") -> 'AiParsedData':
         return await self._ai_service.classify_async(
-            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections, related_context=related_context
+            hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections, related_context=related_context, lane=lane
         )
 
     def _extract_effective_time(self, ingestion: PendingIngestion) -> datetime:
@@ -614,7 +614,7 @@ class IngestionService:
             partition_key=user_id,
             received_at=ingestion.received_at
         )
-        extracted_info = await self._preprocessing_service.process_hook(hook_for_preprocess)
+        extracted_info = await self._preprocessing_service.process_hook(hook_for_preprocess, lane="RECLASSIFICATION")
 
         # 2. Vendor lookups (also a fusion signal for retrieval)
         pre_lookups = []
@@ -674,7 +674,7 @@ class IngestionService:
             raw_payload=ingestion.raw_payload,
             user_id=user_id
         )
-        ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections, related_context=related_context, extracted_info=extracted_info)
+        ai_parsed = await self._classify_hook_async(hook_like, similar_vectors, accounts, runbook_content, vendors, vendor_matches, operation_id=operation_id, connection_id=connection_id, stream_reasoning=stream_reasoning, exchange_rate_info=exchange_rate_info, user_corrections=user_corrections, related_context=related_context, extracted_info=extracted_info, lane="RECLASSIFICATION")
 
         # 5. Update ingestion with new classification
         matches = []

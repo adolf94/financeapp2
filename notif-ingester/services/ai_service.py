@@ -53,10 +53,21 @@ CLASSIFICATION_PROMPT = APP_CLASSIFICATION_PROMPT
 class AiService:
     def __init__(self, debug_repo: Optional[IPromptDebugRepository] = None):
         self.classification_provider = make_provider("CLASSIFICATION")
+        # Lane-aware providers (plans/model-routing-plan.md): RECLASSIFICATION
+        # inherits the CLASSIFICATION lane unless RECLASSIFICATION_AI is set.
+        self.reclassification_provider = make_provider("RECLASSIFICATION")
         self.reasoning_provider = make_provider("REASONING")
         self._debug_repo = debug_repo or NoOpPromptDebugRepository()
         self._prompt_debug = os.environ.get("PROMPT_DEBUG", "").lower() == "true"
         self._always_include_vendors = os.environ.get("ALWAYS_INCLUDE_VENDORS", "").lower() == "true"
+
+    def _lane_provider(self, lane: str = "CLASSIFICATION") -> LlmProvider:
+        """Select the provider for a routing lane: RECLASSIFICATION uses the
+        reclassification lane (Lane A); everything else uses the
+        classification lane (Lane B)."""
+        if lane == "RECLASSIFICATION":
+            return self.reclassification_provider
+        return self.classification_provider
 
     async def _debug_log(
         self,
@@ -186,6 +197,7 @@ class AiService:
         
         content_chunks: list[str] = []
         thinking_chunks: list[str] = []
+        thinking_count = 0
         last_thinking_publish_time = time.time()
         stream_in_tok: Optional[int] = None
         stream_out_tok: Optional[int] = None
@@ -205,6 +217,7 @@ class AiService:
             if chunk_type == "usage":
                 stream_in_tok, stream_out_tok, stream_cost = text_or_data
             elif chunk_type == "thinking":
+                thinking_count += 1
                 # Publish CoT tokens to a dedicated target so the UI can
                 # display them in a separate section from the final JSON.
                 if stream_reasoning_to_client:
@@ -241,6 +254,15 @@ class AiService:
                 )
 
         final_content = "".join(content_chunks)
+
+        # ── Diagnostics: pinpoint where a missing reasoning stream breaks ──
+        # include_reasoning=False here → env gate or call chain; 0 thinking
+        # chunks despite include_reasoning=True → model emitted no reasoning.
+        logging.getLogger(__name__).info(
+            f"[LLM STREAM] target={target} include_reasoning={include_reasoning} "
+            f"thinking_chunks={thinking_count} content_chars={len(final_content)} "
+            f"operation_id={operation_id}"
+        )
 
         # Fallback estimation for token counts if provider stream omitted usage
         if stream_in_tok is None:
@@ -672,7 +694,8 @@ Return ONLY valid JSON matching this schema:
         stream_reasoning_to_client: bool = True,
         exchange_rate_info: str = "",
         user_corrections: Optional[dict] = None,
-        related_context: str = ""
+        related_context: str = "",
+        lane: str = "CLASSIFICATION"
     ) -> AiParsedData:
         
         context = self._build_context(similar_vectors)
@@ -721,7 +744,7 @@ Return ONLY valid JSON matching this schema:
         )
         
         return await self._classify_with_account_repair_async(
-            provider=self.classification_provider,
+            provider=self._lane_provider(lane),
             base_user_prompt=user_prompt,
             system_instruction=system_instruction,
             accounts=accounts,
@@ -732,7 +755,13 @@ Return ONLY valid JSON matching this schema:
             connection_id=connection_id,
             user_id=hook.user_id,
             stream_reasoning_to_client=stream_reasoning_to_client,
-            include_reasoning=False,
+            # Change-feed classify (lane=CLASSIFICATION) never requests reasoning:
+            # strict json_mode is the priority there and no CoT is streamed.
+            # Reclassify (lane=RECLASSIFICATION) follows the UI toggle —
+            # streamReasoning=true requests reasoning (json_mode is then
+            # suppressed and the JSON is parsed from the accumulated content),
+            # so the CoT streams to reclassifyThinking.
+            include_reasoning=(stream_reasoning_to_client and lane == "RECLASSIFICATION"),
         )
 
     async def classify_sms_async(
@@ -748,7 +777,8 @@ Return ONLY valid JSON matching this schema:
         stream_reasoning_to_client: bool = True,
         exchange_rate_info: str = "",
         user_corrections: Optional[dict] = None,
-        related_context: str = ""
+        related_context: str = "",
+        lane: str = "CLASSIFICATION"
     ) -> AiParsedData:
         """Classify using SMS-specific prompt (tailored for SMS banking messages)."""
         context = self._build_context(similar_vectors)
@@ -798,7 +828,7 @@ Return ONLY valid JSON matching this schema:
         )
 
         return await self._classify_with_account_repair_async(
-            provider=self.classification_provider,
+            provider=self._lane_provider(lane),
             base_user_prompt=user_prompt,
             system_instruction=system_instruction,
             accounts=accounts,
@@ -825,7 +855,8 @@ Return ONLY valid JSON matching this schema:
         stream_reasoning_to_client: bool = True,
         exchange_rate_info: str = "",
         user_corrections: Optional[dict] = None,
-        related_context: str = ""
+        related_context: str = "",
+        lane: str = "CLASSIFICATION"
     ) -> AiParsedData:
         """Classify using Email-specific prompt (tailored for email receipts/statements)."""
         context = self._build_context(similar_vectors)
@@ -871,7 +902,7 @@ Return ONLY valid JSON matching this schema:
 
         fallback_app = sender.split("@")[-1].replace(">", "") if "@" in sender else sender
         return await self._classify_with_account_repair_async(
-            provider=self.classification_provider,
+            provider=self._lane_provider(lane),
             base_user_prompt=user_prompt,
             system_instruction=system_instruction,
             accounts=accounts,
@@ -898,7 +929,8 @@ Return ONLY valid JSON matching this schema:
         stream_reasoning_to_client: bool = True,
         exchange_rate_info: str = "",
         user_corrections: Optional[dict] = None,
-        related_context: str = ""
+        related_context: str = "",
+        lane: str = "CLASSIFICATION"
     ) -> AiParsedData:
         """Classify Shopee email, detecting multi-order checkout or single-order."""
         context = self._build_context(similar_vectors)
@@ -931,7 +963,7 @@ Return ONLY valid JSON matching this schema:
         system_instruction = SHOPEE_MULTI_ORDER_SYSTEM_PROMPT
 
         return await self._classify_with_account_repair_async(
-            provider=self.classification_provider,
+            provider=self._lane_provider(lane),
             base_user_prompt=user_prompt,
             system_instruction=system_instruction,
             accounts=accounts,
@@ -998,7 +1030,8 @@ Return ONLY valid JSON matching this schema:
         connection_id: str = None,
         stream_reasoning_to_client: bool = True,
         user_corrections: Optional[dict] = None,
-        related_context: str = ""
+        related_context: str = "",
+        lane: str = "CLASSIFICATION"
     ) -> AiParsedData:
         """Classify a financial receipt/statement using multimodal vision AI."""
         context = self._build_context(similar_vectors)
@@ -1049,7 +1082,7 @@ Return ONLY valid JSON matching this schema:
         )
 
         return await self._classify_with_account_repair_async(
-            provider=self.classification_provider,
+            provider=self._lane_provider(lane),
             base_user_prompt=user_prompt,
             system_instruction=system_instruction,
             accounts=accounts,

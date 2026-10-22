@@ -87,7 +87,8 @@ class EmailProcessingService(IngestionService):
         exchange_rate_info: str = "",
         user_corrections: Optional[dict] = None,
         related_context: str = "",
-        extracted_info = None
+        extracted_info = None,
+        lane: str = "CLASSIFICATION"
     ) -> AiParsedData:
         """Route to multi-order prompt if multi-order detected during precheck, otherwise standard Email prompt."""
         is_multi_order = extracted_info.is_multi_order if extracted_info and hasattr(extracted_info, "is_multi_order") else False
@@ -100,14 +101,14 @@ class EmailProcessingService(IngestionService):
                 hook, similar_vectors, accounts, combined_runbook, vendors, vendor_matches,
                 operation_id=operation_id, connection_id=connection_id,
                 stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info,
-                user_corrections=user_corrections, related_context=related_context
+                user_corrections=user_corrections, related_context=related_context, lane=lane
             )
 
         return await self._ai_service.classify_email_async(
             hook, similar_vectors, accounts, runbook_content, vendors, vendor_matches,
             operation_id=operation_id, connection_id=connection_id,
             stream_reasoning_to_client=stream_reasoning, exchange_rate_info=exchange_rate_info,
-            user_corrections=user_corrections, related_context=related_context
+            user_corrections=user_corrections, related_context=related_context, lane=lane
         )
 
     def get_shopee_runbook_content(self) -> str:

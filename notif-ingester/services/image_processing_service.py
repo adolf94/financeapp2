@@ -464,6 +464,7 @@ class ImageProcessingService(IngestionService):
                 stream_reasoning_to_client=stream_reasoning,
                 user_corrections=user_corrections,
                 related_context=related_context,
+                lane="RECLASSIFICATION",
             )
 
             if user_corrections:
