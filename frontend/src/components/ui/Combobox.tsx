@@ -15,6 +15,7 @@ interface ComboboxProps {
   placeholder?: string
   className?: string
   disabled?: boolean
+  id?: string
 }
 
 export default function Combobox({
@@ -25,6 +26,7 @@ export default function Combobox({
   placeholder = 'Select...',
   className = '',
   disabled = false,
+  id,
 }: ComboboxProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -87,10 +89,14 @@ export default function Combobox({
         <div className="flex-1 flex items-center min-w-0">
           <input
             ref={inputRef}
+            id={id}
             type="text"
             className="w-full bg-transparent border-none outline-none text-slate-900 dark:text-slate-100 text-sm placeholder:text-slate-400"
             placeholder={placeholder}
             value={displayValue}
+            onFocus={() => {
+              if (!disabled && !isOpen) setIsOpen(true)
+            }}
             onChange={(e) => {
                setSearch(e.target.value)
                if (!isOpen) setIsOpen(true)
@@ -129,9 +135,13 @@ export default function Combobox({
                       opt.value === value ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium' : 'text-slate-900 dark:text-slate-100'
                     }`}
                     onMouseDown={(e) => {
+                      // Prevent focus leaving the search input, but don't
+                      // select yet — selection happens on the full click
+                      // (mousedown + mouseup) so a stray press or early
+                      // mouseup elsewhere doesn't commit the choice.
                       e.preventDefault()
-                      handleSelect(opt.value)
                     }}
+                    onClick={() => handleSelect(opt.value)}
                   >
                     {opt.label}
                   </button>
@@ -146,8 +156,8 @@ export default function Combobox({
               className="w-full text-left px-3 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 transition-colors"
               onMouseDown={(e) => {
                 e.preventDefault()
-                handleCreate()
               }}
+              onClick={() => handleCreate()}
             >
               <Plus className="w-4 h-4" /> Create "{search}"
             </button>

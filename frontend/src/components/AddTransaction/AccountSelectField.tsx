@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Account, AccountGroup } from '@/hooks/useAccounts'
+import Combobox from '@/components/ui/Combobox'
 
 interface AccountSelectFieldProps {
   id: string
@@ -34,21 +35,28 @@ export default function AccountSelectField({
     return accounts.find((a) => a.id === value)
   }, [accounts, value])
 
-  const groupIds = useMemo(() => {
-    return Array.from(new Set(filteredAccounts.map((a) => a.accountGroupId))).sort((a, b) => {
-      const gA = accountGroups.find((g) => g.id === a)?.name || ''
-      const gB = accountGroups.find((g) => g.id === b)?.name || ''
-      return gA.localeCompare(gB)
-    })
-  }, [filteredAccounts, accountGroups])
-
   const currentBalance = selectedAccount?.currentBalance ?? selectedAccount?.startingBalance
+
+  const options = useMemo(() => {
+    const groupNames = new Map(accountGroups.map((g) => [g.id, g.name]))
+    return filteredAccounts
+      .map((a) => ({
+        value: a.id ?? '',
+        label: a.name,
+        group: groupNames.get(a.accountGroupId) || 'Other',
+      }))
+      .sort(
+        (a, b) =>
+          a.group.localeCompare(b.group) || a.label.localeCompare(b.label)
+      )
+  }, [filteredAccounts, accountGroups])
 
   return (
     <div className={`flex flex-col gap-1 ${className}`}>
       <div className="flex items-center justify-between">
         <label htmlFor={id} className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
           {label}
+          {required && <span className="text-rose-500"> *</span>}
         </label>
         {selectedAccount && currentBalance !== undefined && (
           <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -68,29 +76,17 @@ export default function AccountSelectField({
           </span>
         )}
       </div>
-      <select
+
+      {/* Combobox instead of a native <select>: the browser popup can flash
+          open/closed on mousedown; the styled dropdown selects only on a
+          full click (mousedown + mouseup on the same option). */}
+      <Combobox
         id={id}
+        options={options}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-        className="min-h-[44px] px-3 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100"
-      >
-        <option value="">{placeholder}</option>
-        {groupIds.map((groupId) => {
-          const group = accountGroups.find((g) => g.id === groupId)
-          const groupAccounts = filteredAccounts.filter((a) => a.accountGroupId === groupId)
-          if (!group || groupAccounts.length === 0) return null
-          return (
-            <optgroup key={group.id} label={group.name}>
-              {groupAccounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </optgroup>
-          )
-        })}
-      </select>
+        onChange={onChange}
+        placeholder={placeholder}
+      />
     </div>
   )
 }

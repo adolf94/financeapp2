@@ -706,7 +706,14 @@ export function AddTransactionProvider({
     const trimmedRef = referenceNumber.trim() || undefined
 
     if (type === 'Transfer') {
-      if (!toAccountId) return
+      if (!sourceAccountId) {
+        alert('Please select a source account.')
+        return
+      }
+      if (!toAccountId) {
+        alert('Please select a destination account.')
+        return
+      }
       entries.push({
         accountId: sourceAccountId,
         amount: -parsedTotal,
@@ -719,6 +726,10 @@ export function AddTransactionProvider({
       })
     } else if (type === 'Expense') {
       const categorySplit = splits[0]
+      if (!sourceAccountId) {
+        alert('Please select an account.')
+        return
+      }
       if (!categorySplit?.subCategoryId) {
         alert('Please select a category.')
         return
@@ -737,6 +748,10 @@ export function AddTransactionProvider({
       })
     } else if (type === 'Income') {
       const categorySplit = splits[0]
+      if (!sourceAccountId) {
+        alert('Please select an account.')
+        return
+      }
       if (!categorySplit?.subCategoryId) {
         alert('Please select a category.')
         return

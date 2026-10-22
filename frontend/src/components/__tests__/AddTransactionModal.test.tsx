@@ -238,7 +238,7 @@ describe('AddTransactionModal', () => {
       // Enter vendor and select from dropdown
       const vendorInput = screen.getByPlaceholderText('Select or type vendor...') as HTMLInputElement
       fireEvent.click(vendorInput)
-      fireEvent.mouseDown(screen.getByText('Test Vendor'))
+      fireEvent.click(screen.getByText('Test Vendor'))
 
       // Existing lookup from DB should be populated
       expect(screen.getByText('EXISTING-LOOKUP-123')).toBeDefined()
@@ -526,11 +526,11 @@ describe('AddTransactionModal', () => {
       // Fill first journal line (Debit: Food & Dining > Dining Out)
       const categoryInputs = screen.getAllByPlaceholderText('Category...')
       fireEvent.click(categoryInputs[0])
-      fireEvent.mouseDown(screen.getByText('Food & Dining'))
+      fireEvent.click(screen.getByText('Food & Dining'))
 
       const accountInputs = screen.getAllByPlaceholderText('Account...')
       fireEvent.click(accountInputs[0])
-      fireEvent.mouseDown(screen.getByText('Dining Out'))
+      fireEvent.click(screen.getByText('Dining Out'))
 
       // Set amount for first line
       const amountInputs = screen.getAllByPlaceholderText('0.00') as HTMLInputElement[]
@@ -538,10 +538,10 @@ describe('AddTransactionModal', () => {
 
       // Fill second journal line (Credit: Cash & Bank > GCash)
       fireEvent.click(categoryInputs[1])
-      fireEvent.mouseDown(screen.getByText('Cash & Bank'))
+      fireEvent.click(screen.getByText('Cash & Bank'))
 
       fireEvent.click(accountInputs[1])
-      fireEvent.mouseDown(screen.getByText('GCash'))
+      fireEvent.click(screen.getByText('GCash'))
 
       // Switch second line to Credit
       const crBtns = screen.getAllByRole('button', { name: 'Cr' })
@@ -637,19 +637,20 @@ describe('AddTransactionModal', () => {
       const amountInput = screen.getByPlaceholderText('0.00') as HTMLInputElement
       fireEvent.change(amountInput, { target: { value: '1500.00' } })
 
-      // Select Source Account
-      const sourceSelect = screen.getByLabelText(/Pay From/i) as HTMLSelectElement
-      fireEvent.change(sourceSelect, { target: { value: 'acc-wallet' } })
+      // Select Source Account (Combobox: open, then pick option)
+      const sourceInput = screen.getByLabelText(/Pay From/i) as HTMLInputElement
+      fireEvent.click(sourceInput)
+      fireEvent.click(screen.getByText('GCash'))
 
       // Select Category
       const categoryInputs = screen.getAllByPlaceholderText('Select Category...')
       fireEvent.click(categoryInputs[0])
-      fireEvent.mouseDown(screen.getByText('Food & Dining'))
+      fireEvent.click(screen.getByText('Food & Dining'))
 
       // Select Sub-Category
       const subCategoryInputs = screen.getAllByPlaceholderText('Select Sub-Category...')
       fireEvent.click(subCategoryInputs[0])
-      fireEvent.mouseDown(screen.getByText('Dining Out'))
+      fireEvent.click(screen.getByText('Dining Out'))
 
       // Enable "Make this recurring"
       const recurringCheckbox = screen.getByRole('checkbox', { name: /Make this recurring/i })
