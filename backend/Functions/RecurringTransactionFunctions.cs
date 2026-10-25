@@ -116,6 +116,31 @@ namespace FinanceApp.Functions
             return new NoContentResult();
         }
 
+        // HTTP Trigger (client_credentials) to manually execute the daily scheduled transaction job
+        [Function("RunScheduledTransactionJob")]
+        public async Task<IActionResult> RunScheduledTransactionJob(
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "jobs/scheduled_transaction")] HttpRequest req, FunctionContext context)
+        {
+            if (!context.HasScope("cron:execute")) return context.MissingScopeResult("cron:execute");
+
+            _logger.LogInformation($"Scheduled transaction job triggered via HTTP at: {DateTime.UtcNow}");
+
+            try
+            {
+                await _recurringTransactionService.ProcessDueRecurringTransactionsAsync();
+                _logger.LogInformation("Successfully processed due recurring transactions via job trigger.");
+                return new OkObjectResult(new { status = "completed", message = "Due recurring transactions processed successfully." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing recurring transactions in scheduled job trigger.");
+                return new ObjectResult(new { error = "Failed to process due recurring transactions." })
+                {
+                    StatusCode = StatusCodes.Status500InternalServerError
+                };
+            }
+        }
+
         // Timer Trigger to process due recurring transactions
         [Function("ProcessRecurringTransactionsTimer")]
         public async Task Run([TimerTrigger("0 0 0 * * *")] TimerInfo myTimer) // Runs every day at midnight
