@@ -172,6 +172,90 @@ async def test_image_processing_service_process_hook():
     assert ingestion.ai_parsed.amount == 250.0
     mock_blob.download_image_async.assert_called_once_with("user-1/hook-img-99_receipt.png")
 
+
+@pytest.mark.asyncio
+async def test_image_reclassify_uses_hybrid_retrieval_without_name_error():
+    """Regression: image reclassify must define similar_vectors (previously raised
+    NameError: name 'similar_vectors' is not defined) and feed the OCR-card hybrid
+    retrieval results into classify_image_async."""
+    saved_ingestion = PendingIngestion(
+        id="ing-img-1",
+        user_id="user-1",
+        hook_id="ing-img-1",
+        raw_payload={
+            "blob_name": "user-1/ing-img-1_receipt.png",
+            "filename": "starbucks_receipt.png",
+            "format": "image/png",
+            "description": "Coffee",
+        },
+        raw_msg="[IMAGE]: Coffee",
+        ai_parsed=AiParsedData(is_financial=True, summary="Coffee", confidence=0.5),
+        month_key="2026-10",
+        partition_key="user-1",
+        notification_type="image",
+    )
+
+    mock_repo = AsyncMock()
+    mock_repo.get_by_id_async.return_value = saved_ingestion
+    mock_repo.update_async = AsyncMock(side_effect=lambda x: x)
+    mock_repo.find_candidates_for_relation_async.return_value = []
+
+    mock_embedding = AsyncMock()
+
+    mock_ai = AsyncMock()
+    mock_ai._debug_repo = None
+    mock_ai.extract_image_info_async.return_value = {
+        "account_numbers": ["09171234567"],
+        "account_names": ["Starbucks"],
+        "potential_vendor_names": ["Starbucks"],
+        "application": "GCash",
+        "currency": "PHP",
+    }
+    mock_ai.classify_image_async.return_value = AiParsedData(
+        is_financial=True,
+        vendor=AiVendorInfo(name="Starbucks", type="Business"),
+        amount=195.0,
+        transaction_type="Expense",
+        debit_account_id="acc-1",
+        credit_account_id="acc-1",
+        summary="Coffee at Starbucks",
+        confidence=0.9,
+    )
+
+    mock_finance = AsyncMock()
+    mock_finance.get_runbook_content_async.return_value = "Test Runbook"
+    mock_finance.get_accounts_async.return_value = [{"id": "acc-1", "name": "Cash"}]
+    mock_finance.get_vendors_async.return_value = [{"name": "Starbucks"}]
+    mock_finance.search_all_vendor_matches_by_lookups_async.return_value = []
+    mock_finance.search_confirmed_ledger_entries_async.return_value = []
+
+    mock_blob = AsyncMock()
+    mock_blob.download_image_async.return_value = (b"downloaded-bytes", "image/png")
+
+    retrieved = [("vector-1", 0.91), ("vector-2", 0.85)]
+    mock_retrieval = AsyncMock()
+    mock_retrieval.find_similar_async.return_value = retrieved
+
+    service = ImageProcessingService(
+        ingestion_repo=mock_repo,
+        embedding_service=mock_embedding,
+        vector_service=AsyncMock(),
+        ai_service=mock_ai,
+        finance_api_service=mock_finance,
+        blob_storage_service=mock_blob,
+        retrieval_service=mock_retrieval,
+    )
+
+    result = await service.reclassify_ingestion_async("ing-img-1", "user-1")
+
+    # Pre-fix this raised: {"error": "name 'similar_vectors' is not defined"}
+    assert result.ai_parsed.amount == 195.0
+    assert result.status == "Pending"
+    mock_retrieval.find_similar_async.assert_awaited_once()
+    kwargs = mock_ai.classify_image_async.await_args.kwargs
+    assert kwargs["similar_vectors"] == retrieved
+
+
 def test_extract_application_from_filename():
     from services.preprocessing_service import PreprocessingService
     assert PreprocessingService.extract_application_from_filename("Screenshot_20260815_com.globe.gcash.android.png") == "GCash"

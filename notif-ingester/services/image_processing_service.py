@@ -296,7 +296,7 @@ class ImageProcessingService(IngestionService):
         ai_parsed: AiParsedData = await self._ai_service.classify_image_async(
             image_bytes=ai_image_bytes,
             mime_type=ai_mime_type,
-            similar_vectors=[],
+            similar_vectors=similar_vectors,
             accounts=accounts,
             runbook_content=runbook_content,
             vendors=vendors,
@@ -446,10 +446,25 @@ class ImageProcessingService(IngestionService):
                     exclude_id=ingestion.id
                 )
 
+            # Hybrid retrieval over past transactions using the OCR transaction card
+            # (mirrors process_image_async so reclassification sees the same context)
+            similar_vectors: list = []
+            try:
+                from services.transaction_card import build_ocr_query_card_text
+                ocr_card_text = build_ocr_query_card_text(extracted_ocr_info)
+                if ocr_card_text:
+                    query_embedding = await self._embedding_service.embed_async(ocr_card_text)
+                    similar_vectors = await self._retrieval_service.find_similar_async(
+                        query_embedding, user_id, query_text=ocr_card_text, top_k=5,
+                        vendor_matches=vendor_matches
+                    )
+            except Exception as e:
+                logger.warning(f"[ImageProcessingService] Similar transaction retrieval failed during reclassification: {e}")
+
             ai_parsed = await self._ai_service.classify_image_async(
                 image_bytes=ai_image_bytes,
                 mime_type=ai_mime_type,
-            similar_vectors=similar_vectors,
+                similar_vectors=similar_vectors,
                 accounts=accounts,
                 runbook_content=runbook_content,
                 vendors=vendors,
