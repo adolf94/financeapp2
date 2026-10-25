@@ -143,7 +143,7 @@ namespace FinanceApp.Functions
 
         // Timer Trigger to process due recurring transactions
         [Function("ProcessRecurringTransactionsTimer")]
-        public async Task Run([TimerTrigger("0 0 0 * * *")] TimerInfo myTimer) // Runs every day at midnight
+        public async Task Run([TimerTrigger("0 0 0,8,16 * * *")] TimerInfo myTimer) // Runs at 00:00, 08:00, 16:00 UTC (8AM, 4PM, 12AM GMT+8)
         {
             _logger.LogInformation($"C# Timer trigger function executed at: {DateTime.Now}");
             

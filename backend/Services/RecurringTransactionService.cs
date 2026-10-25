@@ -97,7 +97,7 @@ namespace FinanceApp.Services
 
         public async Task ProcessDueRecurringTransactionsAsync()
         {
-            var now = DateTime.UtcNow.Date;
+            var now = DateTime.UtcNow;
             
             var dueSchedules = await _context.RecurringTransactions
                 .Where(rt => (rt.Status == null || rt.Status == "Active") && rt.NextOccurrenceDate <= now)
@@ -137,14 +137,19 @@ namespace FinanceApp.Services
                     // Save the transaction using the regular service to ensure balances are updated
                     var createdTx = await _transactionService.CreateTransactionAsync(schedule.UserId, newTransaction);
 
-                    // Add occurrence record
-                    schedule.Occurrences.Add(new RecurringTransactionOccurrence
+                    // Add occurrence record, but only if not already linked by CreateTransactionAsync
+                    // (TransactionService.CreateTransactionAsync links an occurrence itself when
+                    // ScheduleId is present, which would otherwise create a duplicate record).
+                    if (!schedule.Occurrences.Any(o => o.TransactionId == createdTx.Id))
                     {
-                        Date = schedule.NextOccurrenceDate,
-                        OccurrenceNo = schedule.Occurrences.Count + 1,
-                        Status = "Processed",
-                        TransactionId = createdTx.Id
-                    });
+                        schedule.Occurrences.Add(new RecurringTransactionOccurrence
+                        {
+                            Date = schedule.NextOccurrenceDate,
+                            OccurrenceNo = schedule.Occurrences.Count + 1,
+                            Status = "Processed",
+                            TransactionId = createdTx.Id
+                        });
+                    }
 
                     // Calculate next date
                     schedule.NextOccurrenceDate = CalculateNextDate(schedule.NextOccurrenceDate, schedule.Frequency, schedule.Interval);

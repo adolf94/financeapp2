@@ -154,6 +154,69 @@ namespace backend.Tests
         }
 
         [Fact]
+        public async Task ProcessDueRecurringTransactionsAsync_DoesNotDuplicateOccurrence_WhenTransactionServiceLinksIt()
+        {
+            // Arrange
+            var dbContext = GetInMemoryDbContext();
+            var service = new RecurringTransactionService(dbContext, _mockTransactionService.Object, _mockLogger.Object);
+
+            var recurringTx = new RecurringTransaction
+            {
+                Id = "rt-dup-1",
+                UserId = "user-1",
+                Frequency = "Monthly",
+                Interval = 1,
+                StartDate = DateTime.UtcNow.AddMonths(-1),
+                NextOccurrenceDate = DateTime.UtcNow.AddDays(-1), // Due!
+                TemplateType = TransactionType.Expense,
+                TemplateNote = "Installment",
+                TemplateEntries = new List<RecurringLedgerEntry>
+                {
+                    new RecurringLedgerEntry { AccountId = "acc-1", Amount = -100 },
+                    new RecurringLedgerEntry { AccountId = "acc-2", Amount = 100 }
+                },
+                Occurrences = new List<RecurringTransactionOccurrence>()
+            };
+
+            dbContext.RecurringTransactions.Add(recurringTx);
+            await dbContext.SaveChangesAsync();
+
+            // Simulate the real TransactionService behavior: when the created transaction
+            // carries a ScheduleId, TransactionService calls LinkRecurringOccurrenceAsync,
+            // which appends an occurrence record itself (same scoped DbContext instance).
+            _mockTransactionService
+                .Setup(s => s.CreateTransactionAsync("user-1", It.IsAny<Transaction>()))
+                .ReturnsAsync((string _, Transaction tx) =>
+                {
+                    tx.Id = "new-tx-dup-1";
+                    var schedule = dbContext.RecurringTransactions.Local.First(rt => rt.Id == "rt-dup-1");
+                    if (!schedule.Occurrences.Any(o => o.TransactionId == tx.Id))
+                    {
+                        schedule.Occurrences.Add(new RecurringTransactionOccurrence
+                        {
+                            Date = tx.Date,
+                            OccurrenceNo = schedule.Occurrences.Count + 1,
+                            Status = "Processed",
+                            TransactionId = tx.Id
+                        });
+                    }
+                    return tx;
+                });
+
+            // Act
+            await service.ProcessDueRecurringTransactionsAsync();
+
+            // Assert — only ONE occurrence record should exist for the generated transaction
+            var updatedRt = await dbContext.RecurringTransactions.FirstAsync();
+            Assert.Single(updatedRt.Occurrences);
+            Assert.Equal("new-tx-dup-1", updatedRt.Occurrences.First().TransactionId);
+            Assert.Equal("Processed", updatedRt.Occurrences.First().Status);
+
+            // Next occurrence should still advance exactly one month
+            Assert.True(updatedRt.NextOccurrenceDate > DateTime.UtcNow);
+        }
+
+        [Fact]
         public async Task DeleteRecurringTransactionAsync_SoftDeletes_SetsStatusToDeleted()
         {
             // Arrange

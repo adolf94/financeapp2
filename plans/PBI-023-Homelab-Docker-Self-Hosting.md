@@ -22,6 +22,8 @@ status: approved
 | 7 | **Remote access: Cloudflare Tunnel** (public HTTPS hostname, no open ports, no Tailscale). LAN-only access works as a fallback if the tunnel is down. |
 | 8 | **Vector retrieval (PBI-022): assumes pgvector** — vector store is a `vector(768)` column + HNSW index in Postgres itself; hybrid via Postgres full-text + RRF. PBI-022 keeps CosmosDB as a retained alternative backend for the Azure deployment; the homelab stack assumes pgvector. |
 | 9 | Cloud-only (by design): LLM/embedding APIs, IMAP→Gmail fetch, exchange-rate API, package feeds at build time, **Ar.Auth authority**. |
+| 10 | **Recurring transaction timer → hourly, via the job endpoint (decided 2026-10-25).** The current nightly `[TimerTrigger]` (midnight UTC) plus `NextOccurrenceDate <= DateTime.UtcNow.Date` means schedules with a time-of-day component are only processed on the *next* run (balance updates arrive up to ~24h late, though the transaction stays dated correctly). In the homelab stack: the `scheduler` cron container invokes the merged api's `POST /api/jobs/scheduled_transaction` (`RunScheduledTransactionJob`, requires `client_credentials` + `api://finance-app-api/cron:execute` scope) **hourly** (`0 * * * *`), and the due check switches to `NextOccurrenceDate <= DateTime.UtcNow` (no `.Date`) so each schedule's time-of-day is honored within the hour (e.g., a 1:34 PM Manila schedule is processed by the 2:00 PM run). The generated transaction keeps `Date = NextOccurrenceDate`, so UI grouping is unchanged — only balance-application timing improves. The duplicate-occurrence fix in `ProcessDueRecurringTransactionsAsync` (skip if an occurrence with the same `transactionId` already exists) must be preserved during the Minimal API port. |
+
 
 ---
 
@@ -41,6 +43,7 @@ Homelab server (docker compose)                        Cloud (outbound only)
 │ notif-ingester (Py functions: HTTP) ─┼─ postgres :5432 (pgvector, FTS)
 │ classify-worker (Py poller)          ─┤    │
 │ scheduler (cron → email-check route) │     │    Ar.Auth authority (existing)
+│           + hourly recurring-tx job  │     │
 │ backup (pg_dump + mc mirror nightly) ┘     │
 │                                    minio :9000 (receipt images)
 └────────────────────────────────────────────┘
@@ -72,7 +75,7 @@ Volumes: `pg-data`, `minio-data`. All images **pinned by version tag** (no `late
 13. Frontend axios base → single origin (caddy); remove per-service base URLs.
 
 ### D. Containers & edge
-14. New Dockerfiles: `api/Dockerfile` (.NET), `notif-ingester/Dockerfile` (python functions image — HTTP routes only), `classify-worker/Dockerfile` (same base as ingester), `frontend/Dockerfile` (node build → caddy static), `scheduler` (alpine cron + curl).
+14. New Dockerfiles: `api/Dockerfile` (.NET), `notif-ingester/Dockerfile` (python functions image — HTTP routes only), `classify-worker/Dockerfile` (same base as ingester), `frontend/Dockerfile` (node build → caddy static), `scheduler` (alpine cron + curl — nightly email-check route **and** hourly `POST /api/jobs/scheduled_transaction` with a `client_credentials` token holding `cron:execute`).
 15. `docker-compose.prod.yml` (repo root): caddy, api, notif-ingester, classify-worker, scheduler, postgres (`pgvector/pgvector:pg17`), minio, backup, **cloudflared** (tunnel). Healthchecks + pinned versions + `finance3-net`.
 16. Caddyfile: TLS, reverse-proxy `/*` → api (except static), WebSocket upgrade for `/hub`. Frontend static served by caddy directly.
 17. Cloudflare Tunnel: `cloudflared` container routes the public hostname → caddy; phone (Android) app config switches its base URL to the tunnel hostname.
@@ -99,7 +102,7 @@ Volumes: `pg-data`, `minio-data`. All images **pinned by version tag** (no `late
 |---|---|---|
 | 1 | Postgres + pgvector schema, EF swap, Python repos (A) | All backend + ingester integration tests pass against Postgres; parity reconciliation clean |
 | 2 | Merged `api/` service: Minimal APIs + NotificationHub + ArAuth (C) | Single origin serves API + hub; frontend live updates |
-| 3 | classify-worker + scheduler (A.6, D.14) | End-to-end: phone_hook → classification → SignalR broadcast |
+| 3 | classify-worker + scheduler (A.6, D.14) | End-to-end: phone_hook → classification → SignalR broadcast; recurring transactions processed hourly via the job endpoint (Decision 10) |
 | 4 | MinIO (B) | Image upload/read round-trip |
 | 5 | Compose + Caddy + Cloudflare Tunnel (D) | Phone reaches the app via public hostname |
 | 6 | ETL data migration + backups (A.7, E) | Cosmos data fully reconciled in Postgres; nightly backup verified |
