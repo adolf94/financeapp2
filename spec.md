@@ -1,6 +1,6 @@
 # Product Specification Document: Personal Finance App
 
-**Last Updated:** 2026-09-08
+**Last Updated:** 2026-10-25
 
 ## 1. Product Vision & Objective
 **Objective:** Create a mobile-first personal finance application that allows users to seamlessly track income, expenses, and account balances, functioning as a robust personal accounting tool. The focus is strictly on historical tracking of transactions rather than forward-looking budgeting.
@@ -38,8 +38,8 @@ Users need a structured way to mirror their real-world financial accounts within
 - **Status Lifecycle & Soft Delete:** Each recurring schedule includes a `Status` field (`Active`, `Deleted`, `Archived`). Deleting a schedule soft-deletes by setting `Status = "Deleted"`, stopping future generation while preserving historical occurrence logs. Active queries and background processors filter for `Status == "Active"`.
 - **Edit & Details View:** Editing a schedule displays full transaction template details (Type chip, total amount in PHP `₱`, vendor, and complete account ledger entry breakdown with debit/credit values and line notes/references).
 - When creating an initial transaction via `POST /transactions` with a `scheduleId`, the initial occurrence is automatically linked to the parent recurring schedule (`RecurringTransactionOccurrence`).
-- Handled efficiently in the background via a nightly Azure Functions `[TimerTrigger]`. 
-- Provides an automated view under the Transactions page, showcasing the scheduled history, template amounts, and expected end dates.
+- Handled efficiently in the background via a nightly Azure Functions `[TimerTrigger]`, which can also be executed on demand via the `POST /api/jobs/scheduled_transaction` job trigger (see §4.4).
+- Provides an automated **Scheduled tab** under the Transactions tab switcher (`/transactions/recurring`), showcasing the scheduled history, template amounts, and expected end dates.
 
 ### 2.4. Data Entry & Automation
 - **Smart Categorization:** Learns from manual entries to suggest categories based on past transaction vectors using cosine-similarity retrieval.
@@ -71,12 +71,13 @@ Users need a structured way to mirror their real-world financial accounts within
       - Retrying an errored hook updates its status back to `received`, seamlessly triggering change-feed reprocessing. Settings tab badge exclusively displays error count.
 
 ### 2.5. Monthly Transaction List View
-- Chronological log of financial activity for a calendar month, accessed via the **Daily tab** (default) inside the Transactions page.
+- Chronological log of financial activity for a calendar month, accessed via the **Daily tab** (default) of the Transactions **tab switcher**.
+- **Tab Switcher:** The Transactions experience is a three-tab segmented switcher — **Daily | Monthly | Scheduled** (shared `TransactionsTabs.tsx` component, rendered across the route-based pages `/transactions/$month/daily`, `/transactions/$month/monthly`, and `/transactions/recurring`). Switching between Daily and Monthly preserves the selected month (`$month` path param); Scheduled has no month context and lists recurring schedules.
 - Grouped by date with sticky date headers. Each row shows: Type Icon (color-coded), Account/Description, Vendor, Note (italic), and Amount.
 - **Edit/Delete:** Each transaction row exposes an inline Pencil (edit) and Trash (delete) action. Tapping the pencil opens `AddTransactionModal` pre-filled with the transaction's data.
 
 ### 2.6. Monthly Calendar Overview
-- Accessed via the **Month tab** inside the Transactions page (alongside the **Daily tab**, which is the default chronological list).
+- Accessed via the **Monthly tab** of the Transactions tab switcher (alongside the **Daily tab**, which is the default chronological list).
 - Displays a 7-column calendar grid (Sun–Sat) for the selected month.
 - **Per-day cells** show: daily total income (green chip), daily total expense (red chip), and net (blue/amber).
 - **Month summary bar** at the top of the grid shows the month-level totals for Income, Expenses, and Net.
@@ -144,7 +145,10 @@ Users need a structured way to mirror their real-world financial accounts within
 - **Key Components:**
   - `Settings.tsx` (`pages/`) — Tabbed configuration area for manual management of Categories (Expense/Income groups) and Vendors, keeping the main Accounts view decluttered.
   - `Combobox.tsx` (`components/ui/`) — Reusable, searchable dropdown component that supports inline creation. Embedded throughout the Transaction Modal for fast data entry.
-  - `Transactions.tsx` — Monthly transaction page. Houses a **Daily | Month** tab switcher. The Daily tab renders the existing chronological list; the Month tab renders `CalendarView`.
+  - `TransactionsTabs.tsx` (`components/`) — Shared segmented **Daily | Monthly | Scheduled** tab switcher rendered on every Transactions route page. Daily/Monthly links preserve the selected `$month` param; Scheduled links to `/transactions/recurring`. Active tab is passed explicitly by each page.
+  - `TransactionsDaily.tsx` (`pages/`) — Route page for `/transactions/$month/daily`. Chronological monthly transaction list with sticky date headers (the default Transactions view).
+  - `TransactionsMonthly.tsx` (`pages/`) — Route page for `/transactions/$month/monthly`. Renders `CalendarView` for the selected month.
+  - `TransactionsRecurring.tsx` (`pages/`) — Route page for `/transactions/recurring`. Renders `RecurringTransactionsList` (see §2.3).
   - `CalendarView.tsx` (`pages/`) — 42-cell (6×7) calendar grid. Accepts `transactions[]` and `accounts[]` as props (already fetched by the parent). Computes per-day income/expense summaries using the account-type driven rule (see §2.6). Opens `DayModal` on day tap.
   - `DayModal.tsx` (`components/`) — Bottom-sheet modal displaying day-level Income/Expense/Net summary chips and a scrollable transaction list for the selected date.
   - `CategoryDetails.tsx` (`pages/`) — Detail page displaying category group name, type, and transaction list grouped by date.
@@ -176,6 +180,7 @@ Users need a structured way to mirror their real-world financial accounts within
   - **Visibility rule ("self" scopes):** a `client_credentials` caller acts only on transactions it created (`CreatedBy == sub`, cross-partition lookup in the target user's partition); `user`-scoped callers act only on their own partition (`UserId == sub`). Affected service methods: `GetTransactionByCreatorAsync`, `GetTransactionsCreatedByAsync`, `DeleteTransactionByCreatorAsync` (reverts ledger balances in the owner's partition before delete).
   - **`ingestions:read` scope:** guards the ingester read routes `GET /ingestions`, `GET /ingestions/{id}`, `GET /ingestion-search`, `GET /images/{ingestion_id}` (accepts `user` OR `ingestions:read`). Since a `client_credentials` caller's `sub` is the client id (not a user partition), `ingestions:read`-only callers are served via **cross-partition queries** (`CosmosIngestionRepository.get_by_id_cross_partition_async` / `get_by_status_cross_partition_async` / `search_by_amount_and_range_async` without `user_id`, `enable_cross_partition_query=True`); `user`-scoped callers remain partition-scoped to `UserId == sub`.
   - **`accounts:read` scope:** guards the owner-scoped read routes `GET /api/owners/{userId}/accounts` and `GET /api/owners/{userId}/account-group` (`GetOwnerAccounts`/`GetOwnerAccountGroups` in `AccountFunctions`). Available to both `client_credentials` and SPA/user tokens. A caller that also holds the `user` scope may only read its own `userId` (anything else returns `404`). The legacy `GET /api/accounts`, `GET /api/accounts/{id}`, `GET /api/account-groups` routes are now gated by the `user` scope only (`accounts:read` was removed from them).
+  - **`cron:execute` scope:** guards the manual job trigger `POST /api/jobs/scheduled_transaction` (`RunScheduledTransactionJob` in `RecurringTransactionFunctions`), which executes the same daily processing logic as the nightly `[TimerTrigger]` (`IRecurringTransactionService.ProcessDueRecurringTransactionsAsync()`). Intended for `client_credentials` callers only — no `userId` is involved; the job processes all users' due schedules globally. Requires only the `cron:execute` scope (no `user` scope); missing scope returns `403` via `MissingScopeResult`, and processing failure returns `500`.
 - **Ledger Entries Search Endpoint:** `GET /ledger-entries/search` allows searching ledger entries by `referenceNumber` (within 30-day window) or `amount` + `around` date (+/- `windowMinutes`, default 5).
 - **Error Handling:** Consistent response envelopes for all errors.
 

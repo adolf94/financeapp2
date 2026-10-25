@@ -2,6 +2,7 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { useGetTransactions } from '@/hooks/useTransactions'
 import { useGetAccounts } from '@/hooks/useAccounts'
 import CalendarView from '@/pages/CalendarView'
+import TransactionsTabs from '@/components/TransactionsTabs'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import dayjs from 'dayjs'
 
@@ -46,6 +47,7 @@ export default function TransactionsMonthly() {
           </button>
         </div>
       </div>
+      <TransactionsTabs active="monthly" month={currentMonth.format('YYYY-MM')} />
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="p-8 text-center text-slate-400">Loading...</div>

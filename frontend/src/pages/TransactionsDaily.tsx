@@ -3,6 +3,7 @@ import { useNavigate, useParams } from '@tanstack/react-router'
 import { useGetTransactions, useDeleteTransaction } from '@/hooks/useTransactions'
 import { useGetAccounts } from '@/hooks/useAccounts'
 import TransactionCard from '@/components/TransactionCard'
+import TransactionsTabs from '@/components/TransactionsTabs'
 import { TransactionListSkeleton } from '@/components/ui/Skeleton'
 import ConfirmationModal from '@/components/ui/ConfirmationModal'
 import AddTransactionModal from '@/components/AddTransactionModal'
@@ -58,6 +59,7 @@ export default function TransactionsDaily() {
           </button>
         </div>
       </div>
+      <TransactionsTabs active="daily" month={currentMonth.format('YYYY-MM')} />
       <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <TransactionListSkeleton count={6} />

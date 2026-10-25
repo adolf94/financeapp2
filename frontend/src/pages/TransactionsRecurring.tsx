@@ -1,4 +1,5 @@
 import RecurringTransactionsList from '@/components/RecurringTransactionsList'
+import TransactionsTabs from '@/components/TransactionsTabs'
 
 export default function TransactionsRecurring() {
   return (
@@ -7,6 +8,7 @@ export default function TransactionsRecurring() {
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Recurring Transactions</h1>
         <p className="text-slate-500 mt-1 text-sm">Manage your recurring transactions</p>
       </div>
+      <TransactionsTabs active="scheduled" />
       <div className="flex-1 overflow-y-auto">
         <RecurringTransactionsList />
       </div>
