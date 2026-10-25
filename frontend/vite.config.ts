@@ -5,13 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
-// Base path the app is served under. Set via the APP_ROOT env var (GitHub Actions
-// workflow input, e.g. "/cron-agent/"). Defaults to "/" for local development.
-const base = process.env.APP_ROOT || '/'
-
 // https://vite.dev/config/
 export default defineConfig({
-  base,
   plugins: [
     react(),
     tailwindcss(),
@@ -26,17 +21,16 @@ export default defineConfig({
         background_color: '#020617',
         display: 'standalone',
         orientation: 'portrait-primary',
-        start_url: base,
-        scope: base,
+        start_url: '/',
         icons: [
           {
-            src: `${base}pwa-192x192.svg`,
+            src: '/pwa-192x192.svg',
             sizes: '192x192',
             type: 'image/svg+xml',
             purpose: 'any'
           },
           {
-            src: `${base}pwa-512x512.svg`,
+            src: '/pwa-512x512.svg',
             sizes: '512x512',
             type: 'image/svg+xml',
             purpose: 'any maskable'
@@ -46,13 +40,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
         globIgnores: ['**/staticwebapp.config.json'],
-        navigateFallback: `${base}index.html`,
-        navigateFallbackDenylist: [
-          /^\/api/,
-          /^\/authConfig/,
-          new RegExp(`^${base}api`),
-          new RegExp(`^${base}authConfig`),
-        ],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api/, /^\/authConfig/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\/.*/i,

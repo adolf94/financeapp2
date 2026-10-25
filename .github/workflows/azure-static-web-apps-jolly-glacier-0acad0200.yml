@@ -2,14 +2,6 @@ name: Azure Static Web Apps CI/CD
 
 on:
   workflow_dispatch:
-    inputs:
-      APP_ROOT:
-        description: 'Root path the app is served/built under (e.g. /cron-agent/). Defaults to /cron-agent/.'
-        required: false
-        default: '/cron-agent/'
-
-env:
-  APP_ROOT: ${{ inputs.APP_ROOT }}
 
 jobs:
   build_and_deploy_job:
@@ -35,7 +27,6 @@ jobs:
       - name: Install dependencies and build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APP_ROOT: ${{ env.APP_ROOT }}
         run: |
           cd frontend
           npm install

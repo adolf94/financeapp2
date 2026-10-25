@@ -88,12 +88,7 @@ const routeTree = rootRoute.addChildren([
   ingestionsRoute,
 ])
 
-// Serve the app under the configured base path (see vite.config.ts APP_ROOT,
-// e.g. "/cron-agent/"). Strip the trailing slash; the router expects "/prefix".
-const BASE_URL = import.meta.env.BASE_URL
-const basepath = BASE_URL.length > 1 ? BASE_URL.replace(/\/+$/, '') : BASE_URL
-
-export const router = createRouter({ routeTree, basepath })
+export const router = createRouter({ routeTree })
 
 // Register router for type-safety
 declare module '@tanstack/react-router' {
