@@ -5,7 +5,10 @@
       "/*.{png,jpg,jpeg,gif,ico,svg}",
       "/*.{css,js,json}",
       "/assets/*",
-      "/authConfig/*"
+      "/authConfig/*",
+      "/cron-agent/assets/*",
+      "/cron-agent/authConfig/*",
+      "/cron-agent/*.{css,js,json}"
     ]
   }
 }
